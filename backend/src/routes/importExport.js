@@ -18,7 +18,11 @@ router.get('/export', async (req, res) => {
             b.publisher, b.published_date,
             (SELECT json_agg(rs ORDER BY rs.created_at)
              FROM reading_sessions rs
-             WHERE rs.book_id = b.id AND rs.user_id = $1) AS sessions
+             WHERE rs.book_id = b.id AND rs.user_id = $1) AS sessions,
+            (SELECT string_agg(s.name, '|' ORDER BY s.name)
+             FROM shelf_memberships sm
+             JOIN shelves s ON s.id = sm.shelf_id
+             WHERE sm.library_book_id = lb.id) AS shelf_names
      FROM library_books lb
      JOIN books b ON b.id = lb.book_id
      WHERE lb.user_id = $1
@@ -46,12 +50,12 @@ router.get('/export', async (req, res) => {
       publisher:      b.publisher ?? '',
       publishedDate:  b.published_date ?? '',
       status:         csvStatus,
-      shelf:          shelfYear,
+      shelf:          b.shelf_names ?? shelfYear,
       stars:          latest.rating ?? 0,
       review:         latest.review ?? '',
       note:           b.notes ?? '',
-      startDate:      latest.started_at ? latest.started_at.toISOString().slice(0, 10) : '',
-      finishDate:     latest.finished_at ? latest.finished_at.toISOString().slice(0, 10) : '',
+      startDate:      latest.started_at ? String(latest.started_at).slice(0, 10) : '',
+      finishDate:     latest.finished_at ? String(latest.finished_at).slice(0, 10) : '',
       readingMinutes: 0,
     });
   }
@@ -102,6 +106,9 @@ router.post('/import', async (req, res) => {
     const stars         = parseInt(r.stars, 10) || null;
     const startDate     = r.startDate?.trim() || null;
     const finishDate    = r.finishDate?.trim() || null;
+    // shelf can be a pipe-separated list of names, a single name, or empty
+    const shelfNames    = (r.shelf?.trim() || '')
+      .split('|').map(s => s.trim()).filter(Boolean);
 
     if (!title) { skipped++; continue; }
 
@@ -151,6 +158,24 @@ router.post('/import', async (req, res) => {
         [uid, bookId, status, note]
       );
       if (lb.xmax === '0') imported++;  // xmax=0 means INSERT (not UPDATE)
+
+      // Shelves: find-or-create each named shelf, then add membership
+      for (const name of shelfNames) {
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const { rows: [shelf] } = await client.query(
+          `INSERT INTO shelves (user_id, name, slug)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, slug) DO UPDATE SET name = shelves.name
+           RETURNING id`,
+          [uid, name, slug]
+        );
+        await client.query(
+          `INSERT INTO shelf_memberships (library_book_id, shelf_id)
+           VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [lb.id, shelf.id]
+        );
+      }
 
       // Reading session
       const hasSession = finishDate || startDate || (stars && stars > 0) || review;
