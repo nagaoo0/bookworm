@@ -11,10 +11,11 @@ import statsRouter from './routes/stats.js';
 import shelvesRouter from './routes/shelves.js';
 import invitesRouter from './routes/invites.js';
 import profilesRouter from './routes/profiles.js';
+import importExportRouter from './routes/importExport.js';
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
 app.use('/api/auth', authRouter);
@@ -30,6 +31,7 @@ app.use('/api/library', libraryRouter);
 app.use('/api/books/:bookId/sessions', sessionsRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/invites', invitesRouter);
+app.use('/api/import-export', importExportRouter);
 
 const PORT = process.env.PORT ?? 3000;
 

@@ -55,4 +55,7 @@ export const api = {
   deleteSession: (bookId, sessionId) => request(`/books/${bookId}/sessions/${sessionId}`, { method: 'DELETE' }),
 
   getStats: () => request('/stats'),
+
+  exportLibrary: () => fetch('/api/import-export/export', { credentials: 'include' }),
+  importLibrary: (csv) => request('/import-export/import', { method: 'POST', body: { csv } }),
 };

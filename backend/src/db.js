@@ -36,8 +36,15 @@ export async function migrate() {
       page_count     INT,
       published_date TEXT,
       description    TEXT,
+      isbn10         TEXT,
+      isbn13         TEXT,
+      publisher      TEXT,
       created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS isbn10     TEXT;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS isbn13     TEXT;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS publisher  TEXT;
 
     -- Users
     CREATE TABLE IF NOT EXISTS users (

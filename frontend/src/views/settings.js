@@ -63,6 +63,9 @@ function render(container, user, invites) {
         </form>
       </section>
 
+      <!-- Import / Export -->
+      ${renderImportExportSection()}
+
       <!-- Invite manager (admin only) -->
       ${user.isAdmin ? renderInviteSection(invites) : ''}
     </div>`;
@@ -108,8 +111,98 @@ function render(container, user, invites) {
     setTimeout(() => pwMsg.classList.add('hidden'), 3000);
   });
 
+  // Import / Export
+  attachImportExportHandlers(container);
+
   // Invite actions
   if (user.isAdmin) attachInviteHandlers(container);
+}
+
+function renderImportExportSection() {
+  return `
+    <section class="bg-stone-900 rounded-xl p-5 space-y-4 ring-1 ring-white/10">
+      <h2 class="font-semibold text-stone-200">Import / Export</h2>
+      <p class="text-xs text-stone-500">Tab-separated CSV. Compatible with the Places reading app format.</p>
+
+      <div class="flex gap-3">
+        <button id="export-btn"
+          class="px-4 py-2 bg-stone-700 hover:bg-stone-600 rounded-lg text-sm font-medium transition-colors">
+          ↓ Export library
+        </button>
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-xs text-stone-400 block">Import from CSV file</label>
+        <div class="flex gap-3 items-center">
+          <input type="file" id="import-file" accept=".csv,.tsv,.txt"
+            class="text-sm text-stone-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
+                   file:bg-stone-700 file:text-stone-200 file:text-sm file:cursor-pointer
+                   file:hover:bg-stone-600 file:transition-colors" />
+          <button id="import-btn" disabled
+            class="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed
+                   text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+            Import
+          </button>
+        </div>
+        <p id="import-msg" class="text-xs hidden"></p>
+      </div>
+    </section>`;
+}
+
+function attachImportExportHandlers(container) {
+  // Export
+  container.querySelector('#export-btn').addEventListener('click', async () => {
+    const btn = container.querySelector('#export-btn');
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const res = await api.exportLibrary();
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'bookworm-library.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Export failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '↓ Export library';
+    }
+  });
+
+  // Enable import button only when a file is chosen
+  const fileInput = container.querySelector('#import-file');
+  const importBtn = container.querySelector('#import-btn');
+  fileInput.addEventListener('change', () => {
+    importBtn.disabled = !fileInput.files.length;
+  });
+
+  // Import
+  importBtn.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const msg = container.querySelector('#import-msg');
+    importBtn.disabled = true;
+    importBtn.textContent = 'Importing…';
+    msg.classList.add('hidden');
+    try {
+      const text = await file.text();
+      const result = await api.importLibrary(text);
+      msg.className = 'text-xs text-green-400';
+      msg.textContent = `Done — ${result.imported} added, ${result.skipped} skipped (${result.total} rows total).`;
+    } catch (err) {
+      msg.className = 'text-xs text-red-400';
+      msg.textContent = err.message;
+    } finally {
+      importBtn.disabled = false;
+      importBtn.textContent = 'Import';
+      msg.classList.remove('hidden');
+      fileInput.value = '';
+    }
+  });
 }
 
 function renderInviteSection(invites) {
