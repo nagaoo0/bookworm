@@ -9,10 +9,11 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bookworm}"]
+      test: ["CMD-SHELL", "psql -U ${POSTGRES_USER:-bookworm} -d ${POSTGRES_DB:-bookworm} -c 'SELECT 1' -q --no-align --tuples-only"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 10s
 
   api:
     build: ./backend

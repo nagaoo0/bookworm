@@ -2,9 +2,30 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+if (!process.env.DATABASE_URL) {
+  console.error('DATABASE_URL is not set');
+  process.exit(1);
+}
+
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+// Retry connecting until Postgres is ready (handles slow init on first-run volume creation)
+async function waitForDb(retries = 15, delayMs = 2000) {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      const client = await pool.connect();
+      client.release();
+      return;
+    } catch (err) {
+      console.log(`DB not ready (attempt ${i}/${retries}): ${err.message}`);
+      if (i === retries) throw err;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
 export async function migrate() {
+  await waitForDb();
   await pool.query(`
     CREATE TABLE IF NOT EXISTS books (
       id            SERIAL PRIMARY KEY,
