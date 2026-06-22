@@ -13,12 +13,15 @@ export async function renderStats(container) {
   }
 }
 
-function render(container, s) {
+export function render(container, s, opts = {}) {
   const years = Object.keys(s.perYear).map(Number).sort((a, b) => b - a);
   const currentYear = years[0] ?? new Date().getFullYear();
 
+  // Determine if categories data exists for any year
+  const hasCats = Object.keys(s.categoriesByYear ?? {}).length > 0;
+
   container.innerHTML = `
-    <div class="max-w-2xl mx-auto space-y-8 fade-in">
+    <div class="${opts.compact ? '' : 'max-w-2xl mx-auto '}space-y-8 fade-in">
 
       <!-- Summary cards -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -32,7 +35,7 @@ function render(container, s) {
       ${years.length ? `
       <div class="flex items-center gap-3">
         <label class="text-sm text-stone-400 font-medium">Year</label>
-        <select id="year-select"
+        <select id="${opts.yearSelectId ?? 'year-select'}"
           class="bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500">
           ${years.map(y => `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`).join('')}
         </select>
@@ -42,28 +45,32 @@ function render(container, s) {
       <section>
         <h2 class="font-serif text-xl font-semibold mb-4">Books Finished by Month</h2>
         <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5" style="height:220px">
-          <canvas id="monthly-chart"></canvas>
+          <canvas id="${opts.barCanvasId ?? 'monthly-chart'}"></canvas>
         </div>
       </section>
 
       <!-- Categories pie chart -->
-      ${Object.keys(s.categories ?? {}).length ? `
-      <section>
+      ${hasCats ? `
+      <section id="${opts.pieSectionId ?? 'pie-section'}">
         <h2 class="font-serif text-xl font-semibold mb-4">Genres / Categories</h2>
         <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 flex items-center justify-center" style="height:280px">
-          <canvas id="pie-chart"></canvas>
+          <canvas id="${opts.pieCanvasId ?? 'pie-chart'}"></canvas>
         </div>
       </section>` : ''}
 
     </div>`;
 
-  // Build charts
-  drawMonthlyChart(s.monthly ?? {}, currentYear);
-  if (Object.keys(s.categories ?? {}).length) drawPieChart(s.categories);
+  const barId  = opts.barCanvasId ?? 'monthly-chart';
+  const pieId  = opts.pieCanvasId ?? 'pie-chart';
+  const yearId = opts.yearSelectId ?? 'year-select';
 
-  // Year-switch handler
-  container.querySelector('#year-select')?.addEventListener('change', e => {
-    drawMonthlyChart(s.monthly ?? {}, Number(e.target.value));
+  drawMonthlyChart(s.monthly ?? {}, currentYear, barId);
+  drawPieChart(s.categoriesByYear ?? {}, currentYear, pieId);
+
+  container.querySelector(`#${yearId}`)?.addEventListener('change', e => {
+    const y = Number(e.target.value);
+    drawMonthlyChart(s.monthly ?? {}, y, barId);
+    drawPieChart(s.categoriesByYear ?? {}, y, pieId);
   });
 }
 
@@ -73,17 +80,16 @@ const PALETTE = [
   '#06b6d4','#84cc16','#e879f9','#fb923c','#34d399','#38bdf8',
 ];
 
-let monthlyChartInst = null;
-let pieChartInst = null;
+const chartInstances = {};
 
-function drawMonthlyChart(monthly, year) {
-  const canvas = document.getElementById('monthly-chart');
+function drawMonthlyChart(monthly, year, canvasId) {
+  const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
   const counts = MONTH_LABELS.map((_, i) => monthly[year]?.[i + 1] ?? 0);
 
-  if (monthlyChartInst) monthlyChartInst.destroy();
-  monthlyChartInst = new Chart(canvas, {
+  chartInstances[canvasId]?.destroy();
+  chartInstances[canvasId] = new Chart(canvas, {
     type: 'bar',
     data: {
       labels: MONTH_LABELS,
@@ -112,12 +118,24 @@ function drawMonthlyChart(monthly, year) {
   });
 }
 
-function drawPieChart(categories) {
-  const canvas = document.getElementById('pie-chart');
+function drawPieChart(categoriesByYear, year, canvasId) {
+  const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
-  // Sort by count desc, show top 10 + "Other"
+  const categories = categoriesByYear[year] ?? {};
   const sorted = Object.entries(categories).sort((a, b) => b[1] - a[1]);
+
+  if (!sorted.length) {
+    chartInstances[canvasId]?.destroy();
+    delete chartInstances[canvasId];
+    const section = canvas.closest('section');
+    if (section) section.style.display = 'none';
+    return;
+  }
+
+  const section = canvas.closest('section');
+  if (section) section.style.display = '';
+
   const top = sorted.slice(0, 10);
   const otherSum = sorted.slice(10).reduce((acc, [, v]) => acc + v, 0);
   if (otherSum > 0) top.push(['Other', otherSum]);
@@ -126,8 +144,8 @@ function drawPieChart(categories) {
   const data   = top.map(([, v]) => v);
   const colors = labels.map((_, i) => PALETTE[i % PALETTE.length]);
 
-  if (pieChartInst) pieChartInst.destroy();
-  pieChartInst = new Chart(canvas, {
+  chartInstances[canvasId]?.destroy();
+  chartInstances[canvasId] = new Chart(canvas, {
     type: 'pie',
     data: {
       labels,

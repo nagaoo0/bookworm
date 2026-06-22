@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { computeStats } from './stats.js';
 
 const router = Router();
 
@@ -50,12 +51,15 @@ router.get('/:username', async (req, res) => {
     if (statusBooks[r.status]) statusBooks[r.status].push(r);
   }
 
+  const stats = await computeStats(user.id);
+
   res.json({
     username: user.username,
     shelves: shelves.rows,
     library: library.rows,
     statusBooks,
     feed: sessions.rows,
+    stats,
   });
 });
 

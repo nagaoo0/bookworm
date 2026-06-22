@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { migrate } from './db.js';
+import { migrate, pool } from './db.js';
 import { authMiddleware } from './auth.js';
 import authRouter from './routes/auth.js';
 import searchRouter from './routes/search.js';
@@ -20,6 +20,20 @@ app.use(cookieParser());
 
 app.use('/api/auth', authRouter);
 app.use('/api/profiles', profilesRouter);
+
+// Public users list
+app.get('/api/users', async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT u.username,
+            COUNT(DISTINCT lb.id)::INT AS book_count
+     FROM users u
+     LEFT JOIN library_books lb ON lb.user_id = u.id
+     WHERE u.is_public = true
+     GROUP BY u.username
+     ORDER BY u.username`
+  );
+  res.json(rows);
+});
 
 // All routes below this require a valid session
 app.use(authMiddleware);

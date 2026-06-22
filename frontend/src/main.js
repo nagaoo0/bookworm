@@ -6,6 +6,7 @@ import { renderStats } from './views/stats.js';
 import { renderAuth } from './views/auth.js';
 import { renderSettings } from './views/settings.js';
 import { renderProfile } from './views/profile.js';
+import { renderUsers } from './views/users.js';
 import { setOnSessionSaved } from './components/modal.js';
 import { api, setOnUnauthorized } from './api.js';
 
@@ -27,6 +28,7 @@ document.getElementById('app').innerHTML = `
           <a href="#home"     class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="home">Library</a>
           <a href="#search"   class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="search">Search</a>
           <a href="#stats"    class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="stats">Stats</a>
+          <a href="#users"    class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="users">Readers</a>
           <a href="#settings" class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
           <span id="nav-username" class="ml-2 text-xs text-stone-500"></span>
           <button id="logout-btn" class="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
@@ -48,6 +50,7 @@ document.getElementById('app').innerHTML = `
           <a href="#home"     class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="home">Library</a>
           <a href="#search"   class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="search">Search</a>
           <a href="#stats"    class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="stats">Stats</a>
+          <a href="#users"    class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="users">Readers</a>
           <a href="#settings" class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
           <div class="border-t border-stone-800 pt-2 mt-2 flex items-center justify-between">
             <span id="nav-username-mob" class="text-xs text-stone-500"></span>
@@ -125,7 +128,7 @@ function wireLogout() {
 }
 
 // ── Router ─────────────────────────────────────────────────────────────────────
-const ROUTES = ['home', 'search', 'stats', 'settings'];
+const ROUTES = ['home', 'search', 'stats', 'users', 'settings'];
 
 function getRoute() {
   const hash = location.hash.slice(1) || 'home';
@@ -161,6 +164,8 @@ async function navigate(route) {
     await renderStats(mainEl);
   } else if (route === 'settings') {
     await renderSettings(mainEl);
+  } else if (route === 'users') {
+    await renderUsers(mainEl);
   } else if (route.startsWith('u/')) {
     const username = route.slice(2);
     if (getState().user) {
@@ -177,9 +182,13 @@ subscribe(state => {
 
 window.addEventListener('hashchange', () => {
   const route = getRoute();
-  // Public profiles accessible even when logged out
+  // Public routes accessible even when logged out
   if (route.startsWith('u/') && !getState().user) {
     showPublicProfile(route.slice(2));
+  } else if (route === 'users' && !getState().user) {
+    pubHeader.classList.remove('hidden');
+    headerEl.classList.add('hidden');
+    renderUsers(mainEl);
   } else if (getState().user) {
     navigate(route);
   } else {
@@ -194,9 +203,11 @@ window.addEventListener('hashchange', () => {
     const user = await api.me();
     showApp(user);
   } catch {
-    // If the initial URL is a public profile, show it without auth
     if (route.startsWith('u/')) {
       showPublicProfile(route.slice(2));
+    } else if (route === 'users') {
+      pubHeader.classList.remove('hidden');
+      renderUsers(mainEl);
     } else {
       showAuth();
     }

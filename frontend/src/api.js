@@ -73,6 +73,8 @@ export const api = {
 
   getStats: () => request('/stats'),
 
+  getUsers: () => request('/users'),
+
   exportLibrary: () => fetch('/api/import-export/export', { credentials: 'include' }),
   importLibrary: (csv) => request('/import-export/import', { method: 'POST', body: { csv } }),
 };

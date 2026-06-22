@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { bookCardHTML } from '../components/bookCard.js';
+import { render as renderStatsContent } from './stats.js';
 
 export async function renderProfile(container, username) {
   container.innerHTML = `<p class="text-stone-400 text-center py-20">Loading profile…</p>`;
@@ -20,7 +21,7 @@ export async function renderProfile(container, username) {
   }
 }
 
-function renderTabs(container, { username, shelves, library, statusBooks, feed }) {
+function renderTabs(container, { username, shelves, library, statusBooks, feed, stats }) {
   container.innerHTML = `
     <div class="mb-6">
       <h1 class="font-serif text-2xl font-semibold">${escHtml(username)}'s library</h1>
@@ -31,6 +32,7 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed }
       <button class="profile-tab active-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="shelves">Shelves</button>
       <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="status">Status</button>
       <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="feed">Feed</button>
+      <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="stats">Stats</button>
     </div>
 
     <div id="tab-shelves" class="tab-panel">
@@ -41,9 +43,12 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed }
     </div>
     <div id="tab-feed" class="tab-panel hidden">
       ${renderFeedTab(feed)}
-    </div>`;
+    </div>
+    <div id="tab-stats" class="tab-panel hidden"></div>`;
 
-  // Style active tab
+  // Lazy-render stats tab when first activated
+  let statsRendered = false;
+
   function refreshTabs(active) {
     container.querySelectorAll('.profile-tab').forEach(btn => {
       const isActive = btn.dataset.tab === active;
@@ -55,9 +60,20 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed }
     });
     container.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
     container.querySelector(`#tab-${active}`)?.classList.remove('hidden');
+
+    if (active === 'stats' && !statsRendered && stats) {
+      statsRendered = true;
+      const statsEl = container.querySelector('#tab-stats');
+      // Use unique canvas IDs to avoid collision with main stats page
+      renderStatsContent(statsEl, stats, {
+        compact: true,
+        barCanvasId: 'profile-monthly-chart',
+        pieCanvasId: 'profile-pie-chart',
+        yearSelectId: 'profile-year-select',
+      });
+    }
   }
 
-  // Initialize
   refreshTabs('shelves');
 
   container.querySelectorAll('.profile-tab').forEach(btn => {
