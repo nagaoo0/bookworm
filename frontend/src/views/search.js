@@ -161,21 +161,46 @@ function renderResults(container, results) {
 
   const { shelves } = getState();
 
+  const { library } = getState();
+  const libraryByGoogleId = {};
+  for (const lb of library) {
+    if (lb.google_id) {
+      if (!libraryByGoogleId[lb.google_id]) libraryByGoogleId[lb.google_id] = [];
+      libraryByGoogleId[lb.google_id].push(lb);
+    }
+  }
+
   el.querySelectorAll('.book-card').forEach(card => {
     const addArea = card.querySelector('.add-area');
     if (!addArea) return;
     const book = findBookFromCard(card, results);
     if (!book) return;
 
-    addArea.innerHTML = `
+    const existing = book.googleId ? (libraryByGoogleId[book.googleId] ?? []) : [];
+
+    const shelfSelect = `
       <select class="shelf-select w-full bg-stone-800 border border-stone-700 rounded text-[11px] px-1.5 py-1
                      focus:outline-none focus:border-amber-500">
         ${shelves.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('')}
-      </select>
-      <button class="add-btn w-full text-[11px] px-2 py-1 rounded bg-stone-700
-                     hover:bg-amber-500 hover:text-stone-950 transition-colors font-medium">
-        + Add to shelf
-      </button>`;
+      </select>`;
+
+    if (existing.length) {
+      const shelfNames = [...new Set(existing.map(lb => lb.shelf_name).filter(Boolean))].join(', ');
+      addArea.innerHTML = `
+        <p class="text-[10px] text-amber-400/80 leading-tight">On shelf: ${escHtml(shelfNames)}</p>
+        ${shelfSelect}
+        <button class="add-btn w-full text-[11px] px-2 py-1 rounded bg-stone-700
+                       hover:bg-amber-500 hover:text-stone-950 transition-colors font-medium">
+          + Read again
+        </button>`;
+    } else {
+      addArea.innerHTML = `
+        ${shelfSelect}
+        <button class="add-btn w-full text-[11px] px-2 py-1 rounded bg-stone-700
+                       hover:bg-amber-500 hover:text-stone-950 transition-colors font-medium">
+          + Add to shelf
+        </button>`;
+    }
 
     addArea.querySelector('.add-btn').addEventListener('click', async e => {
       e.stopPropagation();

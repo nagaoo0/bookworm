@@ -74,6 +74,7 @@ npm run dev
 | `POSTGRES_USER` | `bookworm` | Database user |
 | `POSTGRES_PASSWORD` | — | **Required.** Database password |
 | `GOOGLE_BOOKS_API_KEY` | _(empty)_ | Optional — higher API quota |
+| `AUTH_PASSWORD` | _(empty)_ | Optional — if set, a password gate is shown before the app loads |
 | `API_PORT` | `3000` | Host port for the API container |
 | `FRONTEND_PORT` | `8080` | Host port for the frontend container |
 

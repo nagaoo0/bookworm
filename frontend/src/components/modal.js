@@ -6,9 +6,9 @@ let _onSessionSaved = () => {};
 
 export function setOnSessionSaved(fn) { _onSessionSaved = fn; }
 
-export function openModal(bookId, bookTitle) {
+export function openModal(bookId, bookTitle, libId, notes) {
   setState({ modal: { bookId, bookTitle } });
-  renderModal(bookId, bookTitle);
+  renderModal(bookId, bookTitle, libId, notes);
 }
 
 export function closeModal() {
@@ -16,7 +16,7 @@ export function closeModal() {
   document.getElementById('modal-backdrop')?.remove();
 }
 
-async function renderModal(bookId, bookTitle) {
+async function renderModal(bookId, bookTitle, libId, notes) {
   const existing = document.getElementById('modal-backdrop');
   if (existing) existing.remove();
 
@@ -61,6 +61,17 @@ async function renderModal(bookId, bookTitle) {
             </button>
           </form>
         </div>
+        ${libId ? `
+        <div class="border-t border-stone-700 pt-4 mt-4">
+          <h3 class="text-sm font-semibold text-stone-300 mb-2">Notes</h3>
+          <textarea id="book-notes" rows="4" placeholder="Quotes, context, anything you want to remember…"
+            class="w-full bg-stone-800 border border-stone-600 rounded px-2 py-1.5 text-sm resize-none focus:outline-none focus:border-amber-500">${escHtml(notes ?? '')}</textarea>
+          <button id="save-notes-btn"
+            class="mt-2 px-4 py-1.5 bg-stone-700 hover:bg-stone-600 rounded text-sm font-medium transition-colors">
+            Save notes
+          </button>
+          <span id="notes-saved" class="ml-2 text-xs text-green-400 opacity-0 transition-opacity">Saved</span>
+        </div>` : ''}
       </div>
     </div>`;
 
@@ -73,6 +84,19 @@ async function renderModal(bookId, bookTitle) {
   // Star rating state
   let selectedRating = 0;
   attachStarHandlers(document.getElementById('session-stars'), val => { selectedRating = val; });
+
+  // Notes save
+  const saveNotesBtn = document.getElementById('save-notes-btn');
+  if (saveNotesBtn && libId) {
+    saveNotesBtn.addEventListener('click', async () => {
+      const text = document.getElementById('book-notes').value;
+      await api.updateNotes(libId, text || null);
+      _onSessionSaved();
+      const savedEl = document.getElementById('notes-saved');
+      savedEl.style.opacity = '1';
+      setTimeout(() => { savedEl.style.opacity = '0'; }, 1500);
+    });
+  }
 
   // Load sessions
   loadSessions(bookId);

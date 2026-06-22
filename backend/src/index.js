@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { migrate } from './db.js';
+import authRouter, { authMiddleware } from './routes/auth.js';
 import searchRouter from './routes/search.js';
 import libraryRouter from './routes/library.js';
 import sessionsRouter from './routes/sessions.js';
@@ -8,8 +10,12 @@ import statsRouter from './routes/stats.js';
 import shelvesRouter from './routes/shelves.js';
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
+
+app.use('/api/auth', authRouter);
+app.use(authMiddleware);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/shelves', shelvesRouter);

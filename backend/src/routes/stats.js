@@ -17,7 +17,8 @@ router.get('/', async (req, res) => {
     pool.query(`SELECT ROUND(AVG(rating)::NUMERIC, 2) AS avg_rating
                 FROM reading_sessions WHERE rating IS NOT NULL`),
 
-    pool.query(`SELECT COUNT(*) AS count FROM library_books WHERE status = 'reading'`),
+    pool.query(`SELECT COUNT(*) AS count FROM library_books lb
+                JOIN shelves s ON s.id = lb.shelf_id WHERE s.slug = 'reading'`),
   ]);
 
   const yearMap = {};

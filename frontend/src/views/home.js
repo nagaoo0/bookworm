@@ -27,9 +27,10 @@ export function renderHome(container) {
 
   const byShelf = {};
   for (const s of shelves) byShelf[s.id] = library.filter(b => b.shelf_id === s.id);
+  const doneShelf = shelves.find(s => s.slug === 'done');
 
   container.innerHTML = `
-    ${shelves.map(shelf => renderShelfSection(shelf, byShelf[shelf.id] ?? [])).join('')}
+    ${shelves.map(shelf => renderShelfSection(shelf, byShelf[shelf.id] ?? [], doneShelf)).join('')}
     <div class="mt-6 pt-6 border-t border-stone-800">
       ${renderShelfManager(shelves)}
     </div>`;
@@ -39,8 +40,10 @@ export function renderHome(container) {
     card.addEventListener('click', e => {
       if (e.target.closest('button')) return;
       const bookId = card.dataset.bookId;
+      const libId = card.dataset.libId;
       const title = card.querySelector('h3')?.textContent ?? '';
-      if (bookId) openModal(bookId, title);
+      const notes = card.dataset.notes ?? null;
+      if (bookId) openModal(bookId, title, libId, notes);
     });
   });
 
@@ -55,6 +58,22 @@ export function renderHome(container) {
     });
   });
 
+  // ✓ Finish reading buttons
+  container.querySelectorAll('.finish-reading-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const card = btn.closest('.book-card');
+      const libId = card.dataset.libId;
+      const bookId = card.dataset.bookId;
+      const title = card.querySelector('h3')?.textContent ?? '';
+      const notes = card.dataset.notes ?? null;
+      if (!libId || !doneShelf) return;
+      await api.updateLibrary(libId, { shelfId: doneShelf.id });
+      await loadLibrary();
+      openModal(bookId, title, libId, notes);
+    });
+  });
+
   // Right-click to move between shelves
   attachMoveHandlers(container, shelves);
 
@@ -62,12 +81,13 @@ export function renderHome(container) {
   attachShelfManagerHandlers(container);
 }
 
-function renderShelfSection(shelf, books) {
+function renderShelfSection(shelf, books, doneShelf) {
   const dot = `<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${escHtml(shelf.color)}"></span>`;
+  const isReading = shelf.slug === 'reading';
 
   const grid = books.length
     ? `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
-         ${books.map(b => bookCardHTML(b)).join('')}
+         ${books.map(b => bookCardHTML(b, { isReading: isReading && !!doneShelf })).join('')}
        </div>`
     : `<p class="text-stone-500 italic text-sm py-3">No books here yet.</p>`;
 

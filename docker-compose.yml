@@ -23,6 +23,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-bookworm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-bookworm}
       GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
       PORT: 3000
     depends_on:
       db:

@@ -79,6 +79,8 @@ export async function migrate() {
       review       TEXT,
       created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS notes TEXT;
   `);
   console.log('Database schema ready.');
 }

@@ -1,6 +1,6 @@
 import { starRatingHTML } from './starRating.js';
 
-export function bookCardHTML(book, { showStatus = false, searchMode = false } = {}) {
+export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false } = {}) {
   // Support both snake_case (from DB/library) and camelCase (from search results)
   const coverSrc = book.cover_url ?? book.coverUrl ?? null;
   const coverImg = coverSrc
@@ -33,15 +33,25 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false } = 
                title="Remove from library">✕</button>`
     : '';
 
+  const finishBtn = isReading
+    ? `<button class="finish-reading-btn absolute top-1.5 left-1.5 z-10
+                      w-6 h-6 rounded-full bg-green-700/80 text-white text-xs
+                      opacity-0 group-hover:opacity-100 transition-opacity
+                      flex items-center justify-center hover:bg-green-500"
+               title="Mark as finished">✓</button>`
+    : '';
+
   return `
     <article class="book-card group relative flex flex-col cursor-pointer"
              data-book-id="${book.book_id ?? ''}"
              data-lib-id="${book.id ?? ''}"
-             data-google-id="${escHtml(book.googleId ?? '')}">
+             data-google-id="${escHtml(book.googleId ?? '')}"
+             data-notes="${escHtml(book.notes ?? '')}">
       <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-stone-800 shadow-lg
                   ring-1 ring-white/5 group-hover:ring-amber-500/40 transition-all">
         ${coverImg}
         <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+        ${finishBtn}
         ${removeBtn}
       </div>
       <div class="mt-2 flex-1 flex flex-col">

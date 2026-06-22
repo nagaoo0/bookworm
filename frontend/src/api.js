@@ -1,11 +1,19 @@
 const BASE = '/api';
 
+let _onUnauthorized = null;
+export function setOnUnauthorized(fn) { _onUnauthorized = fn; }
+
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
+  if (res.status === 401) {
+    _onUnauthorized?.();
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? res.statusText);
@@ -15,6 +23,9 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  login: (password) => request('/auth/login', { method: 'POST', body: { password } }),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+
   // accepts either a plain string (quick search) or a pre-built query string (advanced)
   search: (q) => request(`/search?${typeof q === 'string' && !q.includes('=') ? `q=${encodeURIComponent(q)}` : q}`),
 
@@ -26,6 +37,7 @@ export const api = {
   getLibrary: (shelfId) => request(`/library${shelfId ? `?shelfId=${shelfId}` : ''}`),
   addToLibrary: (book) => request('/library', { method: 'POST', body: book }),
   updateLibrary: (id, data) => request(`/library/${id}`, { method: 'PATCH', body: data }),
+  updateNotes: (id, notes) => request(`/library/${id}`, { method: 'PATCH', body: { notes } }),
   removeFromLibrary: (id) => request(`/library/${id}`, { method: 'DELETE' }),
 
   getSessions: (bookId) => request(`/books/${bookId}/sessions`),

@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
   const params = shelfId ? [shelfId] : [];
 
   const { rows } = await pool.query(
-    `SELECT lb.id, lb.shelf_id, lb.added_at,
+    `SELECT lb.id, lb.shelf_id, lb.notes, lb.added_at,
             s.name AS shelf_name, s.slug AS shelf_slug, s.color AS shelf_color,
             b.id AS book_id, b.google_id, b.title, b.authors,
             b.cover_url, b.page_count, b.published_date, b.description
@@ -82,14 +82,18 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/library/:id  { shelfId }
+// PATCH /api/library/:id  { shelfId?, notes? }
 router.patch('/:id', async (req, res) => {
-  const { shelfId } = req.body;
-  if (!shelfId) return res.status(400).json({ error: 'shelfId is required' });
+  const { shelfId, notes } = req.body;
+  if (shelfId == null && notes === undefined) return res.status(400).json({ error: 'shelfId or notes is required' });
 
   const { rows } = await pool.query(
-    `UPDATE library_books SET shelf_id = $1 WHERE id = $2 RETURNING *`,
-    [shelfId, req.params.id]
+    `UPDATE library_books
+     SET shelf_id = COALESCE($1, shelf_id),
+         notes    = CASE WHEN $2::boolean THEN $3 ELSE notes END
+     WHERE id = $4
+     RETURNING *`,
+    [shelfId ?? null, notes !== undefined, notes ?? null, req.params.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'Not found' });
   res.json(rows[0]);
