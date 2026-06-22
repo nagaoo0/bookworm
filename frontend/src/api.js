@@ -44,6 +44,7 @@ export const api = {
   deleteShelf: (id) => request(`/shelves/${id}`, { method: 'DELETE' }),
 
   getLibrary: (shelfId) => request(`/library${shelfId ? `?shelfId=${shelfId}` : ''}`),
+  getLibraryStatus: () => request('/library/status'),
   addToLibrary: (book) => request('/library', { method: 'POST', body: book }),
   updateLibrary: (id, data) => request(`/library/${id}`, { method: 'PATCH', body: data }),
   updateNotes: (id, notes) => request(`/library/${id}`, { method: 'PATCH', body: { notes } }),

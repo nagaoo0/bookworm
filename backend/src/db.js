@@ -42,9 +42,10 @@ export async function migrate() {
       created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
-    ALTER TABLE books ADD COLUMN IF NOT EXISTS isbn10     TEXT;
-    ALTER TABLE books ADD COLUMN IF NOT EXISTS isbn13     TEXT;
-    ALTER TABLE books ADD COLUMN IF NOT EXISTS publisher  TEXT;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS isbn10      TEXT;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS isbn13      TEXT;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS publisher   TEXT;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS categories  TEXT[];
 
     -- Users
     CREATE TABLE IF NOT EXISTS users (
@@ -93,8 +94,12 @@ export async function migrate() {
       book_id    INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
       shelf_id   INT REFERENCES shelves(id) ON DELETE SET NULL,
       notes      TEXT,
+      status     TEXT CHECK (status IN ('to_read','reading','done')),
       added_at   TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS status TEXT
+      CHECK (status IN ('to_read','reading','done'));
 
     -- Per-user reading sessions
     CREATE TABLE IF NOT EXISTS reading_sessions (

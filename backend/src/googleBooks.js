@@ -16,6 +16,7 @@ function normalize(item) {
     pageCount: v.pageCount ?? null,
     publishedDate: v.publishedDate ?? null,
     description: v.description ?? null,
+    categories: v.categories ?? null,
   };
 }
 

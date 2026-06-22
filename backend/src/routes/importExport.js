@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { parse } from 'csv-parse/sync';
 import { pool } from '../db.js';
+import { getBook } from '../googleBooks.js';
 
 const router = Router();
 
@@ -179,18 +180,20 @@ router.post('/import', async (req, res) => {
         [uid, bookId, shelfId]
       );
 
+      const csvStatusValue = STATUS_TO_SLUG[status] ?? 'to_read';
+
       let libId;
       if (existing) {
-        // Update notes on the existing entry
+        // Update notes/status on the existing entry
         await client.query(
-          `UPDATE library_books SET notes = COALESCE($1, notes) WHERE id = $2`,
-          [note, existing.id]
+          `UPDATE library_books SET notes = COALESCE($1, notes), status = COALESCE($2, status) WHERE id = $3`,
+          [note, csvStatusValue, existing.id]
         );
         libId = existing.id;
       } else {
         const { rows: [lb] } = await client.query(
-          `INSERT INTO library_books (user_id, book_id, shelf_id, notes) VALUES ($1, $2, $3, $4) RETURNING id`,
-          [uid, bookId, shelfId, note]
+          `INSERT INTO library_books (user_id, book_id, shelf_id, notes, status) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [uid, bookId, shelfId, note, csvStatusValue]
         );
         libId = lb.id;
         imported++;
@@ -227,6 +230,30 @@ router.post('/import', async (req, res) => {
   }
 
   res.json({ imported, skipped, total: records.length });
+
+  // Background: fetch cover images for books imported without one
+  backfillCovers().catch(() => {});
 });
+
+async function backfillCovers() {
+  const { rows } = await pool.query(
+    `SELECT id, google_id FROM books WHERE google_id IS NOT NULL AND cover_url IS NULL LIMIT 50`
+  );
+  for (const book of rows) {
+    try {
+      const meta = await getBook(book.google_id);
+      if (meta.coverUrl || meta.categories) {
+        await pool.query(
+          `UPDATE books SET
+             cover_url  = COALESCE($1, cover_url),
+             categories = COALESCE($2, categories)
+           WHERE id = $3`,
+          [meta.coverUrl ?? null, meta.categories ?? null, book.id]
+        );
+      }
+    } catch { /* skip individual failures */ }
+    await new Promise(r => setTimeout(r, 500)); // ~2 req/sec
+  }
+}
 
 export default router;

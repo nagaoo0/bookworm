@@ -217,6 +217,7 @@ function renderResults(container, results) {
           pageCount: book.pageCount,
           publishedDate: book.publishedDate,
           description: book.description,
+          categories: book.categories,
           shelfId,
         });
         btn.textContent = '✓ Added';

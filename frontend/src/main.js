@@ -16,8 +16,9 @@ document.getElementById('app').innerHTML = `
   <div class="min-h-screen flex flex-col">
     <header id="app-header" class="sticky top-0 z-40 bg-stone-950/90 backdrop-blur border-b border-stone-800 hidden">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-        <a href="#home" class="font-serif text-xl font-semibold text-amber-400 hover:text-amber-300 transition-colors">
-          📚 Bookworm
+        <a href="#home" class="flex items-center gap-2 font-serif text-xl font-semibold text-amber-400 hover:text-amber-300 transition-colors">
+          <img src="/logo.png" class="h-8 w-8 rounded-full" alt="" />
+          Bookworm
         </a>
         <nav class="flex gap-1 items-center">
           <a href="#home"     class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="home">Library</a>
