@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { pool, seedBuiltinShelves } from '../db.js';
+import { pool } from '../db.js';
 import {
   hashPassword, verifyPassword,
   createSession, setSessionCookie, clearSessionCookie,
@@ -64,9 +64,6 @@ router.post('/register', async (req, res) => {
        VALUES ($1, $2, $3) RETURNING id, username, is_admin, is_public`,
       [username.trim(), hash, isFirst]
     );
-
-    // Seed built-in shelves for new user
-    await seedBuiltinShelves(client, user.id);
 
     // Mark invite used
     if (!isFirst) {

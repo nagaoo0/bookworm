@@ -25,12 +25,10 @@ router.get('/', async (req, res) => {
       [uid]
     ),
     pool.query(
-      `SELECT COUNT(*) AS count FROM library_books lb
-       JOIN shelves s ON s.id = lb.shelf_id
-       WHERE lb.user_id = $1 AND s.slug = 'reading'`,
+      `SELECT COUNT(*) AS count FROM library_books
+       WHERE user_id = $1 AND status = 'reading'`,
       [uid]
     ),
-    // Monthly finished counts for last 2 years
     pool.query(
       `SELECT EXTRACT(YEAR FROM finished_at)::INT AS year,
               EXTRACT(MONTH FROM finished_at)::INT AS month,
@@ -41,8 +39,6 @@ router.get('/', async (req, res) => {
        GROUP BY year, month ORDER BY year, month`,
       [uid]
     ),
-    // Category breakdown from library_books status=done + books.description categories
-    // We store categories in books table if available; fall back to description keyword
     pool.query(
       `SELECT b.categories, COUNT(*) AS count
        FROM library_books lb
@@ -56,14 +52,12 @@ router.get('/', async (req, res) => {
   const yearMap = {};
   for (const row of perYear.rows) yearMap[row.year] = Number(row.count);
 
-  // Build monthly map: { year: { month: count } }
   const monthlyMap = {};
   for (const row of monthly.rows) {
     if (!monthlyMap[row.year]) monthlyMap[row.year] = {};
     monthlyMap[row.year][row.month] = Number(row.count);
   }
 
-  // Categories: flatten array columns
   const catMap = {};
   for (const row of categories.rows) {
     const cats = Array.isArray(row.categories) ? row.categories : [row.categories];

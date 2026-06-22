@@ -56,3 +56,40 @@ body {
   text-align: center;
   padding: 0.5rem;
 }
+
+/* Shelf chip bar */
+.shelf-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+.shelf-chip-active {
+  background: #f59e0b22;
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+.shelf-chip-idle {
+  background: transparent;
+  border-color: #44403c;
+  color: #a8a29e;
+}
+.shelf-chip-idle:hover {
+  border-color: #78716c;
+  color: #e7e5e4;
+}
+
+/* On touch devices: always show the card overlay buttons */
+@media (hover: none) {
+  .finish-reading-btn,
+  .remove-card-btn {
+    opacity: 1 !important;
+  }
+}

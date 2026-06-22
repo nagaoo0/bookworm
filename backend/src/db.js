@@ -26,7 +26,7 @@ async function waitForDb(retries = 15, delayMs = 2000) {
 export async function migrate() {
   await waitForDb();
   await pool.query(`
-    -- Global book metadata cache (no user data, kept across wipes)
+    -- Global book metadata cache
     CREATE TABLE IF NOT EXISTS books (
       id             SERIAL PRIMARY KEY,
       google_id      TEXT UNIQUE,
@@ -39,6 +39,7 @@ export async function migrate() {
       isbn10         TEXT,
       isbn13         TEXT,
       publisher      TEXT,
+      categories     TEXT[],
       created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
@@ -74,7 +75,7 @@ export async function migrate() {
       used_at     TIMESTAMPTZ
     );
 
-    -- Per-user shelves (slug unique per user, not globally)
+    -- Per-user custom shelves (collections — separate from status)
     CREATE TABLE IF NOT EXISTS shelves (
       id         SERIAL PRIMARY KEY,
       user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -87,19 +88,29 @@ export async function migrate() {
       UNIQUE(user_id, slug)
     );
 
-    -- Per-user library entries
-    CREATE TABLE IF NOT EXISTS library_books (
-      id         SERIAL PRIMARY KEY,
-      user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      book_id    INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-      shelf_id   INT REFERENCES shelves(id) ON DELETE SET NULL,
-      notes      TEXT,
-      status     TEXT CHECK (status IN ('to_read','reading','done')),
-      added_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    -- Per-user library: one row per (user, book). Status is the book's reading state.
+    DROP TABLE IF EXISTS shelf_memberships CASCADE;
+    DROP TABLE IF EXISTS library_books CASCADE;
+
+    CREATE TABLE library_books (
+      id        SERIAL PRIMARY KEY,
+      user_id   INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      book_id   INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      status    TEXT NOT NULL DEFAULT 'to_read'
+                  CHECK (status IN ('to_read','reading','done')),
+      notes     TEXT,
+      added_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (user_id, book_id)
     );
 
-    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS status TEXT
-      CHECK (status IN ('to_read','reading','done'));
+    -- Many-to-many: which shelves a library entry belongs to
+    CREATE TABLE shelf_memberships (
+      id              SERIAL PRIMARY KEY,
+      library_book_id INT NOT NULL REFERENCES library_books(id) ON DELETE CASCADE,
+      shelf_id        INT NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
+      added_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (library_book_id, shelf_id)
+    );
 
     -- Per-user reading sessions
     CREATE TABLE IF NOT EXISTS reading_sessions (
@@ -114,15 +125,4 @@ export async function migrate() {
     );
   `);
   console.log('Database schema ready.');
-}
-
-// Called once per user at registration to create the three default shelves
-export async function seedBuiltinShelves(client, userId) {
-  await client.query(`
-    INSERT INTO shelves (user_id, name, slug, color, is_builtin, sort_order) VALUES
-      ($1, 'Currently Reading', 'reading', '#f59e0b', true, 0),
-      ($1, 'To Read',           'to_read', '#64748b', true, 1),
-      ($1, 'Done',              'done',    '#22c55e', true, 2)
-    ON CONFLICT (user_id, slug) DO NOTHING
-  `, [userId]);
 }

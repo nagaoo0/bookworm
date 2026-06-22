@@ -7,6 +7,7 @@ let _state = {
   searchQuery: '',
   stats: null,
   modal: null,
+  selectedShelfId: null,  // null = All Books virtual view
   loading: false,
   error: null,
 };

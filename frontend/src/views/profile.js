@@ -67,7 +67,7 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed }
 
 function renderShelvesTab(shelves, library) {
   const byShelf = {};
-  for (const s of shelves) byShelf[s.id] = library.filter(b => b.shelf_id === s.id);
+  for (const s of shelves) byShelf[s.id] = library.filter(b => (b.shelf_ids ?? []).includes(s.id));
 
   const sections = shelves.map(shelf => {
     const books = byShelf[shelf.id] ?? [];

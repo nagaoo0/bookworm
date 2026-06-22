@@ -3,6 +3,14 @@ import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { loadLibrary } from './home.js';
 
+const LANGUAGES = [
+  ['', 'Any language'],
+  ['en', 'English'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'],
+  ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['ru', 'Russian'],
+  ['zh', 'Chinese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['ar', 'Arabic'],
+  ['pl', 'Polish'], ['sv', 'Swedish'], ['cs', 'Czech'],
+];
+
 function shelfSelectHTML(shelves, name = '_shelfId') {
   if (!shelves.length) return `<input type="hidden" name="${name}" value="" />`;
   return `
@@ -43,6 +51,14 @@ export function renderSearch(container) {
             ${advField('adv-subject',   'Genre / subject',  'e.g. science fiction')}
             ${advField('adv-publisher', 'Publisher',        'inpublisher: …')}
             ${advField('adv-isbn',      'ISBN',             '9780…')}
+            <div>
+              <label class="text-xs text-stone-400 block mb-1">Language</label>
+              <select id="adv-language"
+                class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm
+                       focus:outline-none focus:border-amber-500">
+                ${LANGUAGES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+              </select>
+            </div>
           </div>
           <button id="adv-search-btn"
             class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2 text-sm transition-colors">
@@ -51,7 +67,7 @@ export function renderSearch(container) {
         </div>
       </div>
 
-      <!-- Divider + manual add -->
+      <!-- Manual add -->
       <div class="flex items-center gap-3 pt-1">
         <div class="flex-1 border-t border-stone-700"></div>
         <span class="text-xs text-stone-500">or add manually</span>
@@ -67,7 +83,6 @@ export function renderSearch(container) {
 
     <div id="search-results" class="fade-in"></div>`;
 
-  // Quick search
   const input = container.querySelector('#search-input');
   input.focus();
   input.addEventListener('input', e => {
@@ -78,7 +93,6 @@ export function renderSearch(container) {
     debounceTimer = setTimeout(() => runSearch({ q }, container), 400);
   });
 
-  // Advanced toggle
   const advPanel = container.querySelector('#advanced-form');
   const advArrow = container.querySelector('#adv-arrow');
   container.querySelector('#toggle-advanced').addEventListener('click', () => {
@@ -86,28 +100,26 @@ export function renderSearch(container) {
     advArrow.textContent = hidden ? '▸' : '▾';
   });
 
-  // Advanced search submit
   container.querySelector('#adv-search-btn').addEventListener('click', () => {
     const params = {
-      title:     container.querySelector('#adv-title')?.value.trim() || undefined,
-      author:    container.querySelector('#adv-author')?.value.trim() || undefined,
-      subject:   container.querySelector('#adv-subject')?.value.trim() || undefined,
-      publisher: container.querySelector('#adv-publisher')?.value.trim() || undefined,
-      isbn:      container.querySelector('#adv-isbn')?.value.trim() || undefined,
+      title:     container.querySelector('#adv-title')?.value.trim()    || undefined,
+      author:    container.querySelector('#adv-author')?.value.trim()   || undefined,
+      subject:   container.querySelector('#adv-subject')?.value.trim()  || undefined,
+      publisher: container.querySelector('#adv-publisher')?.value.trim()|| undefined,
+      isbn:      container.querySelector('#adv-isbn')?.value.trim()     || undefined,
+      language:  container.querySelector('#adv-language')?.value        || undefined,
     };
-    const hasAny = Object.values(params).some(Boolean);
+    const hasAny = Object.entries(params).some(([k, v]) => k !== 'language' && v);
     if (!hasAny) return;
     runSearch(params, container);
   });
 
-  // Also trigger advanced search on Enter inside any advanced field
   container.querySelector('#advanced-form').addEventListener('keydown', e => {
     if (e.key === 'Enter') container.querySelector('#adv-search-btn').click();
   });
 
-  // Manual add toggle
   const manualWrapper = container.querySelector('#manual-form-wrapper');
-  const manualToggle = container.querySelector('#toggle-manual');
+  const manualToggle  = container.querySelector('#toggle-manual');
   manualToggle.addEventListener('click', () => {
     const hidden = manualWrapper.classList.toggle('hidden');
     manualToggle.textContent = hidden ? '+ Add a book manually' : '− Cancel';
@@ -159,9 +171,8 @@ function renderResults(container, results) {
       ${results.map(b => bookCardHTML(b, { searchMode: true })).join('')}
     </div>`;
 
-  const { shelves } = getState();
+  const { shelves, library } = getState();
 
-  const { library } = getState();
   const libraryByGoogleId = {};
   for (const lb of library) {
     if (lb.google_id) {
@@ -173,52 +184,50 @@ function renderResults(container, results) {
   el.querySelectorAll('.book-card').forEach(card => {
     const addArea = card.querySelector('.add-area');
     if (!addArea) return;
-    const book = findBookFromCard(card, results);
+    const book = results.find(b => b.googleId === card.dataset.googleId);
     if (!book) return;
 
     const existing = book.googleId ? (libraryByGoogleId[book.googleId] ?? []) : [];
 
-    const shelfSelect = `
-      <select class="shelf-select w-full bg-stone-800 border border-stone-700 rounded text-[11px] px-1.5 py-1
-                     focus:outline-none focus:border-amber-500">
-        ${shelves.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('')}
-      </select>`;
-
     if (existing.length) {
-      const shelfNames = [...new Set(existing.map(lb => lb.shelf_name).filter(Boolean))].join(', ');
       addArea.innerHTML = `
-        <p class="text-[10px] text-amber-400/80 leading-tight">On shelf: ${escHtml(shelfNames)}</p>
-        ${shelfSelect}
+        <p class="text-[10px] text-amber-400/80 leading-tight">Already in library</p>
         <button class="add-btn w-full text-[11px] px-2 py-1 rounded bg-stone-700
                        hover:bg-amber-500 hover:text-stone-950 transition-colors font-medium">
           + Read again
         </button>`;
     } else {
+      const shelfSelect = shelves.length ? `
+        <select class="shelf-select w-full bg-stone-800 border border-stone-700 rounded text-[11px] px-1.5 py-1
+                       focus:outline-none focus:border-amber-500">
+          <option value="">No shelf</option>
+          ${shelves.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('')}
+        </select>` : '';
       addArea.innerHTML = `
         ${shelfSelect}
         <button class="add-btn w-full text-[11px] px-2 py-1 rounded bg-stone-700
                        hover:bg-amber-500 hover:text-stone-950 transition-colors font-medium">
-          + Add to shelf
+          + Add to library
         </button>`;
     }
 
     addArea.querySelector('.add-btn').addEventListener('click', async e => {
       e.stopPropagation();
-      const shelfId = Number(addArea.querySelector('.shelf-select').value);
+      const shelfId = Number(addArea.querySelector('.shelf-select')?.value) || undefined;
       const btn = addArea.querySelector('.add-btn');
       btn.disabled = true;
       btn.textContent = '…';
       try {
         await api.addToLibrary({
-          googleId: book.googleId,
-          title: book.title,
-          authors: book.authors,
-          coverUrl: book.coverUrl,
-          pageCount: book.pageCount,
+          googleId:      book.googleId,
+          title:         book.title,
+          authors:       book.authors,
+          coverUrl:      book.coverUrl,
+          pageCount:     book.pageCount,
           publishedDate: book.publishedDate,
-          description: book.description,
-          categories: book.categories,
-          shelfId,
+          description:   book.description,
+          categories:    book.categories,
+          shelfId:       shelfId || undefined,
         });
         btn.textContent = '✓ Added';
         btn.classList.replace('bg-stone-700', 'bg-green-800');
@@ -257,10 +266,14 @@ function renderManualForm(wrapper) {
           <input name="publishedDate" placeholder="e.g. 1965"
             class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
         </div>
+        ${shelves.length ? `
         <div class="sm:col-span-2">
-          <label class="text-xs text-stone-400 block mb-1">Add to shelf</label>
-          ${shelfSelectHTML(shelves, 'shelfId')}
-        </div>
+          <label class="text-xs text-stone-400 block mb-1">Add to shelf (optional)</label>
+          <select name="shelfId" class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
+            <option value="">No shelf</option>
+            ${shelves.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('')}
+          </select>
+        </div>` : ''}
       </div>
       <button type="submit"
         class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2 text-sm transition-colors">
@@ -272,16 +285,15 @@ function renderManualForm(wrapper) {
   wrapper.querySelector('#manual-add-form').addEventListener('submit', async e => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const shelfId = Number(fd.get('shelfId'));
     const authorsRaw = (fd.get('authors') ?? '').trim();
-    const shelfName = shelves.find(s => s.id === shelfId)?.name ?? 'shelf';
+    const shelfId    = Number(fd.get('shelfId')) || undefined;
     const errEl = wrapper.querySelector('#manual-error');
     errEl.classList.add('hidden');
     try {
       await api.addToLibrary({
-        title: fd.get('title').trim(),
-        authors: authorsRaw ? authorsRaw.split(',').map(s => s.trim()) : [],
-        coverUrl: fd.get('coverUrl').trim() || null,
+        title:         fd.get('title').trim(),
+        authors:       authorsRaw ? authorsRaw.split(',').map(s => s.trim()) : [],
+        coverUrl:      fd.get('coverUrl').trim() || null,
         publishedDate: fd.get('publishedDate').trim() || null,
         shelfId,
       });
@@ -289,7 +301,7 @@ function renderManualForm(wrapper) {
       loadLibrary();
       wrapper.innerHTML = `
         <div class="text-green-400 text-sm text-center py-3 bg-stone-800 rounded-xl">
-          ✓ Book added to <strong>${escHtml(shelfName)}</strong>
+          ✓ Book added to your library
         </div>`;
       setTimeout(() => renderManualForm(wrapper), 2000);
     } catch (err) {
@@ -297,11 +309,6 @@ function renderManualForm(wrapper) {
       errEl.classList.remove('hidden');
     }
   });
-}
-
-function findBookFromCard(card, results) {
-  const googleId = card.dataset.googleId;
-  return results.find(b => b.googleId === googleId) ?? null;
 }
 
 function escHtml(str) {

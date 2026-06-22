@@ -33,21 +33,21 @@ router.patch('/:id', async (req, res) => {
     `UPDATE shelves
      SET name  = COALESCE($1, name),
          color = COALESCE($2, color)
-     WHERE id = $3 AND user_id = $4 AND is_builtin = false
+     WHERE id = $3 AND user_id = $4
      RETURNING *`,
     [name ?? null, color ?? null, req.params.id, req.user.id]
   );
-  if (!rows.length) return res.status(404).json({ error: 'Not found or built-in shelf cannot be modified' });
+  if (!rows.length) return res.status(404).json({ error: 'Not found' });
   res.json(rows[0]);
 });
 
 // DELETE /api/shelves/:id
 router.delete('/:id', async (req, res) => {
   const { rowCount } = await pool.query(
-    `DELETE FROM shelves WHERE id = $1 AND user_id = $2 AND is_builtin = false`,
+    `DELETE FROM shelves WHERE id = $1 AND user_id = $2`,
     [req.params.id, req.user.id]
   );
-  if (!rowCount) return res.status(404).json({ error: 'Not found or built-in shelf cannot be deleted' });
+  if (!rowCount) return res.status(404).json({ error: 'Not found' });
   res.status(204).end();
 });
 

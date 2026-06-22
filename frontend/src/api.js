@@ -35,7 +35,6 @@ export const api = {
 
   getProfile: (username) => request(`/profiles/${username}`),
 
-  // accepts either a plain string (quick search) or a pre-built query string (advanced)
   search: (q) => request(`/search?${typeof q === 'string' && !q.includes('=') ? `q=${encodeURIComponent(q)}` : q}`),
 
   getShelves: () => request('/shelves'),
@@ -43,12 +42,29 @@ export const api = {
   updateShelf: (id, data) => request(`/shelves/${id}`, { method: 'PATCH', body: data }),
   deleteShelf: (id) => request(`/shelves/${id}`, { method: 'DELETE' }),
 
-  getLibrary: (shelfId) => request(`/library${shelfId ? `?shelfId=${shelfId}` : ''}`),
+  // Library: one row per (user, book), status on the row
+  getLibrary: ({ shelfId, status } = {}) => {
+    const p = new URLSearchParams();
+    if (shelfId) p.set('shelfId', shelfId);
+    if (status)  p.set('status', status);
+    const qs = p.toString();
+    return request(`/library${qs ? `?${qs}` : ''}`);
+  },
   getLibraryStatus: () => request('/library/status'),
   addToLibrary: (book) => request('/library', { method: 'POST', body: book }),
-  updateLibrary: (id, data) => request(`/library/${id}`, { method: 'PATCH', body: data }),
+  setStatus: (id, status) => request(`/library/${id}`, { method: 'PATCH', body: { status } }),
   updateNotes: (id, notes) => request(`/library/${id}`, { method: 'PATCH', body: { notes } }),
   removeFromLibrary: (id) => request(`/library/${id}`, { method: 'DELETE' }),
+
+  // Shelf memberships
+  addShelfMembership: (libId, shelfId) =>
+    request(`/library/${libId}/shelves`, { method: 'POST', body: { shelfId } }),
+  removeShelfMembership: (libId, shelfId) =>
+    request(`/library/${libId}/shelves/${shelfId}`, { method: 'DELETE' }),
+
+  // Metadata patch (updates the underlying book record)
+  updateMetadata: (libId, data) =>
+    request(`/library/${libId}/metadata`, { method: 'PATCH', body: data }),
 
   getSessions: (bookId) => request(`/books/${bookId}/sessions`),
   addSession: (bookId, data) => request(`/books/${bookId}/sessions`, { method: 'POST', body: data }),
