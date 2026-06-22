@@ -1,11 +1,12 @@
 let _state = {
   route: 'home',
-  shelves: [],       // all shelves from API
-  library: [],       // all library_books with book + shelf data
+  user: null,         // { id, username, isAdmin, isPublic } or null
+  shelves: [],
+  library: [],
   searchResults: [],
   searchQuery: '',
   stats: null,
-  modal: null,       // { bookId, bookTitle } or null
+  modal: null,
   loading: false,
   error: null,
 };

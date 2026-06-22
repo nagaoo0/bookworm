@@ -1,6 +1,6 @@
 import { starRatingHTML } from './starRating.js';
 
-export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false } = {}) {
+export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false, readOnly = false } = {}) {
   // Support both snake_case (from DB/library) and camelCase (from search results)
   const coverSrc = book.cover_url ?? book.coverUrl ?? null;
   const coverImg = coverSrc
@@ -25,7 +25,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
     ? `<div class="add-area mt-2 space-y-1"></div>`
     : '';
 
-  const removeBtn = !searchMode
+  const removeBtn = !searchMode && !readOnly
     ? `<button class="remove-card-btn absolute top-1.5 right-1.5 z-10
                       w-6 h-6 rounded-full bg-black/70 text-white text-xs
                       opacity-0 group-hover:opacity-100 transition-opacity
@@ -33,7 +33,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
                title="Remove from library">✕</button>`
     : '';
 
-  const finishBtn = isReading
+  const finishBtn = isReading && !readOnly
     ? `<button class="finish-reading-btn absolute top-1.5 left-1.5 z-10
                       w-6 h-6 rounded-full bg-green-700/80 text-white text-xs
                       opacity-0 group-hover:opacity-100 transition-opacity
@@ -42,7 +42,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
     : '';
 
   return `
-    <article class="book-card group relative flex flex-col cursor-pointer"
+    <article class="book-card group relative flex flex-col ${readOnly ? 'cursor-default' : 'cursor-pointer'}"
              data-book-id="${book.book_id ?? ''}"
              data-lib-id="${book.id ?? ''}"
              data-google-id="${escHtml(book.googleId ?? '')}"

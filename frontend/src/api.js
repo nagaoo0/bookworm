@@ -23,8 +23,17 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  login: (password) => request('/auth/login', { method: 'POST', body: { password } }),
+  me: () => request('/auth/me'),
+  register: (data) => request('/auth/register', { method: 'POST', body: data }),
+  login: (data) => request('/auth/login', { method: 'POST', body: data }),
   logout: () => request('/auth/logout', { method: 'POST' }),
+  updateMe: (data) => request('/auth/me', { method: 'PATCH', body: data }),
+
+  getInvites: () => request('/invites'),
+  createInvite: () => request('/invites', { method: 'POST' }),
+  deleteInvite: (code) => request(`/invites/${code}`, { method: 'DELETE' }),
+
+  getProfile: (username) => request(`/profiles/${username}`),
 
   // accepts either a plain string (quick search) or a pre-built query string (advanced)
   search: (q) => request(`/search?${typeof q === 'string' && !q.includes('=') ? `q=${encodeURIComponent(q)}` : q}`),

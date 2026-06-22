@@ -7,8 +7,13 @@ const router = Router();
 // GET /api/library?shelfId=
 router.get('/', async (req, res) => {
   const { shelfId } = req.query;
-  const where = shelfId ? 'WHERE lb.shelf_id = $1' : '';
-  const params = shelfId ? [shelfId] : [];
+  const conditions = ['lb.user_id = $1'];
+  const params = [req.user.id];
+
+  if (shelfId) {
+    params.push(shelfId);
+    conditions.push(`lb.shelf_id = $${params.length}`);
+  }
 
   const { rows } = await pool.query(
     `SELECT lb.id, lb.shelf_id, lb.notes, lb.added_at,
@@ -18,7 +23,7 @@ router.get('/', async (req, res) => {
      FROM library_books lb
      JOIN books b ON b.id = lb.book_id
      LEFT JOIN shelves s ON s.id = lb.shelf_id
-     ${where}
+     WHERE ${conditions.join(' AND ')}
      ORDER BY lb.added_at DESC`,
     params
   );
@@ -31,7 +36,6 @@ router.post('/', async (req, res) => {
 
   if (!shelfId) return res.status(400).json({ error: 'shelfId is required' });
 
-  // Fetch metadata from Google Books if only googleId given
   if (googleId && !title) {
     try {
       const meta = await getBook(googleId);
@@ -67,8 +71,8 @@ router.post('/', async (req, res) => {
     }
 
     const { rows: [lb] } = await client.query(
-      `INSERT INTO library_books (book_id, shelf_id) VALUES ($1, $2) RETURNING *`,
-      [book.id, shelfId]
+      `INSERT INTO library_books (user_id, book_id, shelf_id) VALUES ($1, $2, $3) RETURNING *`,
+      [req.user.id, book.id, shelfId]
     );
 
     await client.query('COMMIT');
@@ -91,9 +95,9 @@ router.patch('/:id', async (req, res) => {
     `UPDATE library_books
      SET shelf_id = COALESCE($1, shelf_id),
          notes    = CASE WHEN $2::boolean THEN $3 ELSE notes END
-     WHERE id = $4
+     WHERE id = $4 AND user_id = $5
      RETURNING *`,
-    [shelfId ?? null, notes !== undefined, notes ?? null, req.params.id]
+    [shelfId ?? null, notes !== undefined, notes ?? null, req.params.id, req.user.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'Not found' });
   res.json(rows[0]);
@@ -102,8 +106,8 @@ router.patch('/:id', async (req, res) => {
 // DELETE /api/library/:id
 router.delete('/:id', async (req, res) => {
   const { rowCount } = await pool.query(
-    `DELETE FROM library_books WHERE id = $1`,
-    [req.params.id]
+    `DELETE FROM library_books WHERE id = $1 AND user_id = $2`,
+    [req.params.id, req.user.id]
   );
   if (!rowCount) return res.status(404).json({ error: 'Not found' });
   res.status(204).end();

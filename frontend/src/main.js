@@ -3,13 +3,15 @@ import { getState, setState, subscribe } from './store.js';
 import { renderHome, loadLibrary } from './views/home.js';
 import { renderSearch } from './views/search.js';
 import { renderStats } from './views/stats.js';
-import { renderLogin } from './views/login.js';
+import { renderAuth } from './views/auth.js';
+import { renderSettings } from './views/settings.js';
+import { renderProfile } from './views/profile.js';
 import { setOnSessionSaved } from './components/modal.js';
 import { api, setOnUnauthorized } from './api.js';
 
 setOnSessionSaved(loadLibrary);
 
-// ── Layout ───────────────────────────────────────────────────────────────────
+// ── Layout ─────────────────────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
   <div class="min-h-screen flex flex-col">
     <header id="app-header" class="sticky top-0 z-40 bg-stone-950/90 backdrop-blur border-b border-stone-800 hidden">
@@ -18,10 +20,12 @@ document.getElementById('app').innerHTML = `
           📚 Bookworm
         </a>
         <nav class="flex gap-1 items-center">
-          <a href="#home"   class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="home">Library</a>
-          <a href="#search" class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="search">Search</a>
-          <a href="#stats"  class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="stats">Stats</a>
-          <button id="logout-btn" class="ml-2 px-3 py-1.5 rounded-lg text-sm font-medium text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">Sign out</button>
+          <a href="#home"     class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="home">Library</a>
+          <a href="#search"   class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="search">Search</a>
+          <a href="#stats"    class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="stats">Stats</a>
+          <a href="#settings" class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
+          <span id="nav-username" class="ml-2 text-xs text-stone-500"></span>
+          <button id="logout-btn" class="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">Sign out</button>
         </nav>
       </div>
     </header>
@@ -31,37 +35,39 @@ document.getElementById('app').innerHTML = `
 const mainEl = document.getElementById('main-content');
 const headerEl = document.getElementById('app-header');
 
-let _logoutWired = false;
-function showApp() {
+function showApp(user) {
+  setState({ user });
   headerEl.classList.remove('hidden');
-  if (!_logoutWired) {
-    _logoutWired = true;
-    document.getElementById('logout-btn').addEventListener('click', async () => {
-      await api.logout();
-      showLogin();
-    });
-  }
+  document.getElementById('nav-username').textContent = user.username;
   loadLibrary().then(() => navigate(getRoute()));
 }
 
-function showLogin() {
+function showAuth() {
   headerEl.classList.add('hidden');
-  setState({ shelves: [], library: [] });
-  renderLogin(mainEl, showApp);
+  setState({ user: null, shelves: [], library: [] });
+  renderAuth(mainEl, showApp);
 }
 
-setOnUnauthorized(showLogin);
+setOnUnauthorized(showAuth);
 
-// ── Router ────────────────────────────────────────────────────────────────────
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await api.logout();
+  showAuth();
+});
+
+// ── Router ─────────────────────────────────────────────────────────────────────
+const ROUTES = ['home', 'search', 'stats', 'settings'];
+
 function getRoute() {
   const hash = location.hash.slice(1) || 'home';
-  return ['home', 'search', 'stats'].includes(hash) ? hash : 'home';
+  if (ROUTES.includes(hash)) return hash;
+  if (hash.startsWith('u/')) return hash; // public profile
+  return 'home';
 }
 
 async function navigate(route) {
   setState({ route });
 
-  // Update nav active state
   document.querySelectorAll('.nav-link').forEach(a => {
     const active = a.dataset.route === route;
     a.className = `nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -70,31 +76,44 @@ async function navigate(route) {
   });
 
   mainEl.classList.remove('fade-in');
-  void mainEl.offsetWidth; // reflow to retrigger animation
+  void mainEl.offsetWidth;
   mainEl.classList.add('fade-in');
 
   if (route === 'home') {
     renderHome(mainEl);
   } else if (route === 'search') {
-    // Ensure shelves are loaded before search view renders shelf selectors
     if (!getState().shelves.length) await loadLibrary();
     renderSearch(mainEl);
   } else if (route === 'stats') {
     await renderStats(mainEl);
+  } else if (route === 'settings') {
+    await renderSettings(mainEl);
+  } else if (route.startsWith('u/')) {
+    const username = route.slice(2);
+    await renderProfile(mainEl, username);
   }
 }
 
-// Subscribe to state changes to re-render the active view
 subscribe(state => {
   if (state.route === 'home') renderHome(mainEl);
 });
 
-// Hash-based routing
-window.addEventListener('hashchange', () => navigate(getRoute()));
+window.addEventListener('hashchange', () => {
+  const route = getRoute();
+  // Public profiles are accessible even when logged out
+  if (route.startsWith('u/')) {
+    navigate(route);
+  } else if (getState().user) {
+    navigate(route);
+  }
+});
 
-// Initial load — probe the API; show login on 401, app otherwise
+// Bootstrap — try to restore session via /me
 (async () => {
-  const res = await fetch('/api/health', { credentials: 'include' });
-  if (res.status === 401) showLogin();
-  else showApp();
+  try {
+    const user = await api.me();
+    showApp(user);
+  } catch {
+    showAuth();
+  }
 })();

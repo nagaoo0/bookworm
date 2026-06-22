@@ -74,7 +74,6 @@ npm run dev
 | `POSTGRES_USER` | `bookworm` | Database user |
 | `POSTGRES_PASSWORD` | — | **Required.** Database password |
 | `GOOGLE_BOOKS_API_KEY` | _(empty)_ | Optional — higher API quota |
-| `AUTH_PASSWORD` | _(empty)_ | Optional — if set, a password gate is shown before the app loads |
 | `API_PORT` | `3000` | Host port for the API container |
 | `FRONTEND_PORT` | `8080` | Host port for the frontend container |
 
@@ -85,7 +84,7 @@ npm run dev
 3. Run `docker compose up --build -d`.
 4. Put a reverse proxy (Nginx, Caddy, Traefik) in front to add HTTPS.
 
-There is no authentication in v1 — gate the frontend behind your reverse proxy's basic auth or a VPN until auth is added.
+The first account you register becomes the admin. Subsequent registrations require an invite code, which the admin generates from Settings.
 
 Example Caddy snippet:
 
