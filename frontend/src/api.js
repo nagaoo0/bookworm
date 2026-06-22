@@ -15,9 +15,15 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
+  // accepts either a plain string (quick search) or a pre-built query string (advanced)
+  search: (q) => request(`/search?${typeof q === 'string' && !q.includes('=') ? `q=${encodeURIComponent(q)}` : q}`),
 
-  getLibrary: (status) => request(`/library${status ? `?status=${status}` : ''}`),
+  getShelves: () => request('/shelves'),
+  createShelf: (data) => request('/shelves', { method: 'POST', body: data }),
+  updateShelf: (id, data) => request(`/shelves/${id}`, { method: 'PATCH', body: data }),
+  deleteShelf: (id) => request(`/shelves/${id}`, { method: 'DELETE' }),
+
+  getLibrary: (shelfId) => request(`/library${shelfId ? `?shelfId=${shelfId}` : ''}`),
   addToLibrary: (book) => request('/library', { method: 'POST', body: book }),
   updateLibrary: (id, data) => request(`/library/${id}`, { method: 'PATCH', body: data }),
   removeFromLibrary: (id) => request(`/library/${id}`, { method: 'DELETE' }),

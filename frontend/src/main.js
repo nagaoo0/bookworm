@@ -51,6 +51,8 @@ async function navigate(route) {
   if (route === 'home') {
     renderHome(mainEl);
   } else if (route === 'search') {
+    // Ensure shelves are loaded before search view renders shelf selectors
+    if (!getState().shelves.length) await loadLibrary();
     renderSearch(mainEl);
   } else if (route === 'stats') {
     await renderStats(mainEl);

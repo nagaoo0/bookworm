@@ -5,12 +5,14 @@ import searchRouter from './routes/search.js';
 import libraryRouter from './routes/library.js';
 import sessionsRouter from './routes/sessions.js';
 import statsRouter from './routes/stats.js';
+import shelvesRouter from './routes/shelves.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.use('/api/shelves', shelvesRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/library', libraryRouter);
 app.use('/api/books/:bookId/sessions', sessionsRouter);

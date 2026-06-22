@@ -1,10 +1,11 @@
 let _state = {
-  route: 'home',    // 'home' | 'search' | 'stats'
-  library: [],      // all library_books with book data
+  route: 'home',
+  shelves: [],       // all shelves from API
+  library: [],       // all library_books with book + shelf data
   searchResults: [],
   searchQuery: '',
   stats: null,
-  modal: null,      // { bookId, bookTitle } or null
+  modal: null,       // { bookId, bookTitle } or null
   loading: false,
   error: null,
 };

@@ -1,8 +1,10 @@
 import { starRatingHTML } from './starRating.js';
 
 export function bookCardHTML(book, { showStatus = false, searchMode = false } = {}) {
-  const coverImg = book.cover_url
-    ? `<img src="${book.cover_url}" alt="${escHtml(book.title)}" class="w-full h-full object-cover" loading="lazy" />`
+  // Support both snake_case (from DB/library) and camelCase (from search results)
+  const coverSrc = book.cover_url ?? book.coverUrl ?? null;
+  const coverImg = coverSrc
+    ? `<img src="${coverSrc}" alt="${escHtml(book.title)}" class="w-full h-full object-cover" loading="lazy" />`
     : `<div class="cover-placeholder w-full h-full font-serif text-xs">${escHtml(book.title)}</div>`;
 
   const authors = Array.isArray(book.authors) ? book.authors.join(', ') : (book.authors ?? '');
@@ -18,12 +20,17 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false } = 
        </span>`
     : '';
 
+  // Add button — shelf selector is injected by search view after render
   const addButtons = searchMode
-    ? `<div class="flex gap-1 mt-2 flex-wrap" data-google-id="${escHtml(book.googleId ?? '')}">
-        <button class="add-btn text-[11px] px-2 py-1 rounded bg-stone-700 hover:bg-amber-500 hover:text-stone-950 transition-colors" data-status="to_read">+ To Read</button>
-        <button class="add-btn text-[11px] px-2 py-1 rounded bg-stone-700 hover:bg-amber-500 hover:text-stone-950 transition-colors" data-status="reading">+ Reading</button>
-        <button class="add-btn text-[11px] px-2 py-1 rounded bg-stone-700 hover:bg-amber-500 hover:text-stone-950 transition-colors" data-status="done">+ Done</button>
-       </div>`
+    ? `<div class="add-area mt-2 space-y-1"></div>`
+    : '';
+
+  const removeBtn = !searchMode
+    ? `<button class="remove-card-btn absolute top-1.5 right-1.5 z-10
+                      w-6 h-6 rounded-full bg-black/70 text-white text-xs
+                      opacity-0 group-hover:opacity-100 transition-opacity
+                      flex items-center justify-center hover:bg-red-600"
+               title="Remove from library">✕</button>`
     : '';
 
   return `
@@ -35,6 +42,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false } = 
                   ring-1 ring-white/5 group-hover:ring-amber-500/40 transition-all">
         ${coverImg}
         <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+        ${removeBtn}
       </div>
       <div class="mt-2 flex-1 flex flex-col">
         <h3 class="font-serif text-sm font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(book.title)}</h3>

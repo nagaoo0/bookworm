@@ -4,18 +4,20 @@ import { getBook } from '../googleBooks.js';
 
 const router = Router();
 
-// GET /api/library?status=to_read|reading|done
+// GET /api/library?shelfId=
 router.get('/', async (req, res) => {
-  const { status } = req.query;
-  const where = status ? 'WHERE lb.status = $1' : '';
-  const params = status ? [status] : [];
+  const { shelfId } = req.query;
+  const where = shelfId ? 'WHERE lb.shelf_id = $1' : '';
+  const params = shelfId ? [shelfId] : [];
 
   const { rows } = await pool.query(
-    `SELECT lb.id, lb.status, lb.added_at,
+    `SELECT lb.id, lb.shelf_id, lb.added_at,
+            s.name AS shelf_name, s.slug AS shelf_slug, s.color AS shelf_color,
             b.id AS book_id, b.google_id, b.title, b.authors,
             b.cover_url, b.page_count, b.published_date, b.description
      FROM library_books lb
      JOIN books b ON b.id = lb.book_id
+     LEFT JOIN shelves s ON s.id = lb.shelf_id
      ${where}
      ORDER BY lb.added_at DESC`,
     params
@@ -23,18 +25,18 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
-// POST /api/library  { googleId?, title, authors, coverUrl, pageCount, publishedDate, description, status }
+// POST /api/library  { googleId?, title, authors, coverUrl, ..., shelfId }
 router.post('/', async (req, res) => {
-  let { googleId, title, authors, coverUrl, pageCount, publishedDate, description, status } = req.body;
+  let { googleId, title, authors, coverUrl, pageCount, publishedDate, description, shelfId } = req.body;
 
-  if (!status) return res.status(400).json({ error: 'status is required' });
+  if (!shelfId) return res.status(400).json({ error: 'shelfId is required' });
 
-  // If only googleId provided, fetch metadata from Google Books
+  // Fetch metadata from Google Books if only googleId given
   if (googleId && !title) {
     try {
       const meta = await getBook(googleId);
       ({ title, authors, coverUrl, pageCount, publishedDate, description } = meta);
-    } catch (err) {
+    } catch {
       return res.status(502).json({ error: 'Could not fetch book metadata' });
     }
   }
@@ -44,21 +46,29 @@ router.post('/', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Upsert book
-    const { rows: [book] } = await client.query(
-      `INSERT INTO books (google_id, title, authors, cover_url, page_count, published_date, description)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (google_id) DO UPDATE SET
-         title = EXCLUDED.title,
-         authors = EXCLUDED.authors,
-         cover_url = EXCLUDED.cover_url
-       RETURNING id`,
-      [googleId ?? null, title, authors ?? [], coverUrl ?? null, pageCount ?? null, publishedDate ?? null, description ?? null]
-    );
+    let book;
+    if (googleId) {
+      const { rows } = await client.query(
+        `INSERT INTO books (google_id, title, authors, cover_url, page_count, published_date, description)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (google_id) DO UPDATE SET
+           title = EXCLUDED.title, authors = EXCLUDED.authors, cover_url = EXCLUDED.cover_url
+         RETURNING id`,
+        [googleId, title, authors ?? [], coverUrl ?? null, pageCount ?? null, publishedDate ?? null, description ?? null]
+      );
+      book = rows[0];
+    } else {
+      const { rows } = await client.query(
+        `INSERT INTO books (google_id, title, authors, cover_url, page_count, published_date, description)
+         VALUES (NULL, $1, $2, $3, $4, $5, $6) RETURNING id`,
+        [title, authors ?? [], coverUrl ?? null, pageCount ?? null, publishedDate ?? null, description ?? null]
+      );
+      book = rows[0];
+    }
 
     const { rows: [lb] } = await client.query(
-      `INSERT INTO library_books (book_id, status) VALUES ($1, $2) RETURNING *`,
-      [book.id, status]
+      `INSERT INTO library_books (book_id, shelf_id) VALUES ($1, $2) RETURNING *`,
+      [book.id, shelfId]
     );
 
     await client.query('COMMIT');
@@ -72,14 +82,14 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/library/:id  { status }
+// PATCH /api/library/:id  { shelfId }
 router.patch('/:id', async (req, res) => {
-  const { status } = req.body;
-  if (!status) return res.status(400).json({ error: 'status is required' });
+  const { shelfId } = req.body;
+  if (!shelfId) return res.status(400).json({ error: 'shelfId is required' });
 
   const { rows } = await pool.query(
-    `UPDATE library_books SET status = $1 WHERE id = $2 RETURNING *`,
-    [status, req.params.id]
+    `UPDATE library_books SET shelf_id = $1 WHERE id = $2 RETURNING *`,
+    [shelfId, req.params.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'Not found' });
   res.json(rows[0]);

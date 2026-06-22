@@ -19,8 +19,23 @@ function normalize(item) {
   };
 }
 
-export async function searchBooks(query, maxResults = 20) {
-  const params = new URLSearchParams({ q: query, maxResults, printType: 'books' });
+// Build a Google Books query string from structured fields
+export function buildQuery({ q, title, author, subject, publisher, isbn }) {
+  const parts = [];
+  if (q)         parts.push(q.trim());
+  if (title)     parts.push(`intitle:${title.trim()}`);
+  if (author)    parts.push(`inauthor:${author.trim()}`);
+  if (subject)   parts.push(`subject:${subject.trim()}`);
+  if (publisher) parts.push(`inpublisher:${publisher.trim()}`);
+  if (isbn)      parts.push(`isbn:${isbn.trim()}`);
+  return parts.join('+');
+}
+
+export async function searchBooks(queryObj, maxResults = 20) {
+  const q = typeof queryObj === 'string' ? queryObj : buildQuery(queryObj);
+  if (!q) throw new Error('At least one search field is required');
+
+  const params = new URLSearchParams({ q, maxResults, printType: 'books' });
   if (process.env.GOOGLE_BOOKS_API_KEY) params.set('key', process.env.GOOGLE_BOOKS_API_KEY);
 
   const res = await fetch(`${BASE}?${params}`);
