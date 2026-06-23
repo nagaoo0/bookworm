@@ -3,9 +3,8 @@ import { pool } from '../db.js';
 import {
   hashPassword, verifyPassword,
   createSession, setSessionCookie, clearSessionCookie,
-  authMiddleware,
+  authMiddleware, verifyRecaptcha,
 } from '../auth.js';
-import { verifyRecaptcha } from '../auth.js';
 
 const router = Router();
 
@@ -90,7 +89,7 @@ router.post('/register', async (req, res) => {
     res.status(201).json({ id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    if (err.constraint === 'users_username_key')
+    if (err.code === '23505')
       return res.status(409).json({ error: 'Username already taken' });
     console.error(err);
     res.status(500).json({ error: 'Registration failed' });

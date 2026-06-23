@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:hondana.app)",
-      "Bash(npm install *)",
-      "Skill(code-review)"
-    ]
-  }
-}

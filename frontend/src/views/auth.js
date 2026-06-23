@@ -29,13 +29,12 @@ export function renderAuth(container, onSuccess) {
                 class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
                        focus:outline-none focus:border-amber-500 transition-colors" />
             </div>
-            ${isRegister ? '' : ''}
             ${isRegister ? `
-            <div id="recaptcha-status" class="text-stone-400 text-xs">Loading anti-bot check...</div>
+            <div id="recaptcha-status" class="text-stone-400 text-xs"></div>
             <input type="hidden" name="recaptchaToken" id="recaptcha-token" />
             ` : ''}
-            <button type="submit"
-              class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+            <button type="submit" id="submit-btn"
+              class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               ${isRegister ? 'Create account' : 'Sign in'}
             </button>
             <p id="auth-error" class="text-red-400 text-xs text-center hidden"></p>
@@ -48,10 +47,8 @@ export function renderAuth(container, onSuccess) {
         </div>
       </div>`;
 
-    // Check if there are any users (to show the hint)
     if (isRegister) {
-      checkFirstUser(container);
-      await loadRecaptcha(container);
+      loadRecaptcha(container);
     }
 
     container.querySelector('#toggle-mode').addEventListener('click', () => {
@@ -62,37 +59,41 @@ export function renderAuth(container, onSuccess) {
     container.querySelector('#auth-form').addEventListener('submit', async e => {
       e.preventDefault();
       const errEl = container.querySelector('#auth-error');
+      const submitBtn = container.querySelector('#submit-btn');
       errEl.classList.add('hidden');
+
       const fd = new FormData(e.target);
       const username = fd.get('username')?.trim();
       const password = fd.get('password');
-  const recaptchaToken = fd.get('recaptchaToken') || undefined;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = mode === 'login' ? 'Signing in…' : 'Creating account…';
 
       try {
         let user;
         if (mode === 'login') {
           user = await api.login({ username, password });
         } else {
-          // Ensure we have a fresh recaptcha token if grecaptcha is available
           const tokenEl = container.querySelector('#recaptcha-token');
           const siteKey = window._recaptchaSiteKey || (await api.getRecaptchaSiteKey().catch(() => null))?.siteKey;
           if (window.grecaptcha && siteKey) {
             try {
               const tok = await window.grecaptcha.execute(siteKey, { action: 'register' });
               if (tokenEl) tokenEl.value = tok;
-              // store for future submits
               window._recaptchaSiteKey = siteKey;
-            } catch (e) {
-              // ignore; token may be empty
+            } catch (_) {
+              // ignore; backend will validate
             }
           }
-          const recaptchaTokenNow = (container.querySelector('#recaptcha-token') || {}).value;
-          user = await api.register({ username, password, recaptchaToken: recaptchaTokenNow });
+          const recaptchaToken = container.querySelector('#recaptcha-token')?.value || undefined;
+          user = await api.register({ username, password, recaptchaToken });
         }
         onSuccess(user);
       } catch (err) {
         errEl.textContent = err.message;
         errEl.classList.remove('hidden');
+        submitBtn.disabled = false;
+        submitBtn.textContent = mode === 'login' ? 'Sign in' : 'Create account';
       }
     });
   }
@@ -103,15 +104,22 @@ export function renderAuth(container, onSuccess) {
 async function loadRecaptcha(container) {
   const statusEl = container.querySelector('#recaptcha-status');
   const tokenEl = container.querySelector('#recaptcha-token');
-  if (statusEl) statusEl.textContent = 'Loading anti-bot check...';
   if (!tokenEl) return;
+
+  let res;
   try {
-    const res = await api.getRecaptchaSiteKey();
-    const siteKey = res.siteKey;
-  if (!siteKey) throw new Error('No site key');
+    res = await api.getRecaptchaSiteKey();
+  } catch (_) {
+    // reCAPTCHA not configured — hide status entirely
+    return;
+  }
+
+  const siteKey = res?.siteKey;
+  if (!siteKey) return;
+
   window._recaptchaSiteKey = siteKey;
 
-    // If grecaptcha not already loaded, inject script
+  try {
     if (!window.grecaptcha) {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
@@ -123,29 +131,13 @@ async function loadRecaptcha(container) {
         document.head.appendChild(s);
       });
     }
-    statusEl.textContent = 'Anti-bot ready';
-    // Pre-execute a token for the 'register' action and store it; tokens are short-lived so we'll fetch again on submit too.
     if (window.grecaptcha && typeof window.grecaptcha.execute === 'function') {
       const token = await window.grecaptcha.execute(siteKey, { action: 'register' });
       tokenEl.value = token;
     }
+    if (statusEl) statusEl.textContent = '';
   } catch (err) {
-    if (statusEl) statusEl.textContent = `Anti-bot unavailable: ${err.message || err}`;
+    if (statusEl) statusEl.textContent = 'Anti-bot check unavailable';
     console.warn('reCAPTCHA setup failed', err);
   }
 }
-
-async function checkFirstUser(container) {
-  // We can't know client-side if users exist, so we try registering with no invite
-  // and check the error. Instead, just hint from the placeholder text — the backend
-  // will enforce. Show a softer hint by checking if the invite input is focused-empty.
-  const hint = container.querySelector('#first-user-hint');
-  const input = container.querySelector('#invite-code-input');
-  if (!hint || !input) return;
-
-  // Fetch /api/auth/me — if 401, users likely exist; we can't really tell.
-  // The most honest thing: show the hint permanently so first-time users know.
-  hint.classList.remove('hidden');
-}
-
-// legacy captcha removed

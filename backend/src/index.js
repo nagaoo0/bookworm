@@ -16,6 +16,10 @@ import importExportRouter from './routes/importExport.js';
 
 const app = express();
 
+// Trust the reverse proxy (nginx/Caddy/etc.) so X-Forwarded-For is respected
+// by express-rate-limit and req.ip. Set TRUST_PROXY=false to disable (no proxy).
+app.set('trust proxy', process.env.TRUST_PROXY === 'false' ? false : (parseInt(process.env.TRUST_PROXY, 10) || 1));
+
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
   : ['http://localhost:8080', 'http://localhost:5173'];

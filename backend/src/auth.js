@@ -11,6 +11,10 @@ const COOKIE = 'bw_session';
 const RECAPTCHA_SECRET = process.env.RECAPTCHA_SECRET || '';
 const RECAPTCHA_MIN_SCORE = Number(process.env.RECAPTCHA_MIN_SCORE ?? '0.5');
 
+if (process.env.RECAPTCHA_SITE_KEY && !RECAPTCHA_SECRET) {
+  console.warn('WARNING: RECAPTCHA_SITE_KEY is set but RECAPTCHA_SECRET is not — token verification is disabled');
+}
+
 export async function verifyRecaptcha(token) {
   if (!RECAPTCHA_SECRET) {
     // Not configured — skip validation, allow registration
@@ -26,8 +30,7 @@ export async function verifyRecaptcha(token) {
       body: params.toString(),
     });
     const data = await resp.json();
-    // Expect success and score above threshold
-    if (!data.success) return false;
+    if (!data.success || data.action !== 'register') return false;
     const score = typeof data.score === 'number' ? data.score : 0;
     return score >= RECAPTCHA_MIN_SCORE;
   } catch (err) {
