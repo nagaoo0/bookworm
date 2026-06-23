@@ -24,14 +24,14 @@ export async function renderProfile(container, username) {
 function renderTabs(container, { username, shelves, library, statusBooks, feed, stats }) {
   container.innerHTML = `
     <div class="mb-6">
-      <h1 class="font-serif text-2xl font-semibold">${escHtml(username)}'s library</h1>
+      <h1 class="font-serif text-2xl font-semibold">${escHtml(username)}</h1>
       <p class="text-stone-500 text-sm mt-1">${library.length} book${library.length !== 1 ? 's' : ''}</p>
     </div>
 
     <div class="flex gap-1 mb-6 border-b border-stone-800">
-      <button class="profile-tab active-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="shelves">Shelves</button>
-      <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="status">Status</button>
-      <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="feed">Feed</button>
+      <button class="profile-tab active-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="shelves">My Shelves</button>
+      <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="status">Reading Piles</button>
+      <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="feed">History</button>
       <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="stats">Stats</button>
     </div>
 
@@ -83,7 +83,25 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
 
 function renderShelvesTab(shelves, library) {
   const byShelf = {};
-  for (const s of shelves) byShelf[s.id] = library.filter(b => (b.shelf_ids ?? []).includes(s.id));
+  for (const s of shelves) byShelf[s.id] = (library ?? []).filter(b => (b.shelf_ids ?? []).includes(s.id));
+
+  // Virtual "Currently Reading" shelf (books with status === 'reading')
+  const readingBooks = (library ?? []).filter(b => b.status === 'reading');
+
+  // Exclude reading books from the per-shelf lists to avoid duplicate cards
+  for (const s of shelves) {
+    byShelf[s.id] = byShelf[s.id].filter(b => b.status !== 'reading');
+  }
+
+  const readingSection = readingBooks.length ? `
+      <section class="mb-10">
+        <h2 class="font-serif text-xl font-semibold mb-4" style="color:#f59e0b">Currently Reading
+          <span class="text-sm font-normal text-stone-500 ml-2">${readingBooks.length}</span>
+        </h2>
+        <div class="book-grid">
+          ${readingBooks.map(b => bookCardHTML(b, { readOnly: true, isReading: true })).join('')}
+        </div>
+      </section>` : '';
 
   const sections = shelves.map(shelf => {
     const books = byShelf[shelf.id] ?? [];
@@ -102,7 +120,8 @@ function renderShelvesTab(shelves, library) {
       </section>`;
   }).join('');
 
-  return sections || `<p class="text-stone-500 italic text-center py-10">No books on shelves yet.</p>`;
+  const combined = `${readingSection}${sections}`;
+  return combined || `<p class="text-stone-500 italic text-center py-10">No books on shelves yet.</p>`;
 }
 
 function renderStatusTab({ to_read, reading, done }) {
@@ -120,9 +139,9 @@ function renderStatusTab({ to_read, reading, done }) {
   };
 
   const html = [
-    section('Reading', reading, '#f59e0b'),
-    section('To Read', to_read, '#64748b'),
-    section('Done', done, '#22c55e'),
+    section('Currently Reading', reading, '#f59e0b'),
+    section('Finished Pile', done, '#22c55e'),
+    section('To Read Pile', to_read, '#64748b'),
   ].join('');
 
   return html || `<p class="text-stone-500 italic text-center py-10">No status data yet.</p>`;
