@@ -25,6 +25,7 @@ async function request(path, options = {}) {
 export const api = {
   me: () => request('/auth/me'),
   getRecaptchaSiteKey: () => request('/auth/recaptcha-site-key'),
+  getAuthConfig: () => request('/auth/config'),
   register: (data) => request('/auth/register', { method: 'POST', body: data }),
   login: (data) => request('/auth/login', { method: 'POST', body: data }),
   logout: () => request('/auth/logout', { method: 'POST' }),

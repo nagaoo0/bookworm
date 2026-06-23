@@ -98,6 +98,12 @@ router.get('/recaptcha-site-key', (req, res) => {
   res.json({ siteKey });
 });
 
+// GET /api/auth/config -> public small config helpful for frontend
+router.get('/config', (_req, res) => {
+  const siteKey = process.env.RECAPTCHA_SITE_KEY || '';
+  res.json({ recaptchaConfigured: !!siteKey });
+});
+
 // POST /api/auth/login  { username, password }
 router.post('/login', async (req, res, next) => {
   try {

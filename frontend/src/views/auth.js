@@ -29,17 +29,7 @@ export function renderAuth(container, onSuccess) {
                 class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
                        focus:outline-none focus:border-amber-500 transition-colors" />
             </div>
-            ${isRegister ? `
-            <div>
-              <label class="text-xs text-stone-400 block mb-1">
-                Invite code
-                <span id="first-user-hint" class="text-stone-500 ml-1 hidden">(not needed for the first account)</span>
-              </label>
-              <input type="text" name="inviteCode" id="invite-code-input"
-                placeholder="Leave blank if you're the first user"
-                class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
-                       focus:outline-none focus:border-amber-500 transition-colors font-mono" />
-            </div>` : ''}
+            ${isRegister ? '' : ''}
             ${isRegister ? `
             <div id="recaptcha-status" class="text-stone-400 text-xs">Loading anti-bot check...</div>
             <input type="hidden" name="recaptchaToken" id="recaptcha-token" />
@@ -76,7 +66,6 @@ export function renderAuth(container, onSuccess) {
       const fd = new FormData(e.target);
       const username = fd.get('username')?.trim();
       const password = fd.get('password');
-  const inviteCode = fd.get('inviteCode')?.trim() || undefined;
   const recaptchaToken = fd.get('recaptchaToken') || undefined;
 
       try {
@@ -86,18 +75,19 @@ export function renderAuth(container, onSuccess) {
         } else {
           // Ensure we have a fresh recaptcha token if grecaptcha is available
           const tokenEl = container.querySelector('#recaptcha-token');
-          const siteKeyRes = await api.getRecaptchaSiteKey().catch(() => null);
-          const siteKey = siteKeyRes?.siteKey;
+          const siteKey = window._recaptchaSiteKey || (await api.getRecaptchaSiteKey().catch(() => null))?.siteKey;
           if (window.grecaptcha && siteKey) {
             try {
               const tok = await window.grecaptcha.execute(siteKey, { action: 'register' });
               if (tokenEl) tokenEl.value = tok;
+              // store for future submits
+              window._recaptchaSiteKey = siteKey;
             } catch (e) {
-              // ignore and let backend validate; token may be empty
+              // ignore; token may be empty
             }
           }
           const recaptchaTokenNow = (container.querySelector('#recaptcha-token') || {}).value;
-          user = await api.register({ username, password, inviteCode, recaptchaToken: recaptchaTokenNow });
+          user = await api.register({ username, password, recaptchaToken: recaptchaTokenNow });
         }
         onSuccess(user);
       } catch (err) {
@@ -118,7 +108,8 @@ async function loadRecaptcha(container) {
   try {
     const res = await api.getRecaptchaSiteKey();
     const siteKey = res.siteKey;
-    if (!siteKey) throw new Error('No site key');
+  if (!siteKey) throw new Error('No site key');
+  window._recaptchaSiteKey = siteKey;
 
     // If grecaptcha not already loaded, inject script
     if (!window.grecaptcha) {
@@ -139,7 +130,7 @@ async function loadRecaptcha(container) {
       tokenEl.value = token;
     }
   } catch (err) {
-    if (statusEl) statusEl.textContent = 'Anti-bot unavailable';
+    if (statusEl) statusEl.textContent = `Anti-bot unavailable: ${err.message || err}`;
     console.warn('reCAPTCHA setup failed', err);
   }
 }
