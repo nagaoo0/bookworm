@@ -1,5 +1,8 @@
 import './styles.css';
+import { applyPrefs } from './prefs.js';
 import { getState, setState, subscribe } from './store.js';
+
+applyPrefs();
 import { renderHome, loadLibrary } from './views/home.js';
 import { renderSearch } from './views/search.js';
 import { renderStats } from './views/stats.js';

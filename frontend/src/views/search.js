@@ -167,7 +167,7 @@ function renderResults(container, results) {
   }
 
   el.innerHTML = `
-    <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+    <div class="book-grid">
       ${results.map(b => bookCardHTML(b, { searchMode: true })).join('')}
     </div>`;
 

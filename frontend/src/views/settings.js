@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { getState, setState } from '../store.js';
+import { loadPrefs, savePrefs, ACCENT_COLORS } from '../prefs.js';
 
 export async function renderSettings(container) {
   const { user } = getState();
@@ -63,6 +64,9 @@ function render(container, user, invites) {
         </form>
       </section>
 
+      <!-- Appearance -->
+      ${renderAppearanceSection()}
+
       <!-- Import / Export -->
       ${renderImportExportSection()}
 
@@ -111,11 +115,90 @@ function render(container, user, invites) {
     setTimeout(() => pwMsg.classList.add('hidden'), 3000);
   });
 
+  // Appearance
+  attachAppearanceHandlers(container);
+
   // Import / Export
   attachImportExportHandlers(container);
 
   // Invite actions
   if (user.isAdmin) attachInviteHandlers(container);
+}
+
+function renderAppearanceSection() {
+  const { theme, cardSize, accent } = loadPrefs();
+
+  const activeStyle = 'border-color:var(--color-accent);color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 10%,transparent)';
+  const idleClass = 'border-stone-600 text-stone-400 hover:border-stone-400';
+
+  const themeBtn = (value, label) => `
+    <button class="theme-btn flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${value !== theme ? idleClass : ''}"
+            style="${value === theme ? activeStyle : ''}"
+            data-theme="${value}">${label}</button>`;
+
+  const sizeBtn = (value, label, icon) => `
+    <button class="size-btn flex-1 flex flex-col items-center gap-1.5 py-3 rounded-lg border transition-colors ${value !== cardSize ? idleClass : ''}"
+            style="${value === cardSize ? activeStyle : ''}"
+            data-size="${value}">
+      <span class="${icon} bg-stone-600 rounded-sm" style="display:inline-block"></span>
+      <span class="text-xs">${label}</span>
+    </button>`;
+
+  const accentSwatch = (value) => {
+    const c = ACCENT_COLORS[value].main;
+    return `<button class="accent-btn w-7 h-7 rounded-full border-2 transition-all
+                            ${accent === value ? 'border-white scale-110' : 'border-transparent opacity-70 hover:opacity-100'}"
+                    data-accent="${value}"
+                    style="background:${c}" title="${value}"></button>`;
+  };
+
+  return `
+    <section id="appearance-section" class="bg-stone-900 rounded-xl p-5 space-y-5 ring-1 ring-white/10">
+      <h2 class="font-semibold text-stone-200">Appearance</h2>
+
+      <div class="space-y-2">
+        <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Theme</p>
+        <div class="flex gap-2">
+          ${themeBtn('dark', 'Dark')}
+          ${themeBtn('sepia', 'Sepia')}
+          ${themeBtn('light', 'Light')}
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Card size</p>
+        <div class="flex gap-2">
+          ${sizeBtn('small',  'Small',  'w-5 h-7')}
+          ${sizeBtn('medium', 'Medium', 'w-7 h-10')}
+          ${sizeBtn('large',  'Large',  'w-9 h-14')}
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Accent color</p>
+        <div class="flex gap-3 items-center">
+          ${Object.keys(ACCENT_COLORS).map(accentSwatch).join('')}
+        </div>
+      </div>
+    </section>`;
+}
+
+function attachAppearanceHandlers(container) {
+  const refresh = () => {
+    const section = container.querySelector('#appearance-section');
+    if (section) section.outerHTML = renderAppearanceSection();
+    attachAppearanceHandlers(container);
+  };
+
+  container.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => { savePrefs({ theme: btn.dataset.theme }); refresh(); });
+  });
+  container.querySelectorAll('.size-btn').forEach(btn => {
+    btn.addEventListener('click', () => { savePrefs({ cardSize: btn.dataset.size }); refresh(); });
+  });
+  container.querySelectorAll('.accent-btn').forEach(btn => {
+    btn.addEventListener('click', () => { savePrefs({ accent: btn.dataset.accent }); refresh(); });
+  });
 }
 
 function renderImportExportSection() {

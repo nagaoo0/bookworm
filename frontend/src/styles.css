@@ -14,6 +14,26 @@
   --font-sans: 'Inter', system-ui, sans-serif;
 }
 
+/* ── Light theme ──────────────────────────────────────────────────────────── */
+html.theme-light {
+  --color-bg: #f8f7f4;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1ede8;
+  --color-border: #d6cfc8;
+  --color-text: #1c1917;
+  --color-muted: #78716c;
+}
+
+/* ── Sepia theme ──────────────────────────────────────────────────────────── */
+html.theme-sepia {
+  --color-bg: #f5f0e8;
+  --color-surface: #ede8de;
+  --color-surface-2: #e0d8cc;
+  --color-border: #c4b9a8;
+  --color-text: #2c1f14;
+  --color-muted: #8a7060;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -28,6 +48,14 @@ body {
 
 .font-serif {
   font-family: var(--font-serif);
+}
+
+/* ── Book grid — card width driven by --grid-min-col pref ─────────────────── */
+:root { --grid-min-col: 110px; }
+.book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-min-col), 1fr));
+  gap: 1rem;
 }
 
 /* Scrollbar */
@@ -47,7 +75,7 @@ body {
 
 /* Book cover placeholder */
 .cover-placeholder {
-  background: linear-gradient(135deg, #292524 0%, #1c1917 100%);
+  background: linear-gradient(135deg, var(--color-surface-2) 0%, var(--color-surface) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,18 +100,18 @@ body {
   user-select: none;
 }
 .shelf-chip-active {
-  background: #f59e0b22;
-  border-color: #f59e0b;
-  color: #f59e0b;
+  background: color-mix(in srgb, var(--color-accent) 13%, transparent);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 .shelf-chip-idle {
   background: transparent;
-  border-color: #44403c;
-  color: #a8a29e;
+  border-color: var(--color-border);
+  color: var(--color-muted);
 }
 .shelf-chip-idle:hover {
-  border-color: #78716c;
-  color: #e7e5e4;
+  border-color: var(--color-muted);
+  color: var(--color-text);
 }
 
 /* On touch devices: always show the card overlay buttons */

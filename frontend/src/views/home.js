@@ -194,7 +194,7 @@ function renderAllBooks(el, library, container, shelves) {
           </button>
           ${open ? sortSelect : ''}
         </div>
-        ${open ? `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+        ${open ? `<div class="book-grid">
           ${sorted.map(b => bookCardHTML(b, { isReading: key === 'reading' })).join('')}
         </div>` : ''}
       </section>`;
@@ -239,7 +239,7 @@ function renderShelfGrid(el, shelf, books) {
         <span class="text-sm text-stone-500">${books.length}</span>
       </div>
       ${books.length
-        ? `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+        ? `<div class="book-grid">
              ${books.map(b => bookCardHTML(b, { showStatus: true })).join('')}
            </div>`
         : `<p class="text-stone-500 italic text-sm py-3">No books on this shelf yet.</p>`}
