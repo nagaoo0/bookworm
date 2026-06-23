@@ -96,7 +96,7 @@ function renderShelvesTab(shelves, library) {
           <h2 class="font-serif text-xl font-semibold">${escHtml(shelf.name)}</h2>
           <span class="text-sm text-stone-500">${books.length}</span>
         </div>
-        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+        <div class="book-grid">
           ${books.map(b => bookCardHTML(b, { readOnly: true })).join('')}
         </div>
       </section>`;
@@ -113,7 +113,7 @@ function renderStatusTab({ to_read, reading, done }) {
         <h2 class="font-serif text-xl font-semibold mb-4" style="color:${color}">${label}
           <span class="text-sm font-normal text-stone-500 ml-2">${books.length}</span>
         </h2>
-        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+        <div class="book-grid">
           ${books.map(b => bookCardHTML(b, { readOnly: true })).join('')}
         </div>
       </section>`;

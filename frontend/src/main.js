@@ -32,6 +32,7 @@ document.getElementById('app').innerHTML = `
           <a href="#search"   class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="search">Search</a>
           <a href="#stats"    class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="stats">Stats</a>
           <a href="#users"    class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="users">Readers</a>
+          <a id="my-profile-link" href="#" class="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors hidden">Profile</a>
           <a href="#settings" class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
           <span id="nav-username" class="ml-2 text-xs text-stone-500"></span>
           <button id="logout-btn" class="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
@@ -54,6 +55,7 @@ document.getElementById('app').innerHTML = `
           <a href="#search"   class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="search">Search</a>
           <a href="#stats"    class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="stats">Stats</a>
           <a href="#users"    class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="users">Readers</a>
+          <a id="my-profile-link-mob" href="#" class="block px-3 py-2.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors hidden">Profile</a>
           <a href="#settings" class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
           <div class="border-t border-stone-800 pt-2 mt-2 flex items-center justify-between">
             <span id="nav-username-mob" class="text-xs text-stone-500"></span>
@@ -98,6 +100,13 @@ function showApp(user) {
   pubHeader.classList.add('hidden');
   document.getElementById('nav-username').textContent = user.username;
   document.getElementById('nav-username-mob').textContent = user.username;
+
+  const profileHref = `#u/${user.username}`;
+  const profLink = document.getElementById('my-profile-link');
+  const profLinkMob = document.getElementById('my-profile-link-mob');
+  if (profLink)    { profLink.href    = profileHref; profLink.classList.remove('hidden'); }
+  if (profLinkMob) { profLinkMob.href = profileHref; profLinkMob.classList.remove('hidden'); }
+
   wireLogout();
   loadLibrary().then(() => navigate(getRoute()));
 }

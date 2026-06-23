@@ -42,6 +42,27 @@ const authLimiter = rateLimit({
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/profiles', profilesRouter);
 
+// Public cross-user feed — recent reviews from all public profiles
+app.get('/api/feed', async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT rs.id, rs.finished_at, rs.started_at, rs.rating, rs.review,
+              u.username,
+              b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id
+       FROM reading_sessions rs
+       JOIN users u ON u.id = rs.user_id
+       JOIN books b ON b.id = rs.book_id
+       WHERE u.is_public = true
+         AND (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
+       ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
+       LIMIT 100`
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Public users list
 app.get('/api/users', async (_req, res, next) => {
   try {

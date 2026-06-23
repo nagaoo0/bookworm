@@ -20,7 +20,7 @@ export const ACCENT_COLORS = {
   rose:  { main: '#f43f5e', hover: '#fb7185' },
 };
 
-const CARD_SIZES = { small: '80px', medium: '110px', large: '158px' };
+const CARD_SIZES = { miniature: '58px', small: '80px', medium: '110px', large: '158px' };
 
 export function applyPrefs(prefs = loadPrefs()) {
   const html = document.documentElement;

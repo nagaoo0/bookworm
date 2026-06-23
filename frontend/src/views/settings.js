@@ -168,9 +168,10 @@ function renderAppearanceSection() {
       <div class="space-y-2">
         <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Card size</p>
         <div class="flex gap-2">
-          ${sizeBtn('small',  'Small',  'w-5 h-7')}
-          ${sizeBtn('medium', 'Medium', 'w-7 h-10')}
-          ${sizeBtn('large',  'Large',  'w-9 h-14')}
+          ${sizeBtn('miniature', 'Miniature', 'w-3 h-5')}
+          ${sizeBtn('small',     'Small',     'w-5 h-7')}
+          ${sizeBtn('medium',    'Medium',    'w-7 h-10')}
+          ${sizeBtn('large',     'Large',     'w-9 h-14')}
         </div>
       </div>
 

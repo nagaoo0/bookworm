@@ -10,8 +10,8 @@
   --color-accent: #f59e0b;
   --color-accent-hover: #fbbf24;
 
-  --font-serif: 'Lora', Georgia, serif;
-  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-serif: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-sans:  'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 /* ── Light theme ──────────────────────────────────────────────────────────── */
