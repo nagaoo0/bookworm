@@ -8,10 +8,12 @@ export function renderAuth(container, onSuccess) {
     container.innerHTML = `
       <div class="min-h-[80vh] flex items-center justify-center px-4">
         <div class="w-full max-w-sm">
-          <div class="text-center mb-8">
-            <img src="/logo.png" class="h-32 w-32 rounded-full text-center center" alt="" />
-            <h1 class="font-serif text-3xl font-semibold text-amber-400 mt-3">Bookworm</h1>
-            <p class="text-stone-400 text-sm mt-1">${isRegister ? 'Create your account' : 'Sign in to your library'}</p>
+          <div class="flex flex-col items-center mb-6 gap-2">
+            <div class="flex items-center justify-center bg-stone-800 rounded-full p-1">
+              <img src="/logo.png" class="h-24 w-24 sm:h-28 sm:w-28 md:h-32 md:w-32 rounded-full object-cover" alt="Bookworm logo" />
+            </div>
+            <h1 class="font-serif text-2xl sm:text-3xl font-semibold text-amber-400">Bookworm</h1>
+            <p class="text-stone-400 text-sm">${isRegister ? 'Create your account' : 'Sign in to your library'}</p>
           </div>
           <form id="auth-form" class="bg-stone-900 rounded-xl p-6 space-y-4 ring-1 ring-white/10 shadow-2xl">
             <div>
