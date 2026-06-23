@@ -5,7 +5,7 @@ export function renderLogin(container, onSuccess) {
     <div class="min-h-screen flex items-center justify-center px-4">
       <div class="w-full max-w-sm">
         <div class="text-center mb-8">
-          <span class="text-5xl">📚</span>
+          <img src="/logo.png" class="h-32 w-32 rounded-full" alt="" />
           <h1 class="font-serif text-3xl font-semibold text-amber-400 mt-3">Bookworm</h1>
           <p class="text-stone-400 text-sm mt-1">Enter your password to continue</p>
         </div>
