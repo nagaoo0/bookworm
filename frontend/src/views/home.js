@@ -160,8 +160,8 @@ function renderAllBooks(el, library, container, shelves) {
 
   const STATUS_META = [
     { key: 'reading', label: 'Currently Reading', color: '#f59e0b' },
-    { key: 'to_read', label: 'To Read',           color: '#64748b' },
     { key: 'done',    label: 'Done',               color: '#22c55e' },
+    { key: 'to_read', label: 'To Read',           color: '#64748b' },
   ];
 
   const SORT_OPTIONS = [
