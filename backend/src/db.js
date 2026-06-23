@@ -120,6 +120,47 @@ export async function migrate() {
       review      TEXT,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    -- Social: follow relationships
+    CREATE TABLE IF NOT EXISTS follows (
+      follower_id  INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      following_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (follower_id, following_id),
+      CHECK (follower_id <> following_id)
+    );
+
+    -- Notifications
+    CREATE TABLE IF NOT EXISTS notifications (
+      id         SERIAL PRIMARY KEY,
+      user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      actor_id   INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type       TEXT NOT NULL CHECK (type IN ('follow','comment')),
+      payload    JSONB NOT NULL DEFAULT '{}',
+      read_at    TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- Reading goals
+    CREATE TABLE IF NOT EXISTS goals (
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      year    INT NOT NULL,
+      target  INT NOT NULL CHECK (target > 0),
+      PRIMARY KEY (user_id, year)
+    );
+
+    -- Book comments (on public books)
+    CREATE TABLE IF NOT EXISTS comments (
+      id         SERIAL PRIMARY KEY,
+      book_id    INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body       TEXT NOT NULL CHECK (char_length(body) <= 2000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- Progress tracking on currently-reading books
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS progress_page INT;
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS progress_pct  SMALLINT CHECK (progress_pct >= 0 AND progress_pct <= 100);
   `);
   console.log('Database schema ready.');
 }

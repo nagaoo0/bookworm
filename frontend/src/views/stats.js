@@ -6,22 +6,43 @@ Chart.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Lege
 export async function renderStats(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
-    const s = await api.getStats();
-    render(container, s);
+    const currentYear = new Date().getFullYear();
+    const [s, goal] = await Promise.all([
+      api.getStats(),
+      api.getGoal(currentYear).catch(() => null),
+    ]);
+    render(container, s, {}, goal);
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${err.message}</p>`;
   }
 }
 
-export function render(container, s, opts = {}) {
+export function render(container, s, opts = {}, goal = null) {
   const years = Object.keys(s.perYear).map(Number).sort((a, b) => b - a);
   const currentYear = years[0] ?? new Date().getFullYear();
 
-  // Determine if categories data exists for any year
   const hasCats = Object.keys(s.categoriesByYear ?? {}).length > 0;
+
+  // Reading goal progress bar for the current year (only shown on non-compact / full stats page)
+  const goalSection = (!opts.compact && goal?.target) ? (() => {
+    const pct = Math.min(100, Math.round((goal.booksRead / goal.target) * 100));
+    return `
+      <section class="bg-stone-900 rounded-xl p-5 ring-1 ring-white/5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-serif text-lg font-semibold">${currentYear} Reading Goal</h2>
+          <span class="text-sm text-stone-400">${goal.booksRead} / ${goal.target} books</span>
+        </div>
+        <div class="w-full bg-stone-800 rounded-full h-3 overflow-hidden">
+          <div class="h-3 rounded-full transition-all" style="width:${pct}%;background:var(--color-accent,#f59e0b)"></div>
+        </div>
+        <p class="text-xs text-stone-500 mt-2">${pct}% complete${pct >= 100 ? ' 🎉' : ''}</p>
+      </section>`;
+  })() : '';
 
   container.innerHTML = `
     <div class="${opts.compact ? '' : 'max-w-2xl mx-auto '}space-y-8 fade-in">
+
+      ${goalSection}
 
       <!-- Summary cards -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">

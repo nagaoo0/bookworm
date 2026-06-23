@@ -7,17 +7,20 @@ export async function renderSettings(container) {
   const { user } = getState();
   if (!user) return;
 
-  container.innerHTML = `<p class="text-stone-400 text-center py-20">Loading…</p>`;
+  container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
 
+  const currentYear = new Date().getFullYear();
   let invites = [];
-  if (user.isAdmin) {
-    try { invites = await api.getInvites(); } catch { /* non-fatal */ }
-  }
+  let goal = null;
+  const [, goalResult] = await Promise.all([
+    user.isAdmin ? api.getInvites().then(r => { invites = r; }).catch(() => {}) : Promise.resolve(),
+    api.getGoal(currentYear).then(r => { goal = r; }).catch(() => {}),
+  ]);
 
-  render(container, user, invites);
+  render(container, user, invites, goal, currentYear);
 }
 
-function render(container, user, invites) {
+function render(container, user, invites, goal, currentYear) {
   const profileUrl = `${location.origin}${location.pathname}#u/${user.username}`;
 
   container.innerHTML = `
@@ -64,6 +67,9 @@ function render(container, user, invites) {
           <p id="pw-msg" class="text-xs hidden"></p>
         </form>
       </section>
+
+      <!-- Reading goal -->
+      ${renderGoalSection(goal, currentYear)}
 
       <!-- Appearance -->
       ${renderAppearanceSection()}
@@ -114,6 +120,9 @@ function render(container, user, invites) {
     }
   });
 
+  // Reading goal
+  attachGoalHandlers(container, goal, currentYear);
+
   // Appearance
   attachAppearanceHandlers(container);
 
@@ -122,6 +131,56 @@ function render(container, user, invites) {
 
   // Invite actions
   if (user.isAdmin) attachInviteHandlers(container);
+}
+
+function renderGoalSection(goal, year) {
+  const target = goal?.target ?? '';
+  const read   = goal?.booksRead ?? 0;
+  return `
+    <section class="bg-stone-900 rounded-xl p-5 space-y-4 ring-1 ring-white/10">
+      <h2 class="font-semibold text-stone-200">Reading Goal — ${year}</h2>
+      <p class="text-xs text-stone-500">Set a target number of books to finish this year. Progress is shown on your Stats page.</p>
+      <form id="goal-form" class="flex gap-3 items-center">
+        <input type="number" id="goal-input" name="target" min="1" max="9999"
+          value="${escHtml(String(target))}"
+          placeholder="e.g. 24"
+          class="w-28 bg-stone-800 border border-stone-600 rounded-lg px-3 py-2 text-sm
+                 focus:outline-none focus:border-amber-500" />
+        <button type="submit"
+          class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+          Save
+        </button>
+        ${target ? `<button type="button" id="clear-goal-btn"
+          class="px-3 py-2 text-stone-500 hover:text-red-400 text-sm transition-colors">
+          Clear
+        </button>` : ''}
+      </form>
+      ${target ? `<p class="text-xs text-stone-500">${read} / ${target} books read this year.</p>` : ''}
+    </section>`;
+}
+
+function attachGoalHandlers(container, goal, year) {
+  container.querySelector('#goal-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const target = parseInt(new FormData(e.target).get('target'), 10);
+    if (!target || target < 1) return;
+    try {
+      await api.setGoal(year, target);
+      showToast(`Goal set: ${target} books in ${year}.`);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  container.querySelector('#clear-goal-btn')?.addEventListener('click', async () => {
+    try {
+      await api.deleteGoal(year);
+      container.querySelector('#goal-input').value = '';
+      showToast('Reading goal cleared.');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
 }
 
 function renderAppearanceSection() {

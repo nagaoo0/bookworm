@@ -10,6 +10,18 @@ const sectionState = {
   done:    { open: true, sort: 'added' },
 };
 
+let libraryQuery = '';
+const selectedLibIds = new Set();
+
+function filterBooks(books, q) {
+  if (!q) return books;
+  const lq = q.toLowerCase();
+  return books.filter(b =>
+    b.title.toLowerCase().includes(lq) ||
+    (b.authors ?? []).some(a => a.toLowerCase().includes(lq))
+  );
+}
+
 function sortBooks(books, sort) {
   if (sort === 'title')  return [...books].sort((a, b) => a.title.localeCompare(b.title));
   if (sort === 'author') return [...books].sort((a, b) => (a.authors?.[0] ?? '').localeCompare(b.authors?.[0] ?? ''));
@@ -32,7 +44,19 @@ export function renderHome(container) {
   const { shelves, library, loading, error } = getState();
 
   if (loading) {
-    container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
+    const count = 12;
+    container.innerHTML = `
+      <div class="flex flex-col gap-6">
+        <div class="h-10 skeleton rounded-xl w-full"></div>
+        <div class="book-grid">
+          ${Array.from({ length: count }, () => `
+            <div class="flex flex-col gap-2">
+              <div class="skeleton aspect-[2/3] w-full rounded"></div>
+              <div class="skeleton h-3 w-3/4 rounded"></div>
+              <div class="skeleton h-2 w-1/2 rounded"></div>
+            </div>`).join('')}
+        </div>
+      </div>`;
     return;
   }
   if (error) {
@@ -46,6 +70,36 @@ export function renderHome(container) {
 
   container.innerHTML = `
     <div class="flex flex-col gap-6">
+      <!-- Library search + select toggle -->
+      <div class="flex gap-2 items-center">
+        <div class="relative flex-1">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+            </svg>
+          </span>
+          <input id="library-search" type="search" value="${escHtml(libraryQuery)}"
+            placeholder="Filter by title or author…"
+            class="w-full bg-stone-800 border border-stone-700 rounded-xl pl-9 pr-4 py-2.5 text-sm
+                   focus:outline-none focus:border-amber-500 placeholder-stone-500 transition-colors" />
+        </div>
+        <button id="select-mode-btn"
+          class="flex-shrink-0 px-3 py-2.5 rounded-xl border border-stone-700 text-xs text-stone-400
+                 hover:border-amber-500 hover:text-amber-400 transition-colors">
+          Select
+        </button>
+      </div>
+
+      <!-- Bulk action bar (hidden unless books selected) -->
+      <div id="bulk-bar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50
+           bg-stone-800 border border-stone-600 rounded-2xl shadow-2xl px-4 py-3
+           flex items-center gap-3 text-sm">
+        <span id="bulk-count" class="text-stone-300 font-medium mr-1"></span>
+        <button id="bulk-status-btn" class="px-3 py-1.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors">Set status…</button>
+        <button id="bulk-remove-btn" class="px-3 py-1.5 rounded-lg bg-red-900/60 hover:bg-red-900 text-red-300 transition-colors">Remove</button>
+        <button id="bulk-cancel-btn" class="px-2 py-1.5 text-stone-500 hover:text-stone-200 transition-colors">✕</button>
+      </div>
+
       <!-- Shelf selector bar -->
       <div class="shelf-bar flex items-center gap-2 overflow-x-auto">
         <button class="shelf-chip ${selectedShelfId == null ? 'shelf-chip-active' : 'shelf-chip-idle'}"
@@ -71,6 +125,69 @@ export function renderHome(container) {
   attachShelfBar(container, shelves, library);
   attachCardHandlers(container, shelves, library);
   attachShelfManagerHandlers(container, shelves);
+
+  const searchInput = container.querySelector('#library-search');
+  searchInput?.addEventListener('input', e => {
+    libraryQuery = e.target.value;
+    const contentEl = container.querySelector('#shelf-content');
+    if (contentEl) {
+      renderShelfContent(contentEl, library, shelves, getState().selectedShelfId, container);
+      attachCardHandlers(container, shelves, library);
+    }
+  });
+
+  // Select mode toggle
+  let selectMode = false;
+  const selectBtn = container.querySelector('#select-mode-btn');
+  const bulkBar   = container.querySelector('#bulk-bar');
+  const bulkCount = container.querySelector('#bulk-count');
+
+  function updateBulkBar() {
+    const n = selectedLibIds.size;
+    if (n > 0) {
+      bulkCount.textContent = `${n} selected`;
+      bulkBar.classList.remove('hidden');
+    } else {
+      bulkBar.classList.add('hidden');
+    }
+  }
+
+  selectBtn?.addEventListener('click', () => {
+    selectMode = !selectMode;
+    selectedLibIds.clear();
+    selectBtn.textContent = selectMode ? 'Done' : 'Select';
+    selectBtn.className = selectMode
+      ? 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-amber-500 text-xs text-amber-400 transition-colors'
+      : 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-stone-700 text-xs text-stone-400 hover:border-amber-500 hover:text-amber-400 transition-colors';
+    bulkBar.classList.add('hidden');
+    // Re-attach to toggle checkbox visibility
+    attachCardHandlers(container, shelves, library, { selectMode, selectedLibIds, updateBulkBar });
+  });
+
+  bulkBar?.querySelector('#bulk-cancel-btn')?.addEventListener('click', () => {
+    selectMode = false;
+    selectedLibIds.clear();
+    selectBtn.textContent = 'Select';
+    selectBtn.className = 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-stone-700 text-xs text-stone-400 hover:border-amber-500 hover:text-amber-400 transition-colors';
+    bulkBar.classList.add('hidden');
+    container.querySelectorAll('.book-card').forEach(c => c.querySelector('.bulk-check')?.classList.add('hidden'));
+  });
+
+  bulkBar?.querySelector('#bulk-remove-btn')?.addEventListener('click', async () => {
+    const ids = [...selectedLibIds];
+    selectedLibIds.clear();
+    bulkBar.classList.add('hidden');
+    await Promise.all(ids.map(id => api.removeFromLibrary(id).catch(() => {})));
+    loadLibrary();
+  });
+
+  bulkBar?.querySelector('#bulk-status-btn')?.addEventListener('click', () => {
+    showBulkStatusMenu(bulkBar, [...selectedLibIds], () => {
+      selectedLibIds.clear();
+      updateBulkBar();
+      loadLibrary();
+    });
+  });
 }
 
 // ── Shelf bar ─────────────────────────────────────────────────────────────────
@@ -143,11 +260,12 @@ function showInlineShelfCreate(container) {
 
 // ── Content area ──────────────────────────────────────────────────────────────
 function renderShelfContent(el, library, shelves, selectedShelfId, container) {
+  const filtered = filterBooks(library, libraryQuery);
   if (selectedShelfId == null) {
-    renderAllBooks(el, library, container, shelves);
+    renderAllBooks(el, filtered, container, shelves);
   } else {
     const shelf = shelves.find(s => s.id === selectedShelfId);
-    const books = library.filter(b => b.shelf_ids?.includes(selectedShelfId));
+    const books = filtered.filter(b => b.shelf_ids?.includes(selectedShelfId));
     renderShelfGrid(el, shelf, books);
   }
 }
@@ -200,14 +318,16 @@ function renderAllBooks(el, library, container, shelves) {
       </section>`;
   }).join('');
 
-  el.innerHTML = sections || `
-    <div class="text-center py-20 space-y-4">
-      <p class="text-stone-400 text-lg">Your library is empty.</p>
-      <a href="#search"
-         class="inline-block px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
-        Search for a book
-      </a>
-    </div>`;
+  const emptyHtml = libraryQuery
+    ? `<div class="text-center py-20"><p class="text-stone-400">No books match "<em>${escHtml(libraryQuery)}</em>".</p></div>`
+    : `<div class="text-center py-20 space-y-4">
+        <p class="text-stone-400 text-lg">Your library is empty.</p>
+        <a href="#search"
+           class="inline-block px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+          Search for a book
+        </a>
+       </div>`;
+  el.innerHTML = sections || emptyHtml;
 
   // Collapse toggles
   el.querySelectorAll('.section-toggle').forEach(btn => {
@@ -250,11 +370,45 @@ function renderShelfGrid(el, shelf, books) {
 }
 
 // ── Card event handlers ───────────────────────────────────────────────────────
-function attachCardHandlers(container, shelves, library) {
-  // Click → modal
+function attachCardHandlers(container, shelves, library, bulk = {}) {
+  const { selectMode = false, selectedLibIds: selIds = new Set(), updateBulkBar = () => {} } = bulk;
+
+  container.querySelectorAll('.book-card').forEach(card => {
+    // Add checkbox overlay if not present
+    if (!card.querySelector('.bulk-check')) {
+      const chk = document.createElement('div');
+      chk.className = `bulk-check absolute top-1.5 left-1.5 z-20 w-5 h-5 rounded-full border-2
+                       flex items-center justify-center text-xs font-bold transition-all
+                       ${selectMode ? '' : 'hidden'}
+                       ${selIds.has(card.dataset.libId) ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-white/60 bg-black/30'}`;
+      card.querySelector('.relative.w-full')?.appendChild(chk);
+    }
+    const chk = card.querySelector('.bulk-check');
+    if (chk) chk.classList.toggle('hidden', !selectMode);
+  });
+
+  // Click → modal OR selection
   container.querySelectorAll('.book-card').forEach(card => {
     card.addEventListener('click', e => {
-      if (e.target.closest('button')) return;
+      if (e.target.closest('button') && !e.target.closest('.bulk-check')) return;
+      if (selectMode) {
+        const libId = card.dataset.libId;
+        if (!libId) return;
+        const chk = card.querySelector('.bulk-check');
+        if (selIds.has(libId)) {
+          selIds.delete(libId);
+          chk?.classList.remove('bg-amber-500', 'border-amber-500', 'text-stone-950');
+          chk?.classList.add('border-white/60', 'bg-black/30');
+          if (chk) chk.textContent = '';
+        } else {
+          selIds.add(libId);
+          chk?.classList.add('bg-amber-500', 'border-amber-500', 'text-stone-950');
+          chk?.classList.remove('border-white/60', 'bg-black/30');
+          if (chk) chk.textContent = '✓';
+        }
+        updateBulkBar();
+        return;
+      }
       const bookId = card.dataset.bookId;
       const libId  = card.dataset.libId;
       const title  = card.querySelector('h3')?.textContent ?? '';
@@ -369,6 +523,19 @@ function showContextMenu(x, y, card, shelves, library) {
       }).join('')}
     </div>` : ''}
 
+    ${libEntry.status === 'reading' ? `
+    <div class="border-t border-stone-700 mt-1 pt-1">
+      <div class="px-3 py-2 space-y-1.5">
+        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium">Progress</p>
+        <div class="flex items-center gap-2">
+          <input type="range" class="ctx-progress-slider flex-1 accent-amber-400"
+                 min="0" max="100" step="5"
+                 value="${libEntry.progress_pct ?? 0}" />
+          <span class="ctx-progress-label text-xs text-stone-400 w-8 text-right">${libEntry.progress_pct ?? 0}%</span>
+        </div>
+      </div>
+    </div>` : ''}
+
     <div class="border-t border-stone-700 mt-1 pt-1">
       <button class="ctx-remove w-full text-left px-3 py-2 hover:bg-red-900/40 text-red-400">
         Remove from library
@@ -418,10 +585,54 @@ function showContextMenu(x, y, card, shelves, library) {
     menu.querySelector('.ctx-remove-no').addEventListener('click', () => menu.remove());
   });
 
+  // Progress slider
+  const slider = menu.querySelector('.ctx-progress-slider');
+  const label  = menu.querySelector('.ctx-progress-label');
+  if (slider) {
+    let saveTimer;
+    slider.addEventListener('input', () => {
+      label.textContent = slider.value + '%';
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async () => {
+        await api.setProgress(libId, { progress_pct: Number(slider.value) });
+        loadLibrary();
+      }, 600);
+    });
+  }
+
   const dismiss = e => {
     if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', dismiss); }
   };
   setTimeout(() => document.addEventListener('click', dismiss), 0);
+}
+
+// ── Bulk status picker ────────────────────────────────────────────────────────
+function showBulkStatusMenu(anchor, libIds, onDone) {
+  document.querySelector('.bulk-status-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'bulk-status-menu absolute bottom-full mb-2 left-0 bg-stone-800 border border-stone-600 rounded-xl shadow-xl py-1 text-sm min-w-[160px]';
+  menu.style.zIndex = 60;
+  const STATUSES = [
+    { key: 'to_read', label: 'To Read' },
+    { key: 'reading', label: 'Reading' },
+    { key: 'done',    label: 'Done'    },
+  ];
+  menu.innerHTML = STATUSES.map(s =>
+    `<button class="w-full text-left px-4 py-2 hover:bg-stone-700 text-stone-200" data-status="${s.key}">${s.label}</button>`
+  ).join('');
+  anchor.style.position = 'relative';
+  anchor.appendChild(menu);
+  menu.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      menu.remove();
+      await Promise.all(libIds.map(id => api.setStatus(id, btn.dataset.status).catch(() => {})));
+      onDone();
+    });
+  });
+  setTimeout(() => {
+    const dismiss = e => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', dismiss); } };
+    document.addEventListener('click', dismiss);
+  }, 0);
 }
 
 // ── Shelf manager ─────────────────────────────────────────────────────────────

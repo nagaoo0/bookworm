@@ -1,6 +1,6 @@
 import { starRatingHTML } from './starRating.js';
 
-export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false, readOnly = false } = {}) {
+export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false, readOnly = false, alsoRead = false } = {}) {
   // Support both snake_case (from DB/library) and camelCase (from search results)
   const coverSrc = book.cover_url ?? book.coverUrl ?? null;
   const coverImg = coverSrc
@@ -46,20 +46,33 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
                title="Mark as finished">✓</button>`
     : '';
 
+  const pct = book.progress_pct ?? null;
+  const progressBar = (isReading && pct !== null && !readOnly)
+    ? `<div class="absolute bottom-0 left-0 right-0 h-1 bg-black/30">
+         <div class="h-1 bg-amber-400 transition-all" style="width:${pct}%"></div>
+       </div>`
+    : '';
+
   return `
     <article class="book-card group relative flex flex-col ${readOnly ? 'cursor-default' : 'cursor-pointer'}"
              data-book-id="${book.book_id ?? ''}"
              data-lib-id="${book.id ?? ''}"
              data-google-id="${escHtml(book.googleId ?? '')}"
-             data-notes="${escHtml(book.notes ?? '')}">
+             data-notes="${escHtml(book.notes ?? '')}"
+             data-progress-pct="${pct ?? ''}">
       <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-stone-800 shadow-lg
                   ring-1 ring-white/5 group-hover:ring-amber-500/40 transition-all">
         ${coverImg}
         <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
         ${finishBtn}
+        ${progressBar}
+        ${alsoRead ? `<div class="absolute top-1.5 left-1.5 text-[10px] bg-amber-500/90 text-stone-950 font-bold px-1.5 py-0.5 rounded-full leading-tight">✓ You read this</div>` : ''}
       </div>
       <div class="mt-2 flex-1 flex flex-col">
-        <h3 class="font-serif text-sm font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(book.title)}</h3>
+        ${(book.book_id || book.id) && !searchMode
+          ? `<a href="#book/${book.book_id ?? book.id}" class="font-serif text-sm font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors" onclick="event.stopPropagation()"><h3>${escHtml(book.title)}</h3></a>`
+          : `<h3 class="font-serif text-sm font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(book.title)}</h3>`
+        }
         ${authors ? `<p class="text-xs text-stone-400 mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
         ${rating}
         ${statusBadge}

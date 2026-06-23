@@ -1,6 +1,8 @@
 import { api } from '../api.js';
+import { getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { render as renderStatsContent } from './stats.js';
+import { showToast } from '../components/toast.js';
 
 const lastTab = new Map();
 
@@ -8,8 +10,11 @@ export async function renderProfile(container, username) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
 
   try {
-    const data = await api.getProfile(username);
-    renderTabs(container, data);
+    const [data, followStatus] = await Promise.all([
+      api.getProfile(username),
+      api.getFollowStatus(username).catch(() => ({ following: false })),
+    ]);
+    renderTabs(container, data, followStatus.following);
   } catch (err) {
     if (err.message.includes('404') || err.message.toLowerCase().includes('not found')) {
       container.innerHTML = `
@@ -23,11 +28,28 @@ export async function renderProfile(container, username) {
   }
 }
 
-function renderTabs(container, { username, shelves, library, statusBooks, feed, stats }) {
+function renderTabs(container, { username, shelves, library, statusBooks, feed, stats }, isFollowing) {
+  const { user, library: myLibrary } = getState();
+  const myBookIds = new Set((myLibrary ?? []).map(b => String(b.book_id)));
+  const isOwnProfile = user?.username === username;
+
+  const followBtn = !isOwnProfile ? `
+    <button id="follow-btn"
+      class="px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+        isFollowing
+          ? 'bg-stone-700 hover:bg-red-900/40 text-stone-200 hover:text-red-400'
+          : 'bg-amber-500 hover:bg-amber-400 text-stone-950'
+      }" data-following="${isFollowing}">
+      ${isFollowing ? 'Following' : '+ Follow'}
+    </button>` : '';
+
   container.innerHTML = `
-    <div class="mb-6">
-      <h1 class="font-serif text-2xl font-semibold">${escHtml(username)}</h1>
-      <p class="text-stone-500 text-sm mt-1">${library.length} book${library.length !== 1 ? 's' : ''}</p>
+    <div class="flex items-start justify-between mb-6 gap-4">
+      <div>
+        <h1 class="font-serif text-2xl font-semibold">${escHtml(username)}</h1>
+        <p class="text-stone-500 text-sm mt-1">${library.length} book${library.length !== 1 ? 's' : ''}</p>
+      </div>
+      ${followBtn}
     </div>
 
     <div role="tablist" class="flex gap-1 mb-6 border-b border-stone-800">
@@ -38,10 +60,10 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
     </div>
 
     <div id="tab-shelves" class="tab-panel">
-      ${renderShelvesTab(shelves, library)}
+      ${renderShelvesTab(shelves, library, myBookIds)}
     </div>
     <div id="tab-status" class="tab-panel hidden">
-      ${renderStatusTab(statusBooks)}
+      ${renderStatusTab(statusBooks, myBookIds)}
     </div>
     <div id="tab-feed" class="tab-panel hidden">
       ${renderFeedTab(feed)}
@@ -83,9 +105,37 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
   container.querySelectorAll('.profile-tab').forEach(btn => {
     btn.addEventListener('click', () => refreshTabs(btn.dataset.tab));
   });
+
+  // Follow / unfollow
+  const followBtn = container.querySelector('#follow-btn');
+  if (followBtn) {
+    followBtn.addEventListener('click', async () => {
+      const currently = followBtn.dataset.following === 'true';
+      followBtn.disabled = true;
+      try {
+        if (currently) {
+          await api.unfollow(username);
+          followBtn.textContent = '+ Follow';
+          followBtn.className = 'px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors bg-amber-500 hover:bg-amber-400 text-stone-950';
+          followBtn.dataset.following = 'false';
+          showToast(`Unfollowed ${username}.`);
+        } else {
+          await api.follow(username);
+          followBtn.textContent = 'Following';
+          followBtn.className = 'px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors bg-stone-700 hover:bg-red-900/40 text-stone-200 hover:text-red-400';
+          followBtn.dataset.following = 'true';
+          showToast(`Now following ${username}.`);
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        followBtn.disabled = false;
+      }
+    });
+  }
 }
 
-function renderShelvesTab(shelves, library) {
+function renderShelvesTab(shelves, library, myBookIds = new Set()) {
   const byShelf = {};
   for (const s of shelves) byShelf[s.id] = (library ?? []).filter(b => (b.shelf_ids ?? []).includes(s.id));
 
@@ -103,7 +153,7 @@ function renderShelvesTab(shelves, library) {
           <span class="text-sm font-normal text-stone-500 ml-2">${readingBooks.length}</span>
         </h2>
         <div class="book-grid">
-          ${readingBooks.map(b => bookCardHTML(b, { readOnly: true, isReading: true })).join('')}
+          ${readingBooks.map(b => bookCardHTML(b, { readOnly: true, isReading: true, alsoRead: myBookIds.has(String(b.book_id)) })).join('')}
         </div>
       </section>` : '';
 
@@ -119,7 +169,7 @@ function renderShelvesTab(shelves, library) {
           <span class="text-sm text-stone-500">${books.length}</span>
         </div>
         <div class="book-grid">
-          ${books.map(b => bookCardHTML(b, { readOnly: true })).join('')}
+          ${books.map(b => bookCardHTML(b, { readOnly: true, alsoRead: myBookIds.has(String(b.book_id)) })).join('')}
         </div>
       </section>`;
   }).join('');
@@ -128,7 +178,7 @@ function renderShelvesTab(shelves, library) {
   return combined || `<p class="text-stone-500 italic text-center py-10">No books on shelves yet.</p>`;
 }
 
-function renderStatusTab({ to_read, reading, done }) {
+function renderStatusTab({ to_read, reading, done }, myBookIds = new Set()) {
   const section = (label, books, color) => {
     if (!books.length) return '';
     return `
@@ -137,7 +187,7 @@ function renderStatusTab({ to_read, reading, done }) {
           <span class="text-sm font-normal text-stone-500 ml-2">${books.length}</span>
         </h2>
         <div class="book-grid">
-          ${books.map(b => bookCardHTML(b, { readOnly: true })).join('')}
+          ${books.map(b => bookCardHTML(b, { readOnly: true, alsoRead: myBookIds.has(String(b.book_id)) })).join('')}
         </div>
       </section>`;
   };

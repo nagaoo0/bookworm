@@ -2,85 +2,125 @@
 
 What's built, what's known to need work, and ideas for future improvements.
 
-## What's working (v1)
+## What's working (current)
 
-- **Library** — books organised into shelves; cover grid with dark cozy theme
-- **Shelves** — three built-in shelves (Currently Reading, To Read, Done) plus unlimited custom shelves with names and colors
-- **Add books** — Google Books search (quick + advanced with title/author/genre/publisher/ISBN fields) and a manual entry form as fallback
-- **Remove books** — hover × button on any cover card
-- **Move books** — right-click a cover to move it to any shelf
-- **Reading sessions** — click a cover to open the detail modal; log a read with start/end dates, 1–5 star rating, and review text; same book can be read multiple times
-- **Stats** — total books read, total read-throughs, currently reading count, average rating, books-finished-per-year bar chart
+- **Multi-user auth** — invite-only registration; first account becomes admin; session cookies; reCAPTCHA v3 support
+- **Library** — books organised into shelves and reading statuses (to read / reading / done)
+- **Shelves** — unlimited custom shelves with names and colors; built-in status shelves
+- **Add books** — Google Books search (quick + advanced) and a manual entry form as fallback
+- **Remove / move books** — hover × to remove; right-click ⋯ context menu to move between shelves or update status
+- **Reading sessions** — log reads with start/end dates, 1–5 star rating, and review; same book can be read multiple times
+- **Book notes** — free-form notes field per library entry, separate from session reviews
+- **Stats** — total books read, total read-throughs, currently reading count, average rating, books-per-year bar chart, genres pie chart
+- **Public profiles** — optional public profile at `#u/<username>` with shelves, reading piles, history, and stats tabs
+- **Community feed** — `#readers` page shows recent activity from all public users and a list of readers
+- **Import / Export** — tab-separated CSV compatible with Places reading app format
+- **Appearance** — dark / sepia / light theme; miniature–large card sizes; accent color picker
 - **Self-hosted** — runs on any VPS with `docker compose up --build`
 
-## Known issues
+---
 
-- **No authentication** — the app is fully open to anyone who can reach it. Must be protected by a reverse proxy with basic auth or a VPN before exposing to the internet.
-- **Single user** — all data is shared; no concept of accounts.
-- **Stats use `reading_sessions` only** — a book moved to the Done shelf without logging a session won't appear in stats. The stat page only counts sessions with `finished_at IS NOT NULL`.
-- **No pagination** — the library loads all books at once. Will get slow with very large collections.
-- **Cover images for manual entries** — only works if you paste in a URL; there's no image search fallback.
-- **Search result "already in library" state** — the search view doesn't highlight books you've already added.
-- **No sort/filter on shelves** — books always appear in order added; no way to sort alphabetically or by rating.
-- **Mobile layout** — the grid scales down but the UI hasn't been explicitly tested on small screens.
+## UI / UX improvements
 
-## Short-term improvements
+### In progress / next up
 
-### Auth
-Add a simple single-user password gate. Easiest approach: an `AUTH_PASSWORD` env var, a `/login` page that sets an httpOnly cookie, and Express middleware that checks it on every request. No JWT complexity needed for a personal app.
+#### Library search & filter
+A search input above the shelf bar that filters visible books by title or author in real time (client-side). No API call needed — filter the already-loaded `library` array in state. Pair with a sort dropdown (added date, title A–Z, author, rating).
 
-### Mark as done shortcut
-Right now finishing a book requires: right-click → move to Done shelf, then click → open modal → log session → fill dates/rating. Should be a single action, probably a dedicated button on the card or a "Finish reading" prompt when moving to the Done shelf.
+#### Sort options on shelves
+Dropdown or segmented control per shelf: **Date added** (default), **Title A–Z**, **Author**, **Rating** (sessions average). Purely client-side sort of the already-loaded library array.
 
-### Currently reading progress
-Add an optional `current_page` or `progress_percent` field to `reading_sessions` so you can track where you are mid-read. Show a small progress bar on the cover card.
+#### "Currently reading" hero on Home
+A prominent banner or card row at the very top of the library view (above shelves) that highlights the 1–3 books currently being read, with a progress bar if progress tracking is enabled.
 
-### Book notes
-A free-form notes field on `library_books` (separate from per-session reviews) for storing thoughts, quotes, or context that aren't tied to a specific read-through.
+#### Book detail page (`#book/:id`)
+A dedicated route showing cover, description, full metadata, all logged sessions, and notes — everything currently scattered across the modal. The modal becomes a quick-access shortcut; the detail page is the canonical view.
 
-### Search result deduplication
-Before showing "Add to shelf" buttons on search results, check against `books.google_id` in the library and show "Already on shelf: X" instead.
+#### Skeleton loading cards
+Replace the centered spinner with grey placeholder cards that match the grid layout. Reduces layout shift and feels faster.
 
-## Medium-term improvements
+#### Keyboard navigation in context menu
+Arrow keys navigate items, `Enter` selects, `Escape` closes. The menu already exists; this is a small event-listener addition.
 
-### Pagination / virtual scroll
-Load shelves page-by-page or render only visible cards. Postgres already supports `LIMIT`/`OFFSET`; the frontend needs a "load more" button or intersection observer.
+#### Swipe-to-dismiss on toast notifications
+Touch users can swipe the toast left/right to dismiss early.
 
-### Book detail page
-Currently book info only appears in the search result card. Add a proper `/book/:id` view showing cover, description, full author list, publication date, page count, and all past sessions.
+#### Empty shelf states with CTA
+When a shelf has no books, show a friendly message and a direct link to search.
 
-### Import from Goodreads / Storygraph
-Both services export a CSV. A one-time import route (`POST /api/import/goodreads`) that parses the CSV, looks up each title on Google Books, and bulk-inserts into the library would let users migrate their existing reading history.
+#### Bulk actions
+Checkbox multi-select on cards; a floating action bar appears when books are selected offering Move to shelf, Change status, Remove.
 
-### Reading goals
-A yearly reading goal (e.g. "read 24 books in 2026") with a progress bar on the Stats page. Store as a simple `goals` table with `year` and `target` columns.
+#### Reading goals
+A yearly reading goal (e.g. "read 24 books in 2026"). Stored in a `goals` table (`user_id`, `year`, `target`). A progress bar appears on the Stats page and optionally in the nav.
 
-### Shelf ordering
-`shelves.sort_order` column already exists in the DB. Add drag-to-reorder in the shelf manager UI (HTML drag-and-drop or a sortable library) and a `PATCH /api/shelves/reorder` endpoint.
+---
 
-### Tags / genres on books
-A `book_tags` join table so you can tag books with genres, awards, series names, etc. and filter the library by tag.
+### Medium-term UI/UX
 
-## Long-term / bigger features
+#### Progress tracking
+An optional "current page" or "percent read" field on the currently-reading status. Stored in `library_books.progress_page` / `progress_pct`. A thin progress bar renders at the bottom of the cover card.
 
-### Multi-user / social
-Each user gets their own account and library. Friends can see each other's shelves, follow reading activity, and share reviews — the Hondana model. Requires proper auth (email + password or OAuth), user table, and making all queries user-scoped.
+#### Recommendations ("People who read X also read Y")
+Co-occurrence query across `library_books`: find books most commonly paired with a given title in other users' libraries. Surface them in the book detail page and as a "Discover" section on Home.
 
-### Public profile page
-A read-only `/u/:username` route showing a user's shelves and recent activity. No auth required to view.
+#### Pagination / virtual scroll
+`LIMIT`/`OFFSET` on the library API; "Load more" button or intersection-observer infinite scroll. Needed once a library exceeds ~300 books.
 
-### Mobile app
-The web app is responsive but a native-feeling PWA (service worker, installable, offline-capable) or a Capacitor wrapper would improve the mobile experience.
+#### Reading log / calendar heatmap
+A GitHub-style activity heatmap on the Stats page showing days on which sessions were logged.
 
-### Recommendations
-Once enough reading history exists, suggest books based on authors and genres already in the library. Could be local heuristics or an external recommendations API.
+#### Series / collections
+A `series` field on `books` and a series grouping on shelves — "Dune (5 of 6 read)".
+
+---
+
+## Social features
+
+### In progress / next up
+
+#### Follow / unfollow
+A `follows` table (`follower_id`, `following_id`). Follow button on public profile pages and on reader cards. The Feed tab on `#readers` defaults to showing only followed users' activity, with a toggle for "All readers".
+
+#### "Also read" indicator
+When viewing someone else's public profile, books present in both their library and yours get a subtle shared-badge overlay on the cover card.
+
+#### Book comments
+A `comments` table (`book_id`, `user_id`, `body`, `created_at`). Comments appear in the book detail page and optionally on profile history cards. Visible to all logged-in users; only the author can delete.
+
+#### Activity notifications
+A `notifications` table (`user_id`, `type`, `payload`, `read_at`). Types: `follow`, `comment`. A bell icon in the nav shows an unread count badge; clicking it opens a notification panel.
+
+---
+
+### Medium-term social
+
+#### Reading challenges
+A public time-boxed challenge (e.g. "Read 5 sci-fi books in July 2026") that any user can join. A `challenges` table + `challenge_entries` join. A leaderboard on the `#readers` page shows participants and their progress.
+
+#### "Want to read" exchange
+On a book's detail page, show which followed users have it on their to-read list and which have already reviewed it — implicit recommendations from people you trust.
+
+#### Reading groups / book clubs
+A `groups` table (name, description, invite code). Members share a group shelf that everyone can add to, with a group-scoped feed of activity and comments. Requires a group admin role.
+
+---
+
+## Known issues (carry-over)
+
+- **No pagination** — library loads all books at once; will slow down with very large collections.
+- **Cover images for manual entries** — only works if you paste a URL; no image search fallback.
+- **Stats count sessions only** — a book marked Done without logging a session won't appear in the yearly chart.
+
+---
 
 ## Decisions log
 
 | Date | Decision | Reason |
 |---|---|---|
-| 2026-06 | Vanilla JS instead of React/Vue | Keep the bundle tiny and avoid framework overhead for what is essentially a CRUD UI |
-| 2026-06 | Postgres over SQLite | Easier to backup, restore, and inspect on a VPS; supports arrays for `authors` field |
-| 2026-06 | `shelf_id` FK instead of `status` enum | Custom shelves require a proper relation; the old `status` column is kept for migration compatibility |
-| 2026-06 | No auth in v1 | Single-user personal app; protect at the network/proxy layer until proper auth is needed |
-| 2026-06 | Hash routing | No server-side routing needed; simpler than `history.pushState` for a single-container deploy |
+| 2026-06 | Vanilla JS instead of React/Vue | Keep the bundle tiny; avoid framework overhead for a CRUD UI |
+| 2026-06 | Postgres over SQLite | Easier to backup/restore on a VPS; supports arrays for `authors` field |
+| 2026-06 | Hash routing | No server-side routing needed; simpler for a single-container deploy |
+| 2026-06 | Multi-user via DB sessions | Needed for social features; `AUTH_PASSWORD` env var approach doesn't scale past one user |
+| 2026-06 | Invite-only registration | Prevents open spam registration on public deployments; admin controls who joins |
+| 2026-06 | `library_books` UNIQUE(user_id, book_id) + status | Avoids duplicate library entries; status column coexists with shelf_memberships many-to-many |

@@ -10,6 +10,7 @@ import { renderAuth } from './views/auth.js';
 import { renderSettings } from './views/settings.js';
 import { renderProfile } from './views/profile.js';
 import { renderUsers } from './views/users.js';
+import { renderBook } from './views/book.js';
 import { setOnSessionSaved } from './components/modal.js';
 import { api, setOnUnauthorized } from './api.js';
 
@@ -34,6 +35,14 @@ document.getElementById('app').innerHTML = `
           <a href="#users"    class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="users">Readers</a>
           <a id="my-profile-link" href="#" class="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors hidden">Profile</a>
           <a href="#settings" class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
+          <!-- Notification bell -->
+          <button id="notif-btn" class="relative p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors hidden" aria-label="Notifications">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-9.95-4.47M9 17H4l1.405-1.405A2.032 2.032 0 006 14.158V11a6 6 0 016-6 6 6 0 016 6v3.159M13 21a2 2 0 01-4 0"/>
+            </svg>
+            <span id="notif-badge" class="hidden absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold"></span>
+          </button>
           <span id="nav-username" class="ml-2 text-xs text-stone-500"></span>
           <button id="logout-btn" class="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
             Sign out
@@ -97,6 +106,22 @@ document.getElementById('main-content')?.addEventListener('click', () => {
   document.getElementById('mobile-menu')?.classList.add('hidden');
 });
 
+let _notifInterval = null;
+
+async function refreshNotifBadge() {
+  try {
+    const { count } = await api.getUnreadCount();
+    const badge = document.getElementById('notif-badge');
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = count > 9 ? '9+' : count;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch { /* non-fatal */ }
+}
+
 function showApp(user) {
   setState({ user });
   headerEl.classList.remove('hidden');
@@ -110,8 +135,82 @@ function showApp(user) {
   if (profLink)    { profLink.href    = profileHref; profLink.classList.remove('hidden'); }
   if (profLinkMob) { profLinkMob.href = profileHref; profLinkMob.classList.remove('hidden'); }
 
+  // Notification bell
+  const notifBtn = document.getElementById('notif-btn');
+  notifBtn?.classList.remove('hidden');
+  refreshNotifBadge();
+  if (_notifInterval) clearInterval(_notifInterval);
+  _notifInterval = setInterval(refreshNotifBadge, 60_000);
+
+  notifBtn?.addEventListener('click', () => openNotifPanel());
+
   wireLogout();
   loadLibrary().then(() => navigate(getRoute()));
+}
+
+function openNotifPanel() {
+  document.getElementById('notif-panel')?.remove();
+  const panel = document.createElement('div');
+  panel.id = 'notif-panel';
+  panel.className = 'fixed top-14 right-4 z-50 w-80 bg-stone-900 border border-stone-700 rounded-xl shadow-2xl overflow-hidden';
+  panel.innerHTML = `
+    <div class="flex items-center justify-between px-4 py-3 border-b border-stone-800">
+      <span class="font-semibold text-sm">Notifications</span>
+      <button id="mark-all-read" class="text-xs text-amber-400 hover:underline">Mark all read</button>
+    </div>
+    <div id="notif-list" class="max-h-80 overflow-y-auto">
+      <div class="flex justify-center py-6"><div class="spinner"></div></div>
+    </div>`;
+  document.body.appendChild(panel);
+
+  api.getNotifications().then(items => {
+    const list = document.getElementById('notif-list');
+    if (!list) return;
+    if (!items.length) {
+      list.innerHTML = `<p class="text-stone-500 text-sm italic text-center py-6">No notifications.</p>`;
+      return;
+    }
+    list.innerHTML = items.map(n => {
+      const timeAgo = formatTimeAgo(n.created_at);
+      const unread = !n.read_at ? 'bg-stone-800' : '';
+      let msg = '';
+      if (n.type === 'follow') msg = `<strong>@${escHtml(n.actor_username)}</strong> started following you.`;
+      if (n.type === 'comment') msg = `<strong>@${escHtml(n.actor_username)}</strong> commented on <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
+      return `<div class="px-4 py-3 text-sm border-b border-stone-800/50 ${unread}">
+        <p class="text-stone-200 leading-snug">${msg}</p>
+        <p class="text-stone-500 text-xs mt-1">${timeAgo}</p>
+      </div>`;
+    }).join('');
+  }).catch(() => {});
+
+  panel.querySelector('#mark-all-read')?.addEventListener('click', async () => {
+    await api.markAllRead().catch(() => {});
+    const badge = document.getElementById('notif-badge');
+    badge?.classList.add('hidden');
+    panel.remove();
+  });
+
+  const dismiss = e => {
+    if (!panel.contains(e.target) && e.target !== document.getElementById('notif-btn')) {
+      panel.remove();
+      document.removeEventListener('click', dismiss);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', dismiss), 0);
+}
+
+function formatTimeAgo(isoDate) {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function escHtml(str) {
+  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function showAuth() {
@@ -149,6 +248,7 @@ function getRoute() {
   const hash = location.hash.slice(1) || 'home';
   if (ROUTES.includes(hash)) return hash;
   if (hash.startsWith('u/')) return hash;
+  if (hash.startsWith('book/')) return hash;
   return 'home';
 }
 
@@ -188,6 +288,9 @@ async function navigate(route) {
     } else {
       showPublicProfile(username);
     }
+  } else if (route.startsWith('book/')) {
+    const bookId = route.slice(5);
+    await renderBook(mainEl, bookId);
   }
 }
 
@@ -197,7 +300,6 @@ subscribe(state => {
 
 window.addEventListener('hashchange', () => {
   const route = getRoute();
-  // Public routes accessible even when logged out
   if (route.startsWith('u/') && !getState().user) {
     showPublicProfile(route.slice(2));
   } else if (route === 'users' && !getState().user) {

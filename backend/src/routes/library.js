@@ -6,7 +6,7 @@ const router = Router();
 
 // ── Shared SELECT helper ───────────────────────────────────────────────────────
 const LIBRARY_SELECT = `
-  SELECT lb.id, lb.status, lb.notes, lb.added_at,
+  SELECT lb.id, lb.status, lb.notes, lb.added_at, lb.progress_page, lb.progress_pct,
          COALESCE(
            array_agg(sm.shelf_id ORDER BY sm.shelf_id) FILTER (WHERE sm.shelf_id IS NOT NULL),
            '{}'::INT[]
@@ -159,23 +159,31 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ── PATCH /api/library/:id — set status and/or notes ─────────────────────────
+// ── PATCH /api/library/:id — set status, notes, and/or progress ──────────────
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { status, notes } = req.body;
-    if (status === undefined && notes === undefined)
-      return res.status(400).json({ error: 'status or notes is required' });
+    const { status, notes, progress_page, progress_pct } = req.body;
+    const hasField = [status, notes, progress_page, progress_pct].some(v => v !== undefined);
+    if (!hasField)
+      return res.status(400).json({ error: 'At least one field required' });
 
     if (status !== undefined && !['to_read', 'reading', 'done'].includes(status))
       return res.status(400).json({ error: 'Invalid status value' });
 
     const { rows } = await pool.query(
       `UPDATE library_books
-       SET status = CASE WHEN $1::text IS NOT NULL THEN $1 ELSE status END,
-           notes  = CASE WHEN $2::boolean THEN $3 ELSE notes END
-       WHERE id = $4 AND user_id = $5
+       SET status        = CASE WHEN $1::text IS NOT NULL THEN $1 ELSE status END,
+           notes         = CASE WHEN $2::boolean THEN $3 ELSE notes END,
+           progress_page = CASE WHEN $4::boolean THEN $5 ELSE progress_page END,
+           progress_pct  = CASE WHEN $6::boolean THEN $7 ELSE progress_pct END
+       WHERE id = $8 AND user_id = $9
        RETURNING *`,
-      [status ?? null, notes !== undefined, notes ?? null, req.params.id, req.user.id]
+      [
+        status ?? null, notes !== undefined, notes ?? null,
+        progress_page !== undefined, progress_page ?? null,
+        progress_pct  !== undefined, progress_pct  ?? null,
+        req.params.id, req.user.id,
+      ]
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
 

@@ -13,6 +13,10 @@ import shelvesRouter from './routes/shelves.js';
 import invitesRouter from './routes/invites.js';
 import profilesRouter from './routes/profiles.js';
 import importExportRouter from './routes/importExport.js';
+import followsRouter from './routes/follows.js';
+import notificationsRouter from './routes/notifications.js';
+import goalsRouter from './routes/goals.js';
+import commentsRouter from './routes/comments.js';
 
 const app = express();
 
@@ -46,9 +50,21 @@ const authLimiter = rateLimit({
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/profiles', profilesRouter);
 
-// Public cross-user feed — recent reviews from all public profiles
-app.get('/api/feed', async (_req, res, next) => {
+// Feed — public, but supports ?filter=following (requires session cookie if provided)
+app.get('/api/feed', async (req, res, next) => {
   try {
+    // Optionally resolve current user from session cookie for "following" filter
+    let currentUserId = null;
+    const token = req.cookies?.session;
+    if (token) {
+      const { rows: [sess] } = await pool.query(
+        `SELECT user_id FROM sessions WHERE token = $1 AND expires_at > now()`, [token]
+      );
+      if (sess) currentUserId = sess.user_id;
+    }
+
+    const followingOnly = req.query.filter === 'following' && currentUserId;
+
     const { rows } = await pool.query(
       `SELECT rs.id, rs.finished_at, rs.started_at, rs.rating, rs.review,
               u.username,
@@ -58,6 +74,7 @@ app.get('/api/feed', async (_req, res, next) => {
        JOIN books b ON b.id = rs.book_id
        WHERE u.is_public = true
          AND (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
+         ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = ${currentUserId})` : ''}
        ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
        LIMIT 100`
     );
@@ -85,6 +102,22 @@ app.get('/api/users', async (_req, res, next) => {
   }
 });
 
+// Public book detail endpoint (no auth required)
+app.get('/api/books/:bookId', async (req, res, next) => {
+  try {
+    const { rows: [book] } = await pool.query(
+      `SELECT id, google_id, title, authors, cover_url, page_count,
+              published_date, description, categories, publisher
+       FROM books WHERE id = $1`,
+      [req.params.bookId]
+    );
+    if (!book) return res.status(404).json({ error: 'Book not found' });
+    res.json(book);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // All routes below this require a valid session
 app.use(authMiddleware);
 
@@ -96,6 +129,10 @@ app.use('/api/books/:bookId/sessions', sessionsRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/invites', invitesRouter);
 app.use('/api/import-export', importExportRouter);
+app.use('/api/follows', followsRouter);
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/goals', goalsRouter);
+app.use('/api/books/:bookId/comments', commentsRouter);
 
 // Global error handler — catches any thrown/rejected error in route handlers
 app.use((err, _req, res, _next) => {

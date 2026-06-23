@@ -68,6 +68,7 @@ export const api = {
   updateMetadata: (libId, data) =>
     request(`/library/${libId}/metadata`, { method: 'PATCH', body: data }),
 
+  getBookDetail: (bookId) => request(`/books/${bookId}`),
   getSessions: (bookId) => request(`/books/${bookId}/sessions`),
   addSession: (bookId, data) => request(`/books/${bookId}/sessions`, { method: 'POST', body: data }),
   updateSession: (bookId, sessionId, data) => request(`/books/${bookId}/sessions/${sessionId}`, { method: 'PATCH', body: data }),
@@ -76,7 +77,32 @@ export const api = {
   getStats: () => request('/stats'),
 
   getUsers: () => request('/users'),
-  getFeed: () => request('/feed'),
+  getFeed: (filter) => request(`/feed${filter ? `?filter=${filter}` : ''}`),
+
+  // Follows
+  getFollows: () => request('/follows'),
+  getFollowStatus: (username) => request(`/follows/status?username=${encodeURIComponent(username)}`),
+  follow: (username) => request(`/follows/${encodeURIComponent(username)}`, { method: 'POST' }),
+  unfollow: (username) => request(`/follows/${encodeURIComponent(username)}`, { method: 'DELETE' }),
+
+  // Notifications
+  getNotifications: () => request('/notifications'),
+  getUnreadCount: () => request('/notifications/unread-count'),
+  markAllRead: () => request('/notifications/read-all', { method: 'POST' }),
+
+  // Goals
+  getGoals: () => request('/goals'),
+  getGoal: (year) => request(`/goals/${year}`),
+  setGoal: (year, target) => request(`/goals/${year}`, { method: 'PUT', body: { target } }),
+  deleteGoal: (year) => request(`/goals/${year}`, { method: 'DELETE' }),
+
+  // Comments
+  getComments: (bookId) => request(`/books/${bookId}/comments`),
+  addComment: (bookId, body) => request(`/books/${bookId}/comments`, { method: 'POST', body: { body } }),
+  deleteComment: (bookId, commentId) => request(`/books/${bookId}/comments/${commentId}`, { method: 'DELETE' }),
+
+  // Progress
+  setProgress: (libId, data) => request(`/library/${libId}`, { method: 'PATCH', body: data }),
 
   exportLibrary: () => fetch('/api/import-export/export', { credentials: 'include' }),
   importLibrary: (csv) => request('/import-export/import', { method: 'POST', body: { csv } }),

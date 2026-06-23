@@ -1,9 +1,14 @@
 import { api } from '../api.js';
 
+let feedFilter = 'all'; // 'all' | 'following'
+
 export async function renderUsers(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
-    const [users, feed] = await Promise.all([api.getUsers(), api.getFeed().catch(() => [])]);
+    const [users, feed] = await Promise.all([
+      api.getUsers(),
+      api.getFeed(feedFilter === 'following' ? 'following' : undefined).catch(() => []),
+    ]);
     render(container, users, feed);
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
@@ -20,11 +25,19 @@ function render(container, users, feed) {
         <button role="tab" aria-selected="false" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="readers">Readers</button>
       </div>
 
-      <div id="tab-feed" class="tab-panel"></div>
+      <div id="tab-feed" class="tab-panel">
+        <!-- Feed filter toggle -->
+        <div class="flex gap-2 mb-4">
+          <button class="feed-filter-btn text-xs px-3 py-1.5 rounded-full border transition-colors ${feedFilter === 'all' ? 'bg-amber-500 border-amber-500 text-stone-950 font-semibold' : 'border-stone-600 text-stone-400 hover:border-stone-400'}"
+                  data-filter="all">All readers</button>
+          <button class="feed-filter-btn text-xs px-3 py-1.5 rounded-full border transition-colors ${feedFilter === 'following' ? 'bg-amber-500 border-amber-500 text-stone-950 font-semibold' : 'border-stone-600 text-stone-400 hover:border-stone-400'}"
+                  data-filter="following">Following</button>
+        </div>
+        <div id="feed-content">${renderFeed(feed)}</div>
+      </div>
       <div id="tab-readers" class="tab-panel hidden"></div>
     </div>`;
 
-  container.querySelector('#tab-feed').innerHTML    = renderFeed(feed);
   container.querySelector('#tab-readers').innerHTML = renderReadersList(users);
 
   function setTab(active) {
@@ -45,11 +58,37 @@ function render(container, users, feed) {
   container.querySelectorAll('.readers-tab').forEach(btn => {
     btn.addEventListener('click', () => setTab(btn.dataset.tab));
   });
+
+  // Feed filter
+  container.querySelectorAll('.feed-filter-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      feedFilter = btn.dataset.filter;
+      const feedContent = container.querySelector('#feed-content');
+      feedContent.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
+      try {
+        const newFeed = await api.getFeed(feedFilter === 'following' ? 'following' : undefined);
+        feedContent.innerHTML = renderFeed(newFeed);
+      } catch {
+        feedContent.innerHTML = `<p class="text-stone-500 italic text-center py-10">Could not load feed.</p>`;
+      }
+      // Update button styles
+      container.querySelectorAll('.feed-filter-btn').forEach(b => {
+        const active = b.dataset.filter === feedFilter;
+        b.className = `feed-filter-btn text-xs px-3 py-1.5 rounded-full border transition-colors ${
+          active ? 'bg-amber-500 border-amber-500 text-stone-950 font-semibold'
+                 : 'border-stone-600 text-stone-400 hover:border-stone-400'
+        }`;
+      });
+    });
+  });
 }
 
 function renderFeed(feed) {
   if (!feed.length) {
-    return `<p class="text-stone-500 italic text-center py-10">No reviews yet — be the first!</p>`;
+    const msg = feedFilter === 'following'
+      ? 'No activity from people you follow yet.'
+      : 'No reviews yet — be the first!';
+    return `<p class="text-stone-500 italic text-center py-10">${msg}</p>`;
   }
 
   return `<div class="space-y-4">
