@@ -26,7 +26,13 @@ router.post('/register', async (req, res) => {
   if (!password || password.length < 6)
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
-  const client = await pool.connect();
+  let client;
+  try {
+    client = await pool.connect();
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Registration failed' });
+  }
   try {
     await client.query('BEGIN');
 
@@ -35,15 +41,17 @@ router.post('/register', async (req, res) => {
     const isFirst = count === '0';
 
     if (!isFirst) {
-      // Validate reCAPTCHA v3 token
-      if (!recaptchaToken) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'reCAPTCHA token required' });
-      }
-      const ok = await verifyRecaptcha(recaptchaToken);
-      if (!ok) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'reCAPTCHA validation failed' });
+      // Validate reCAPTCHA v3 token only when the secret is configured
+      if (process.env.RECAPTCHA_SECRET) {
+        if (!recaptchaToken) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'reCAPTCHA token required' });
+        }
+        const ok = await verifyRecaptcha(recaptchaToken);
+        if (!ok) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'reCAPTCHA validation failed' });
+        }
       }
 
       // Invite code is now optional; if provided, mark it used. If provided and invalid, reject.

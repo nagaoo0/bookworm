@@ -13,8 +13,8 @@ const RECAPTCHA_MIN_SCORE = Number(process.env.RECAPTCHA_MIN_SCORE ?? '0.5');
 
 export async function verifyRecaptcha(token) {
   if (!RECAPTCHA_SECRET) {
-    console.error('RECAPTCHA_SECRET not set; rejecting recaptcha validation');
-    return false;
+    // Not configured — skip validation, allow registration
+    return true;
   }
   try {
     const params = new URLSearchParams();
