@@ -118,11 +118,25 @@ function drawMonthlyChart(monthly, year, canvasId) {
   });
 }
 
+// Google Books nests broad labels like "Fiction / Science Fiction / Space Opera".
+// For those, the top-level segment is meaningless — use the second segment instead.
+const BROAD = new Set(['Fiction', 'Nonfiction', 'Juvenile Fiction', 'Juvenile Nonfiction', 'Young Adult Fiction', 'Young Adult Nonfiction']);
+
+function normalizeCategory(raw) {
+  const parts = raw.split(' / ');
+  return (BROAD.has(parts[0]) && parts[1]) ? parts[1] : parts[0];
+}
+
 function drawPieChart(categoriesByYear, year, canvasId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
-  const categories = categoriesByYear[year] ?? {};
+  const raw = categoriesByYear[year] ?? {};
+  const categories = {};
+  for (const [cat, count] of Object.entries(raw)) {
+    const key = normalizeCategory(cat);
+    categories[key] = (categories[key] ?? 0) + count;
+  }
   const sorted = Object.entries(categories).sort((a, b) => b[1] - a[1]);
 
   if (!sorted.length) {
