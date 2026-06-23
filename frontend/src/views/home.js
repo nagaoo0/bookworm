@@ -3,6 +3,19 @@ import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { openModal } from '../components/modal.js';
 
+// Persists collapse/sort state across re-renders
+const sectionState = {
+  reading: { open: true, sort: 'added' },
+  to_read: { open: true, sort: 'added' },
+  done:    { open: true, sort: 'added' },
+};
+
+function sortBooks(books, sort) {
+  if (sort === 'title')  return [...books].sort((a, b) => a.title.localeCompare(b.title));
+  if (sort === 'author') return [...books].sort((a, b) => (a.authors?.[0] ?? '').localeCompare(b.authors?.[0] ?? ''));
+  return books; // 'added' — preserve API order (added_at DESC)
+}
+
 // ── Data loading ───────────────────────────────────────────────────────────────
 export async function loadLibrary() {
   setState({ loading: true });
@@ -54,7 +67,7 @@ export function renderHome(container) {
       </div>
     </div>`;
 
-  renderShelfContent(container.querySelector('#shelf-content'), library, shelves, selectedShelfId);
+  renderShelfContent(container.querySelector('#shelf-content'), library, shelves, selectedShelfId, container);
   attachShelfBar(container, shelves, library);
   attachCardHandlers(container, shelves, library);
   attachShelfManagerHandlers(container, shelves);
@@ -69,7 +82,7 @@ function attachShelfBar(container, shelves, library) {
       setState({ selectedShelfId: id });
       // Re-render content from already-loaded state — no network round-trip needed
       const contentEl = container.querySelector('#shelf-content');
-      if (contentEl) renderShelfContent(contentEl, library, shelves, id);
+      if (contentEl) renderShelfContent(contentEl, library, shelves, id, container);
       // Update active chip styles
       container.querySelectorAll('.shelf-chip[data-shelf]').forEach(c => {
         const cId = c.dataset.shelf === 'all' ? null : Number(c.dataset.shelf);
@@ -129,9 +142,9 @@ function showInlineShelfCreate(container) {
 }
 
 // ── Content area ──────────────────────────────────────────────────────────────
-function renderShelfContent(el, library, shelves, selectedShelfId) {
+function renderShelfContent(el, library, shelves, selectedShelfId, container) {
   if (selectedShelfId == null) {
-    renderAllBooks(el, library);
+    renderAllBooks(el, library, container, shelves);
   } else {
     const shelf = shelves.find(s => s.id === selectedShelfId);
     const books = library.filter(b => b.shelf_ids?.includes(selectedShelfId));
@@ -139,7 +152,7 @@ function renderShelfContent(el, library, shelves, selectedShelfId) {
   }
 }
 
-function renderAllBooks(el, library) {
+function renderAllBooks(el, library, container, shelves) {
   const byStatus = { reading: [], to_read: [], done: [] };
   for (const b of library) {
     if (byStatus[b.status]) byStatus[b.status].push(b);
@@ -151,20 +164,39 @@ function renderAllBooks(el, library) {
     { key: 'done',    label: 'Done',               color: '#22c55e' },
   ];
 
+  const SORT_OPTIONS = [
+    { value: 'added',  label: 'Date added' },
+    { value: 'title',  label: 'Title' },
+    { value: 'author', label: 'Author' },
+  ];
+
   const sections = STATUS_META.map(({ key, label, color }) => {
     const books = byStatus[key];
     if (!books.length) return '';
+    const { open, sort } = sectionState[key];
+    const sorted = sortBooks(books, sort);
     const dot = `<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${color}"></span>`;
+    const sortSelect = `
+      <select class="section-sort ml-auto bg-stone-800 border border-stone-700 rounded-md px-2 py-0.5
+                     text-xs text-stone-400 focus:outline-none focus:border-amber-500 cursor-pointer"
+              data-sort-section="${key}">
+        ${SORT_OPTIONS.map(o => `<option value="${o.value}" ${sort === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
+      </select>`;
     return `
       <section class="mb-10" data-status-section="${key}">
         <div class="flex items-center gap-2 mb-4">
-          ${dot}
-          <h2 class="font-serif text-xl font-semibold">${label}</h2>
-          <span class="text-sm text-stone-500">${books.length}</span>
+          <button class="section-toggle flex items-center gap-2 hover:opacity-80 transition-opacity"
+                  data-toggle-section="${key}" aria-expanded="${open}">
+            <span class="text-stone-500 text-xs transition-transform ${open ? 'rotate-90' : ''}" style="display:inline-block">▶</span>
+            ${dot}
+            <h2 class="font-serif text-xl font-semibold">${label}</h2>
+            <span class="text-sm text-stone-500">${books.length}</span>
+          </button>
+          ${open ? sortSelect : ''}
         </div>
-        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
-          ${books.map(b => bookCardHTML(b, { isReading: key === 'reading' })).join('')}
-        </div>
+        ${open ? `<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+          ${sorted.map(b => bookCardHTML(b, { isReading: key === 'reading' })).join('')}
+        </div>` : ''}
       </section>`;
   }).join('');
 
@@ -173,6 +205,26 @@ function renderAllBooks(el, library) {
       <p class="text-stone-400 text-lg">Your library is empty.</p>
       <p class="text-stone-500 text-sm">Search for a book and add it to get started.</p>
     </div>`;
+
+  // Collapse toggles
+  el.querySelectorAll('.section-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.toggleSection;
+      sectionState[key].open = !sectionState[key].open;
+      renderAllBooks(el, library, container, shelves);
+      attachCardHandlers(container, shelves, library);
+    });
+  });
+
+  // Sort selects
+  el.querySelectorAll('.section-sort').forEach(select => {
+    select.addEventListener('change', () => {
+      const key = select.dataset.sortSection;
+      sectionState[key].sort = select.value;
+      renderAllBooks(el, library, container, shelves);
+      attachCardHandlers(container, shelves, library);
+    });
+  });
 }
 
 function renderShelfGrid(el, shelf, books) {
