@@ -52,7 +52,6 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
         ${coverImg}
         <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
         ${finishBtn}
-        ${removeBtn}
       </div>
       <div class="mt-2 flex-1 flex flex-col">
         <h3 class="font-serif text-sm font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(book.title)}</h3>

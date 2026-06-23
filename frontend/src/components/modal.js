@@ -18,6 +18,11 @@ export function closeModal() {
 async function renderModal(bookId, bookTitle, libId, notes) {
   document.getElementById('modal-backdrop')?.remove();
 
+  const coverSrc = book.cover_url ?? book.coverUrl ?? null;
+  const coverImg = coverSrc
+    ? `<img src="${coverSrc}" alt="${escHtml(book.title)}" class="w-full h-full object-cover" loading="lazy" />`
+    : `<div class="cover-placeholder w-full h-full font-serif text-xs">${escHtml(book.title)}</div>`;
+
   const backdrop = document.createElement('div');
   backdrop.id = 'modal-backdrop';
   backdrop.className = 'fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 fade-in';
@@ -30,6 +35,12 @@ async function renderModal(bookId, bookTitle, libId, notes) {
         <div class="flex items-start justify-between">
           <h2 class="font-serif text-lg font-semibold leading-snug pr-4">${escHtml(bookTitle)}</h2>
           <button id="modal-close" class="text-stone-400 hover:text-white text-3xl leading-none flex-shrink-0 -mt-1">×</button>
+        </div>
+
+        <div class="flex gap-4">
+          <div class="w-24 h-36 flex-shrink-0 rounded overflow-hidden bg-stone-800 shadow-lg">
+            ${coverImg}
+          </div>
         </div>
 
         <!-- Reading sessions -->
