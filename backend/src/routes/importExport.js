@@ -91,7 +91,7 @@ router.post('/import', async (req, res) => {
   const uid = req.user.id;
   let imported = 0, skipped = 0;
 
-  const client = await pool.connect();
+  let client = await pool.connect();
   try {
     for (const r of records) {
       const googleId      = r.id?.trim() || null;
@@ -200,7 +200,11 @@ router.post('/import', async (req, res) => {
 
         await client.query('COMMIT');
       } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK').catch(async () => {
+          // If ROLLBACK fails the connection is broken — replace it to avoid poisoned state
+          client.release(true);
+          client = await pool.connect();
+        });
         console.error(`Import error for "${title}":`, err.message);
         skipped++;
       }

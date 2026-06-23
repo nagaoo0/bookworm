@@ -122,6 +122,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
       `SELECT password_hash FROM users WHERE id = $1`,
       [req.user.id]
     );
+    if (!row) return res.status(404).json({ error: 'User not found' });
 
     const { isPublic, currentPassword, newPassword } = req.body ?? {};
     const updates = [];

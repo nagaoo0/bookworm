@@ -76,7 +76,9 @@ app.use('/api/import-export', importExportRouter);
 app.use((err, _req, res, _next) => {
   console.error(err);
   const status = err.status ?? 500;
-  res.status(status).json({ error: err.message ?? 'Internal server error' });
+  // Only expose the message for intentional app-level errors (4xx); hide raw DB/internal details for 5xx
+  const message = status < 500 ? (err.message ?? 'Request error') : 'Internal server error';
+  res.status(status).json({ error: message });
 });
 
 const PORT = process.env.PORT ?? 3000;

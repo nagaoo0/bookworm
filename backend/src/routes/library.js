@@ -134,7 +134,6 @@ router.post('/', async (req, res) => {
       );
       if (!shelf) {
         await client.query('ROLLBACK');
-        client.release();
         return res.status(404).json({ error: 'Shelf not found' });
       }
       await client.query(
