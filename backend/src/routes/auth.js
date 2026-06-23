@@ -5,6 +5,7 @@ import {
   createSession, setSessionCookie, clearSessionCookie,
   authMiddleware,
 } from '../auth.js';
+import { verifyRecaptcha } from '../auth.js';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ router.get('/me', authMiddleware, (req, res) => {
 
 // POST /api/auth/register  { username, password, inviteCode? }
 router.post('/register', async (req, res) => {
-  const { username, password, inviteCode } = req.body ?? {};
+  const { username, password, inviteCode, recaptchaToken } = req.body ?? {};
 
   if (!USERNAME_RE.test(username ?? ''))
     return res.status(400).json({ error: 'Username must be 2–32 characters (letters, numbers, _ -)' });
@@ -34,17 +35,27 @@ router.post('/register', async (req, res) => {
     const isFirst = count === '0';
 
     if (!isFirst) {
-      if (!inviteCode?.trim()) {
+      // Validate reCAPTCHA v3 token
+      if (!recaptchaToken) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'An invite code is required' });
+        return res.status(400).json({ error: 'reCAPTCHA token required' });
       }
-      const { rows: [invite] } = await client.query(
-        `SELECT code FROM invites WHERE code = $1 AND used_by IS NULL`,
-        [inviteCode.trim()]
-      );
-      if (!invite) {
+      const ok = await verifyRecaptcha(recaptchaToken);
+      if (!ok) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'Invalid or already-used invite code' });
+        return res.status(400).json({ error: 'reCAPTCHA validation failed' });
+      }
+
+      // Invite code is now optional; if provided, mark it used. If provided and invalid, reject.
+      if (inviteCode?.trim()) {
+        const { rows: [invite] } = await client.query(
+          `SELECT code FROM invites WHERE code = $1 AND used_by IS NULL`,
+          [inviteCode.trim()]
+        );
+        if (!invite) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Invalid or already-used invite code' });
+        }
       }
     }
 
@@ -57,7 +68,7 @@ router.post('/register', async (req, res) => {
     );
 
     // Mark invite used
-    if (!isFirst) {
+    if (!isFirst && inviteCode?.trim()) {
       await client.query(
         `UPDATE invites SET used_by = $1, used_at = now() WHERE code = $2`,
         [user.id, inviteCode.trim()]
@@ -78,6 +89,13 @@ router.post('/register', async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// GET /api/auth/recaptcha-site-key -> { siteKey }
+router.get('/recaptcha-site-key', (req, res) => {
+  const siteKey = process.env.RECAPTCHA_SITE_KEY || '';
+  if (!siteKey) return res.status(404).json({ error: 'reCAPTCHA site key not configured' });
+  res.json({ siteKey });
 });
 
 // POST /api/auth/login  { username, password }

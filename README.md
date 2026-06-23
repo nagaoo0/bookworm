@@ -77,6 +77,43 @@ npm run dev
 | `API_PORT` | `3000` | Host port for the API container |
 | `FRONTEND_PORT` | `8080` | Host port for the frontend container |
 
+### reCAPTCHA v3 (optional but recommended for open registration)
+
+Bookworm can require a reCAPTCHA v3 token when users register. This repository now ships with support for reCAPTCHA v3: the frontend will load the site key and call grecaptcha.execute before sending a registration request; the backend verifies the token with Google's siteverify endpoint.
+
+Set the following environment variables to enable reCAPTCHA:
+
+```env
+RECAPTCHA_SITE_KEY=your_site_key_here
+RECAPTCHA_SECRET=your_secret_key_here
+# Optional: minimum acceptable score (0.0 to 1.0). Default: 0.5
+RECAPTCHA_MIN_SCORE=0.5
+```
+
+Notes:
+- If `RECAPTCHA_SITE_KEY` is not set, the frontend will show "Anti-bot unavailable" and registrations that don't include a valid token will be rejected by the API.
+- The very first user you create (fresh database) is still allowed to register without a token and becomes admin.
+
+Example PowerShell dev run with reCAPTCHA env vars:
+
+```powershell
+Set-Location backend
+#$env:RECAPTCHA_SITE_KEY = 'your_site_key'
+#$env:RECAPTCHA_SECRET = 'your_secret'
+#$env:RECAPTCHA_MIN_SCORE = '0.5'
+npm install
+DATABASE_URL=postgres://bookworm:changeme@localhost:5432/bookworm npm run dev
+```
+
+Open the frontend in a separate terminal:
+
+```powershell
+Set-Location frontend
+npm install
+npm run dev
+# open http://localhost:5173
+```
+
 ## VPS deployment
 
 1. Copy the project folder to your VPS (`rsync`, `scp`, or git clone).

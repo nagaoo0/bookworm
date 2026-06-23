@@ -1,10 +1,40 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import fetch from 'node-fetch';
 import { pool } from './db.js';
 
 const SALT_ROUNDS = 12;
 const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const COOKIE = 'bw_session';
+
+// reCAPTCHA v3 verification helper
+const RECAPTCHA_SECRET = process.env.RECAPTCHA_SECRET || '';
+const RECAPTCHA_MIN_SCORE = Number(process.env.RECAPTCHA_MIN_SCORE ?? '0.5');
+
+export async function verifyRecaptcha(token) {
+  if (!RECAPTCHA_SECRET) {
+    console.error('RECAPTCHA_SECRET not set; rejecting recaptcha validation');
+    return false;
+  }
+  try {
+    const params = new URLSearchParams();
+    params.append('secret', RECAPTCHA_SECRET);
+    params.append('response', token);
+    const resp = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+    const data = await resp.json();
+    // Expect success and score above threshold
+    if (!data.success) return false;
+    const score = typeof data.score === 'number' ? data.score : 0;
+    return score >= RECAPTCHA_MIN_SCORE;
+  } catch (err) {
+    console.error('reCAPTCHA verification failed', err);
+    return false;
+  }
+}
 
 export const hashPassword = (plain) => bcrypt.hash(plain, SALT_ROUNDS);
 export const verifyPassword = (plain, hash) => bcrypt.compare(plain, hash);

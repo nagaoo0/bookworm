@@ -3,7 +3,7 @@ import { api } from '../api.js';
 export function renderAuth(container, onSuccess) {
   let mode = 'login'; // 'login' | 'register'
 
-  function render() {
+  async function render() {
     const isRegister = mode === 'register';
     container.innerHTML = `
       <div class="min-h-[80vh] flex items-center justify-center px-4">
@@ -40,6 +40,10 @@ export function renderAuth(container, onSuccess) {
                 class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
                        focus:outline-none focus:border-amber-500 transition-colors font-mono" />
             </div>` : ''}
+            ${isRegister ? `
+            <div id="recaptcha-status" class="text-stone-400 text-xs">Loading anti-bot check...</div>
+            <input type="hidden" name="recaptchaToken" id="recaptcha-token" />
+            ` : ''}
             <button type="submit"
               class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
               ${isRegister ? 'Create account' : 'Sign in'}
@@ -57,6 +61,7 @@ export function renderAuth(container, onSuccess) {
     // Check if there are any users (to show the hint)
     if (isRegister) {
       checkFirstUser(container);
+      await loadRecaptcha(container);
     }
 
     container.querySelector('#toggle-mode').addEventListener('click', () => {
@@ -71,12 +76,29 @@ export function renderAuth(container, onSuccess) {
       const fd = new FormData(e.target);
       const username = fd.get('username')?.trim();
       const password = fd.get('password');
-      const inviteCode = fd.get('inviteCode')?.trim() || undefined;
+  const inviteCode = fd.get('inviteCode')?.trim() || undefined;
+  const recaptchaToken = fd.get('recaptchaToken') || undefined;
 
       try {
-        const user = mode === 'login'
-          ? await api.login({ username, password })
-          : await api.register({ username, password, inviteCode });
+        let user;
+        if (mode === 'login') {
+          user = await api.login({ username, password });
+        } else {
+          // Ensure we have a fresh recaptcha token if grecaptcha is available
+          const tokenEl = container.querySelector('#recaptcha-token');
+          const siteKeyRes = await api.getRecaptchaSiteKey().catch(() => null);
+          const siteKey = siteKeyRes?.siteKey;
+          if (window.grecaptcha && siteKey) {
+            try {
+              const tok = await window.grecaptcha.execute(siteKey, { action: 'register' });
+              if (tokenEl) tokenEl.value = tok;
+            } catch (e) {
+              // ignore and let backend validate; token may be empty
+            }
+          }
+          const recaptchaTokenNow = (container.querySelector('#recaptcha-token') || {}).value;
+          user = await api.register({ username, password, inviteCode, recaptchaToken: recaptchaTokenNow });
+        }
         onSuccess(user);
       } catch (err) {
         errEl.textContent = err.message;
@@ -86,6 +108,40 @@ export function renderAuth(container, onSuccess) {
   }
 
   render();
+}
+
+async function loadRecaptcha(container) {
+  const statusEl = container.querySelector('#recaptcha-status');
+  const tokenEl = container.querySelector('#recaptcha-token');
+  if (statusEl) statusEl.textContent = 'Loading anti-bot check...';
+  if (!tokenEl) return;
+  try {
+    const res = await api.getRecaptchaSiteKey();
+    const siteKey = res.siteKey;
+    if (!siteKey) throw new Error('No site key');
+
+    // If grecaptcha not already loaded, inject script
+    if (!window.grecaptcha) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = `https://www.google.com/recaptcha/api.js?render=${siteKey}`;
+        s.async = true;
+        s.defer = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('Failed to load reCAPTCHA script'));
+        document.head.appendChild(s);
+      });
+    }
+    statusEl.textContent = 'Anti-bot ready';
+    // Pre-execute a token for the 'register' action and store it; tokens are short-lived so we'll fetch again on submit too.
+    if (window.grecaptcha && typeof window.grecaptcha.execute === 'function') {
+      const token = await window.grecaptcha.execute(siteKey, { action: 'register' });
+      tokenEl.value = token;
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Anti-bot unavailable';
+    console.warn('reCAPTCHA setup failed', err);
+  }
 }
 
 async function checkFirstUser(container) {
@@ -100,3 +156,5 @@ async function checkFirstUser(container) {
   // The most honest thing: show the hint permanently so first-time users know.
   hint.classList.remove('hidden');
 }
+
+// legacy captcha removed
