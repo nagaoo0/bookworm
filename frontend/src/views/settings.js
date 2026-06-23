@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { getState, setState } from '../store.js';
 import { loadPrefs, savePrefs, ACCENT_COLORS } from '../prefs.js';
+import { showToast } from '../components/toast.js';
 
 export async function renderSettings(container) {
   const { user } = getState();
@@ -84,9 +85,8 @@ function render(container, user, invites) {
       const updated = await api.updateMe({ isPublic: toggle.checked });
       setState({ user: { ...getState().user, isPublic: updated.isPublic } });
       linkRow.classList.toggle('hidden', !toggle.checked);
-      profileMsg.className = 'text-xs text-green-400';
-      profileMsg.textContent = toggle.checked ? 'Profile is now public.' : 'Profile is now private.';
-      setTimeout(() => { profileMsg.textContent = ''; }, 2000);
+      showToast(toggle.checked ? 'Profile is now public.' : 'Profile is now private.');
+      profileMsg.textContent = '';
     } catch (err) {
       toggle.checked = !toggle.checked; // revert
       profileMsg.className = 'text-xs text-red-400';
@@ -105,14 +105,13 @@ function render(container, user, invites) {
         newPassword: fd.get('newPassword'),
       });
       e.target.reset();
-      pwMsg.className = 'text-xs text-green-400';
-      pwMsg.textContent = 'Password updated.';
+      showToast('Password updated.');
+      pwMsg.classList.add('hidden');
     } catch (err) {
       pwMsg.className = 'text-xs text-red-400';
       pwMsg.textContent = err.message;
+      pwMsg.classList.remove('hidden');
     }
-    pwMsg.classList.remove('hidden');
-    setTimeout(() => pwMsg.classList.add('hidden'), 3000);
   });
 
   // Appearance
@@ -250,7 +249,7 @@ function attachImportExportHandlers(container) {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert('Export failed: ' + err.message);
+      showToast('Export failed: ' + err.message, 'error');
     } finally {
       btn.disabled = false;
       btn.textContent = '↓ Export library';
@@ -275,8 +274,10 @@ function attachImportExportHandlers(container) {
     try {
       const text = await file.text();
       const result = await api.importLibrary(text);
+      const imp = result.imported;
+      const skp = result.skipped;
       msg.className = 'text-xs text-green-400';
-      msg.textContent = `Done — ${result.imported} added, ${result.skipped} skipped (${result.total} rows total).`;
+      msg.textContent = `${imp} book${imp !== 1 ? 's' : ''} added${skp ? `, ${skp} duplicate${skp !== 1 ? 's' : ''} skipped` : ''}.`;
     } catch (err) {
       msg.className = 'text-xs text-red-400';
       msg.textContent = err.message;

@@ -71,6 +71,7 @@ async function renderModal(bookId, bookTitle, libId, notes) {
                 class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded py-2.5 text-sm transition-colors">
                 Save Session
               </button>
+              <p id="session-error" class="text-xs text-red-400 hidden"></p>
             </form>
           </details>
         </div>
@@ -161,10 +162,13 @@ async function renderModal(bookId, bookTitle, libId, notes) {
       selectedRating = 0;
       document.getElementById('session-stars').innerHTML = starRatingHTML(0, { interactive: true });
       attachStarHandlers(document.getElementById('session-stars'), val => { selectedRating = val; });
+      const errEl = document.getElementById('session-error');
+      if (errEl) errEl.classList.add('hidden');
       loadSessions(bookId);
       _onSessionSaved();
     } catch (err) {
-      alert('Could not save session: ' + err.message);
+      const errEl = document.getElementById('session-error');
+      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
     }
   });
 

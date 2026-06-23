@@ -89,9 +89,12 @@ const pubHeader = document.getElementById('public-header');
 document.getElementById('mobile-menu-btn')?.addEventListener('click', () => {
   document.getElementById('mobile-menu')?.classList.toggle('hidden');
 });
-// Close mobile menu on nav link click
+// Close mobile menu on nav link click or any main content interaction
 document.querySelectorAll('.nav-link-mob').forEach(a => {
   a.addEventListener('click', () => document.getElementById('mobile-menu')?.classList.add('hidden'));
+});
+document.getElementById('main-content')?.addEventListener('click', () => {
+  document.getElementById('mobile-menu')?.classList.add('hidden');
 });
 
 function showApp(user) {

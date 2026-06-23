@@ -4,7 +4,7 @@ import { Chart, ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Leg
 Chart.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend, PieController, BarController);
 
 export async function renderStats(container) {
-  container.innerHTML = `<p class="text-stone-400 text-center py-20">Loading stats…</p>`;
+  container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
     const s = await api.getStats();
     render(container, s);

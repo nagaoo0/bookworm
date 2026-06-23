@@ -2,8 +2,10 @@ import { api } from '../api.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { render as renderStatsContent } from './stats.js';
 
+const lastTab = new Map();
+
 export async function renderProfile(container, username) {
-  container.innerHTML = `<p class="text-stone-400 text-center py-20">Loading profile…</p>`;
+  container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
 
   try {
     const data = await api.getProfile(username);
@@ -28,11 +30,11 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
       <p class="text-stone-500 text-sm mt-1">${library.length} book${library.length !== 1 ? 's' : ''}</p>
     </div>
 
-    <div class="flex gap-1 mb-6 border-b border-stone-800">
-      <button class="profile-tab active-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="shelves">My Shelves</button>
-      <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="status">Reading Piles</button>
-      <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="feed">History</button>
-      <button class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="stats">Stats</button>
+    <div role="tablist" class="flex gap-1 mb-6 border-b border-stone-800">
+      <button role="tab" class="profile-tab active-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="shelves" aria-selected="true">My Shelves</button>
+      <button role="tab" class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="status" aria-selected="false">Reading Piles</button>
+      <button role="tab" class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="feed" aria-selected="false">History</button>
+      <button role="tab" class="profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="stats" aria-selected="false">Stats</button>
     </div>
 
     <div id="tab-shelves" class="tab-panel">
@@ -50,6 +52,7 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
   let statsRendered = false;
 
   function refreshTabs(active) {
+    lastTab.set(username, active);
     container.querySelectorAll('.profile-tab').forEach(btn => {
       const isActive = btn.dataset.tab === active;
       btn.className = `profile-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
@@ -57,6 +60,7 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
           ? 'bg-stone-900 text-amber-400 border-b-2 border-amber-500'
           : 'text-stone-400 hover:text-stone-200'
       }`;
+      btn.setAttribute('aria-selected', String(isActive));
     });
     container.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
     container.querySelector(`#tab-${active}`)?.classList.remove('hidden');
@@ -74,7 +78,7 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
     }
   }
 
-  refreshTabs('shelves');
+  refreshTabs(lastTab.get(username) ?? 'shelves');
 
   container.querySelectorAll('.profile-tab').forEach(btn => {
     btn.addEventListener('click', () => refreshTabs(btn.dataset.tab));

@@ -141,7 +141,7 @@ function advField(id, label, placeholder) {
 
 async function runSearch(params, container) {
   const resultsEl = container.querySelector('#search-results');
-  resultsEl.innerHTML = `<p class="text-stone-400 text-center py-10">Searching…</p>`;
+  resultsEl.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
   try {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);

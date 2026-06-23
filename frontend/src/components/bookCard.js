@@ -30,7 +30,12 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
                       w-6 h-6 rounded-full bg-black/70 text-white text-xs
                       opacity-0 group-hover:opacity-100 transition-opacity
                       flex items-center justify-center hover:bg-red-600"
-               title="Remove from library">✕</button>`
+               title="Remove from library">✕</button>
+       <button class="card-menu-btn absolute bottom-1.5 right-1.5 z-10
+                      w-6 h-6 rounded-full bg-black/60 text-white text-xs
+                      opacity-0 group-hover:opacity-100 transition-opacity
+                      flex items-center justify-center hover:bg-stone-600"
+               title="More options">⋯</button>`
     : '';
 
   const finishBtn = isReading && !readOnly

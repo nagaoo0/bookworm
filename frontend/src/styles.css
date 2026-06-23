@@ -114,6 +114,21 @@ body {
   color: var(--color-text);
 }
 
+/* Spinner */
+.spinner {
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Shelf bar scrollable on small screens */
+.shelf-bar { scrollbar-width: none; -ms-overflow-style: none; }
+.shelf-bar::-webkit-scrollbar { display: none; }
+
 /* On touch devices: always show the card overlay buttons */
 @media (hover: none) {
   .finish-reading-btn,

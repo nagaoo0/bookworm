@@ -32,7 +32,7 @@ export function renderHome(container) {
   const { shelves, library, loading, error } = getState();
 
   if (loading) {
-    container.innerHTML = `<div class="text-stone-400 text-center py-20">Loading your library…</div>`;
+    container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
     return;
   }
   if (error) {
@@ -47,7 +47,7 @@ export function renderHome(container) {
   container.innerHTML = `
     <div class="flex flex-col gap-6">
       <!-- Shelf selector bar -->
-      <div class="shelf-bar flex items-center gap-2 flex-wrap">
+      <div class="shelf-bar flex items-center gap-2 overflow-x-auto">
         <button class="shelf-chip ${selectedShelfId == null ? 'shelf-chip-active' : 'shelf-chip-idle'}"
                 data-shelf="all">All Books</button>
         ${shelves.map(s => `
@@ -201,9 +201,12 @@ function renderAllBooks(el, library, container, shelves) {
   }).join('');
 
   el.innerHTML = sections || `
-    <div class="text-center py-20 space-y-3">
+    <div class="text-center py-20 space-y-4">
       <p class="text-stone-400 text-lg">Your library is empty.</p>
-      <p class="text-stone-500 text-sm">Search for a book and add it to get started.</p>
+      <a href="#search"
+         class="inline-block px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+        Search for a book
+      </a>
     </div>`;
 
   // Collapse toggles
@@ -284,6 +287,15 @@ function attachCardHandlers(container, shelves, library) {
       await api.setStatus(libId, 'done');
       await loadLibrary();
       openModal(bookId, title, libId, notes);
+    });
+  });
+
+  // ⋯ button → context menu
+  container.querySelectorAll('.card-menu-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const rect = btn.getBoundingClientRect();
+      showContextMenu(rect.left, rect.bottom + 4, btn.closest('.book-card'), shelves, library);
     });
   });
 

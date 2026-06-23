@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 
 export async function renderUsers(container) {
-  container.innerHTML = `<p class="text-stone-400 text-center py-20">Loading…</p>`;
+  container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
     const [users, feed] = await Promise.all([api.getUsers(), api.getFeed().catch(() => [])]);
     render(container, users, feed);
@@ -15,9 +15,9 @@ function render(container, users, feed) {
     <div class="max-w-2xl mx-auto fade-in">
       <h1 class="text-2xl font-semibold mb-6">Readers</h1>
 
-      <div class="flex gap-1 mb-6 border-b border-stone-800">
-        <button class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="feed">Feed</button>
-        <button class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="readers">Readers</button>
+      <div role="tablist" class="flex gap-1 mb-6 border-b border-stone-800">
+        <button role="tab" aria-selected="true"  class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="feed">Feed</button>
+        <button role="tab" aria-selected="false" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="readers">Readers</button>
       </div>
 
       <div id="tab-feed" class="tab-panel"></div>
@@ -34,6 +34,7 @@ function render(container, users, feed) {
         on ? 'bg-stone-900 text-amber-400 border-b-2 border-amber-500'
            : 'text-stone-400 hover:text-stone-200'
       }`;
+      btn.setAttribute('aria-selected', String(on));
     });
     container.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
     container.querySelector(`#tab-${active}`)?.classList.remove('hidden');

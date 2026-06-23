@@ -17,19 +17,25 @@ export function renderAuth(container, onSuccess) {
           </div>
           <form id="auth-form" class="bg-stone-900 rounded-xl p-6 space-y-4 ring-1 ring-white/10 shadow-2xl">
             <div>
-              <label class="text-xs text-stone-400 block mb-1">Username</label>
-              <input type="text" name="username" required autofocus autocomplete="username"
+              <label for="auth-username" class="text-xs text-stone-400 block mb-1">Username</label>
+              <input id="auth-username" type="text" name="username" required autofocus autocomplete="username"
                 placeholder="2–32 characters, letters / numbers / _ -"
                 class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
                        focus:outline-none focus:border-amber-500 transition-colors" />
             </div>
             <div>
-              <label class="text-xs text-stone-400 block mb-1">Password</label>
-              <input type="password" name="password" required autocomplete="${isRegister ? 'new-password' : 'current-password'}"
+              <label for="auth-password" class="text-xs text-stone-400 block mb-1">Password</label>
+              <input id="auth-password" type="password" name="password" required autocomplete="${isRegister ? 'new-password' : 'current-password'}"
                 class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
                        focus:outline-none focus:border-amber-500 transition-colors" />
             </div>
             ${isRegister ? `
+            <div>
+              <label for="auth-confirm" class="text-xs text-stone-400 block mb-1">Confirm password</label>
+              <input id="auth-confirm" type="password" name="confirmPassword" required autocomplete="new-password"
+                class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
+                       focus:outline-none focus:border-amber-500 transition-colors" />
+            </div>
             <div id="recaptcha-status" class="text-stone-400 text-xs"></div>
             <input type="hidden" name="recaptchaToken" id="recaptcha-token" />
             ` : ''}
@@ -65,6 +71,15 @@ export function renderAuth(container, onSuccess) {
       const fd = new FormData(e.target);
       const username = fd.get('username')?.trim();
       const password = fd.get('password');
+
+      if (mode === 'register') {
+        const confirm = fd.get('confirmPassword');
+        if (password !== confirm) {
+          errEl.textContent = 'Passwords do not match.';
+          errEl.classList.remove('hidden');
+          return;
+        }
+      }
 
       submitBtn.disabled = true;
       submitBtn.textContent = mode === 'login' ? 'Signing in…' : 'Creating account…';
@@ -110,7 +125,6 @@ async function loadRecaptcha(container) {
   try {
     res = await api.getRecaptchaSiteKey();
   } catch (_) {
-    // reCAPTCHA not configured — hide status entirely
     return;
   }
 
