@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 import { migrate, pool } from './db.js';
 import { authMiddleware } from './auth.js';
 import authRouter from './routes/auth.js';
@@ -14,25 +15,49 @@ import profilesRouter from './routes/profiles.js';
 import importExportRouter from './routes/importExport.js';
 
 const app = express();
-app.use(cors({ origin: true, credentials: true }));
+
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : ['http://localhost:8080', 'http://localhost:5173'];
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // allow requests with no origin (curl, mobile apps, same-origin)
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error(`Origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-app.use('/api/auth', authRouter);
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
+
+app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/profiles', profilesRouter);
 
 // Public users list
-app.get('/api/users', async (_req, res) => {
-  const { rows } = await pool.query(
-    `SELECT u.username,
-            COUNT(DISTINCT lb.id)::INT AS book_count
-     FROM users u
-     LEFT JOIN library_books lb ON lb.user_id = u.id
-     WHERE u.is_public = true
-     GROUP BY u.username
-     ORDER BY u.username`
-  );
-  res.json(rows);
+app.get('/api/users', async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.username,
+              COUNT(DISTINCT lb.id)::INT AS book_count
+       FROM users u
+       LEFT JOIN library_books lb ON lb.user_id = u.id
+       WHERE u.is_public = true
+       GROUP BY u.username
+       ORDER BY u.username`
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // All routes below this require a valid session
@@ -46,6 +71,13 @@ app.use('/api/books/:bookId/sessions', sessionsRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/invites', invitesRouter);
 app.use('/api/import-export', importExportRouter);
+
+// Global error handler — catches any thrown/rejected error in route handlers
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  const status = err.status ?? 500;
+  res.status(status).json({ error: err.message ?? 'Internal server error' });
+});
 
 const PORT = process.env.PORT ?? 3000;
 

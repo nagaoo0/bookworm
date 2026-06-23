@@ -80,8 +80,12 @@ export async function computeStats(uid) {
   };
 }
 
-router.get('/', async (req, res) => {
-  res.json(await computeStats(req.user.id));
+router.get('/', async (req, res, next) => {
+  try {
+    res.json(await computeStats(req.user.id));
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

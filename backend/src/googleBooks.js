@@ -1,6 +1,13 @@
 import fetch from 'node-fetch';
 
 const BASE = 'https://www.googleapis.com/books/v1/volumes';
+const FETCH_TIMEOUT_MS = 8000;
+
+function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(id));
+}
 
 function normalize(item) {
   const v = item.volumeInfo ?? {};
@@ -41,7 +48,7 @@ export async function searchBooks(queryObj, maxResults = 20) {
   if (process.env.GOOGLE_BOOKS_API_KEY) params.set('key', process.env.GOOGLE_BOOKS_API_KEY);
   if (queryObj.language) params.set('langRestrict', queryObj.language);
 
-  const res = await fetch(`${BASE}?${params}`);
+  const res = await fetchWithTimeout(`${BASE}?${params}`);
   if (!res.ok) throw new Error(`Google Books API error: ${res.status}`);
 
   const data = await res.json();
@@ -52,7 +59,7 @@ export async function getBook(googleId) {
   const params = new URLSearchParams();
   if (process.env.GOOGLE_BOOKS_API_KEY) params.set('key', process.env.GOOGLE_BOOKS_API_KEY);
 
-  const res = await fetch(`${BASE}/${googleId}?${params}`);
+  const res = await fetchWithTimeout(`${BASE}/${googleId}?${params}`);
   if (!res.ok) throw new Error(`Google Books API error: ${res.status}`);
 
   return normalize(await res.json());

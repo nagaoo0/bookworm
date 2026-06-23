@@ -23,6 +23,7 @@ export function setSessionCookie(res, token, expiresAt) {
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
     expires: expiresAt,
   });
 }
@@ -37,16 +38,20 @@ export async function authMiddleware(req, res, next) {
   const token = req.cookies?.[COOKIE];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { rows } = await pool.query(
-    `SELECT s.token, u.id, u.username, u.is_admin, u.is_public
-     FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE s.token = $1 AND s.expires_at > now()`,
-    [token]
-  );
-  if (!rows.length) {
-    clearSessionCookie(res);
-    return res.status(401).json({ error: 'Session expired' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.token, u.id, u.username, u.is_admin, u.is_public
+       FROM sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.token = $1 AND s.expires_at > now()`,
+      [token]
+    );
+    if (!rows.length) {
+      clearSessionCookie(res);
+      return res.status(401).json({ error: 'Session expired' });
+    }
+    req.user = rows[0];
+    next();
+  } catch (err) {
+    next(err);
   }
-  req.user = rows[0];
-  next();
 }

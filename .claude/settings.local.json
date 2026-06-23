@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:hondana.app)"
+      "WebFetch(domain:hondana.app)",
+      "Bash(npm install *)"
     ]
   }
 }

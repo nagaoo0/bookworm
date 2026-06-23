@@ -89,10 +89,7 @@ export async function migrate() {
     );
 
     -- Per-user library: one row per (user, book). Status is the book's reading state.
-    DROP TABLE IF EXISTS shelf_memberships CASCADE;
-    DROP TABLE IF EXISTS library_books CASCADE;
-
-    CREATE TABLE library_books (
+    CREATE TABLE IF NOT EXISTS library_books (
       id        SERIAL PRIMARY KEY,
       user_id   INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       book_id   INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -104,7 +101,7 @@ export async function migrate() {
     );
 
     -- Many-to-many: which shelves a library entry belongs to
-    CREATE TABLE shelf_memberships (
+    CREATE TABLE IF NOT EXISTS shelf_memberships (
       id              SERIAL PRIMARY KEY,
       library_book_id INT NOT NULL REFERENCES library_books(id) ON DELETE CASCADE,
       shelf_id        INT NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,

@@ -18,50 +18,57 @@ const LIBRARY_SELECT = `
   LEFT JOIN shelf_memberships sm ON sm.library_book_id = lb.id`;
 
 // ── GET /api/library?shelfId=&status= ─────────────────────────────────────────
-router.get('/', async (req, res) => {
-  const { shelfId, status } = req.query;
-  const conditions = ['lb.user_id = $1'];
-  const params = [req.user.id];
+router.get('/', async (req, res, next) => {
+  try {
+    const { shelfId, status } = req.query;
+    const conditions = ['lb.user_id = $1'];
+    const params = [req.user.id];
 
-  if (status) {
-    params.push(status);
-    conditions.push(`lb.status = $${params.length}`);
+    if (status) {
+      params.push(status);
+      conditions.push(`lb.status = $${params.length}`);
+    }
+
+    let sql;
+    if (shelfId) {
+      params.push(shelfId);
+      sql = `${LIBRARY_SELECT}
+             JOIN shelf_memberships sm2 ON sm2.library_book_id = lb.id AND sm2.shelf_id = $${params.length}
+             WHERE ${conditions.join(' AND ')}
+             GROUP BY lb.id, b.id
+             ORDER BY lb.added_at DESC`;
+    } else {
+      sql = `${LIBRARY_SELECT}
+             WHERE ${conditions.join(' AND ')}
+             GROUP BY lb.id, b.id
+             ORDER BY lb.added_at DESC`;
+    }
+
+    const { rows } = await pool.query(sql, params);
+    res.json(rows);
+  } catch (err) {
+    next(err);
   }
-
-  let sql;
-  if (shelfId) {
-    // Filter to books that are members of this shelf
-    params.push(shelfId);
-    sql = `${LIBRARY_SELECT}
-           JOIN shelf_memberships sm2 ON sm2.library_book_id = lb.id AND sm2.shelf_id = $${params.length}
-           WHERE ${conditions.join(' AND ')}
-           GROUP BY lb.id, b.id
-           ORDER BY lb.added_at DESC`;
-  } else {
-    sql = `${LIBRARY_SELECT}
-           WHERE ${conditions.join(' AND ')}
-           GROUP BY lb.id, b.id
-           ORDER BY lb.added_at DESC`;
-  }
-
-  const { rows } = await pool.query(sql, params);
-  res.json(rows);
 });
 
 // ── GET /api/library/status — books grouped by status (must be before /:id) ───
-router.get('/status', async (req, res) => {
-  const { rows } = await pool.query(
-    `${LIBRARY_SELECT}
-     WHERE lb.user_id = $1
-     GROUP BY lb.id, b.id
-     ORDER BY lb.added_at DESC`,
-    [req.user.id]
-  );
-  const grouped = { to_read: [], reading: [], done: [] };
-  for (const r of rows) {
-    if (grouped[r.status]) grouped[r.status].push(r);
+router.get('/status', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `${LIBRARY_SELECT}
+       WHERE lb.user_id = $1
+       GROUP BY lb.id, b.id
+       ORDER BY lb.added_at DESC`,
+      [req.user.id]
+    );
+    const grouped = { to_read: [], reading: [], done: [] };
+    for (const r of rows) {
+      if (grouped[r.status]) grouped[r.status].push(r);
+    }
+    res.json(grouped);
+  } catch (err) {
+    next(err);
   }
-  res.json(grouped);
 });
 
 // ── POST /api/library ─────────────────────────────────────────────────────────
@@ -119,8 +126,17 @@ router.post('/', async (req, res) => {
       [req.user.id, bookId, status ?? 'to_read']
     );
 
-    // Add to shelf if requested
+    // Add to shelf if requested — verify ownership first
     if (shelfId) {
+      const { rows: [shelf] } = await client.query(
+        `SELECT id FROM shelves WHERE id = $1 AND user_id = $2`,
+        [shelfId, req.user.id]
+      );
+      if (!shelf) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(404).json({ error: 'Shelf not found' });
+      }
       await client.query(
         `INSERT INTO shelf_memberships (library_book_id, shelf_id) VALUES ($1, $2)
          ON CONFLICT DO NOTHING`,
@@ -145,29 +161,37 @@ router.post('/', async (req, res) => {
 });
 
 // ── PATCH /api/library/:id — set status and/or notes ─────────────────────────
-router.patch('/:id', async (req, res) => {
-  const { status, notes } = req.body;
-  if (status === undefined && notes === undefined)
-    return res.status(400).json({ error: 'status or notes is required' });
+router.patch('/:id', async (req, res, next) => {
+  try {
+    const { status, notes } = req.body;
+    if (status === undefined && notes === undefined)
+      return res.status(400).json({ error: 'status or notes is required' });
 
-  const { rows } = await pool.query(
-    `UPDATE library_books
-     SET status = COALESCE($1, status),
-         notes  = CASE WHEN $2::boolean THEN $3 ELSE notes END
-     WHERE id = $4 AND user_id = $5
-     RETURNING *`,
-    [status ?? null, notes !== undefined, notes ?? null, req.params.id, req.user.id]
-  );
-  if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    if (status !== undefined && !['to_read', 'reading', 'done'].includes(status))
+      return res.status(400).json({ error: 'Invalid status value' });
 
-  const { rows: [full] } = await pool.query(
-    `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [rows[0].id]
-  );
-  res.json(full);
+    const { rows } = await pool.query(
+      `UPDATE library_books
+       SET status = CASE WHEN $1::text IS NOT NULL THEN $1 ELSE status END,
+           notes  = CASE WHEN $2::boolean THEN $3 ELSE notes END
+       WHERE id = $4 AND user_id = $5
+       RETURNING *`,
+      [status ?? null, notes !== undefined, notes ?? null, req.params.id, req.user.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+
+    const { rows: [full] } = await pool.query(
+      `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [rows[0].id]
+    );
+    res.json(full);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── PATCH /api/library/:id/metadata — update the underlying book record ───────
-router.patch('/:id/metadata', async (req, res) => {
+router.patch('/:id/metadata', async (req, res, next) => {
+  try {
   // Verify the library entry belongs to this user
   const { rows: [lb] } = await pool.query(
     `SELECT book_id FROM library_books WHERE id = $1 AND user_id = $2`,
@@ -213,61 +237,95 @@ router.patch('/:id/metadata', async (req, res) => {
     `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [req.params.id]
   );
   res.json(full);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── POST /api/library/:id/shelves  { shelfId } ───────────────────────────────
-router.post('/:id/shelves', async (req, res) => {
-  const { shelfId } = req.body;
-  if (!shelfId) return res.status(400).json({ error: 'shelfId is required' });
+router.post('/:id/shelves', async (req, res, next) => {
+  try {
+    const { shelfId } = req.body;
+    if (!shelfId) return res.status(400).json({ error: 'shelfId is required' });
 
-  // Ensure lb belongs to user
-  const { rows: [lb] } = await pool.query(
-    `SELECT id FROM library_books WHERE id = $1 AND user_id = $2`,
-    [req.params.id, req.user.id]
-  );
-  if (!lb) return res.status(404).json({ error: 'Not found' });
+    const { rows: [lb] } = await pool.query(
+      `SELECT id FROM library_books WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!lb) return res.status(404).json({ error: 'Not found' });
 
-  // Ensure shelf belongs to user
-  const { rows: [shelf] } = await pool.query(
-    `SELECT id FROM shelves WHERE id = $1 AND user_id = $2`,
-    [shelfId, req.user.id]
-  );
-  if (!shelf) return res.status(404).json({ error: 'Shelf not found' });
+    const { rows: [shelf] } = await pool.query(
+      `SELECT id FROM shelves WHERE id = $1 AND user_id = $2`,
+      [shelfId, req.user.id]
+    );
+    if (!shelf) return res.status(404).json({ error: 'Shelf not found' });
 
-  await pool.query(
-    `INSERT INTO shelf_memberships (library_book_id, shelf_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-    [lb.id, shelfId]
-  );
+    await pool.query(
+      `INSERT INTO shelf_memberships (library_book_id, shelf_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [lb.id, shelfId]
+    );
 
-  const { rows: [full] } = await pool.query(
-    `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [lb.id]
-  );
-  res.json(full);
+    const { rows: [full] } = await pool.query(
+      `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [lb.id]
+    );
+    res.json(full);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── DELETE /api/library/:id/shelves/:shelfId ──────────────────────────────────
-router.delete('/:id/shelves/:shelfId', async (req, res) => {
-  const { rows: [lb] } = await pool.query(
-    `SELECT id FROM library_books WHERE id = $1 AND user_id = $2`,
-    [req.params.id, req.user.id]
-  );
-  if (!lb) return res.status(404).json({ error: 'Not found' });
+router.delete('/:id/shelves/:shelfId', async (req, res, next) => {
+  try {
+    const { rows: [lb] } = await pool.query(
+      `SELECT id FROM library_books WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!lb) return res.status(404).json({ error: 'Not found' });
 
-  await pool.query(
-    `DELETE FROM shelf_memberships WHERE library_book_id = $1 AND shelf_id = $2`,
-    [lb.id, req.params.shelfId]
-  );
-  res.status(204).end();
+    await pool.query(
+      `DELETE FROM shelf_memberships WHERE library_book_id = $1 AND shelf_id = $2`,
+      [lb.id, req.params.shelfId]
+    );
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── DELETE /api/library/:id ───────────────────────────────────────────────────
-router.delete('/:id', async (req, res) => {
-  const { rowCount } = await pool.query(
-    `DELETE FROM library_books WHERE id = $1 AND user_id = $2`,
-    [req.params.id, req.user.id]
-  );
-  if (!rowCount) return res.status(404).json({ error: 'Not found' });
-  res.status(204).end();
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Fetch book_id before deleting so we can cascade to reading_sessions
+      const { rows: [lb] } = await client.query(
+        `DELETE FROM library_books WHERE id = $1 AND user_id = $2 RETURNING book_id`,
+        [req.params.id, req.user.id]
+      );
+      if (!lb) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      await client.query(
+        `DELETE FROM reading_sessions WHERE user_id = $1 AND book_id = $2`,
+        [req.user.id, lb.book_id]
+      );
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

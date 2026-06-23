@@ -91,120 +91,122 @@ router.post('/import', async (req, res) => {
   const uid = req.user.id;
   let imported = 0, skipped = 0;
 
-  for (const r of records) {
-    const googleId      = r.id?.trim() || null;
-    const title         = r.title?.trim();
-    const isbn10        = r.isbn10?.trim() || null;
-    const isbn13        = r.isbn13?.trim() || null;
-    const publisher     = r.publisher?.trim() || null;
-    const publishedDate = r.publishedDate?.trim() || null;
-    const authors       = r.author?.trim()
-      ? r.author.split(',').map(a => a.trim()).filter(Boolean) : [];
-    const status        = STATUS_FROM_CSV[r.status?.trim()] ?? 'to_read';
-    const note          = r.note?.trim() || null;
-    const review        = r.review?.trim() || null;
-    const stars         = parseInt(r.stars, 10) || null;
-    const startDate     = r.startDate?.trim() || null;
-    const finishDate    = r.finishDate?.trim() || null;
-    // shelf can be a pipe-separated list of names, a single name, or empty
-    const shelfNames    = (r.shelf?.trim() || '')
-      .split('|').map(s => s.trim()).filter(Boolean);
+  const client = await pool.connect();
+  try {
+    for (const r of records) {
+      const googleId      = r.id?.trim() || null;
+      const title         = r.title?.trim();
+      const isbn10        = r.isbn10?.trim() || null;
+      const isbn13        = r.isbn13?.trim() || null;
+      const publisher     = r.publisher?.trim() || null;
+      const publishedDate = r.publishedDate?.trim() || null;
+      const authors       = r.author?.trim()
+        ? r.author.split(',').map(a => a.trim()).filter(Boolean) : [];
+      const status        = STATUS_FROM_CSV[r.status?.trim()] ?? 'to_read';
+      const note          = r.note?.trim() || null;
+      const review        = r.review?.trim() || null;
+      const stars         = parseInt(r.stars, 10) || null;
+      const startDate     = r.startDate?.trim() || null;
+      const finishDate    = r.finishDate?.trim() || null;
+      // shelf can be a pipe-separated list of names, a single name, or empty
+      const shelfNames    = (r.shelf?.trim() || '')
+        .split('|').map(s => s.trim()).filter(Boolean);
 
-    if (!title) { skipped++; continue; }
+      if (!title) { skipped++; continue; }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+      try {
+        await client.query('BEGIN');
 
-      // Upsert book
-      let bookId;
-      if (googleId) {
-        const { rows: [book] } = await client.query(
-          `INSERT INTO books (google_id, title, authors, isbn10, isbn13, publisher, published_date)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (google_id) DO UPDATE SET
-             title = EXCLUDED.title, authors = EXCLUDED.authors,
-             isbn10 = COALESCE(EXCLUDED.isbn10, books.isbn10),
-             isbn13 = COALESCE(EXCLUDED.isbn13, books.isbn13),
-             publisher = COALESCE(EXCLUDED.publisher, books.publisher)
-           RETURNING id`,
-          [googleId, title, authors, isbn10, isbn13, publisher, publishedDate]
-        );
-        bookId = book.id;
-      } else {
-        const { rows: [existing] } = await client.query(
-          `SELECT id FROM books WHERE google_id IS NULL AND title = $1 AND authors[1] = $2 LIMIT 1`,
-          [title, authors[0] ?? '']
-        );
-        if (existing) {
-          bookId = existing.id;
-        } else {
+        // Upsert book
+        let bookId;
+        if (googleId) {
           const { rows: [book] } = await client.query(
-            `INSERT INTO books (title, authors, isbn10, isbn13, publisher, published_date)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-            [title, authors, isbn10, isbn13, publisher, publishedDate]
+            `INSERT INTO books (google_id, title, authors, isbn10, isbn13, publisher, published_date)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (google_id) DO UPDATE SET
+               title = EXCLUDED.title, authors = EXCLUDED.authors,
+               isbn10 = COALESCE(EXCLUDED.isbn10, books.isbn10),
+               isbn13 = COALESCE(EXCLUDED.isbn13, books.isbn13),
+               publisher = COALESCE(EXCLUDED.publisher, books.publisher)
+             RETURNING id`,
+            [googleId, title, authors, isbn10, isbn13, publisher, publishedDate]
           );
           bookId = book.id;
+        } else {
+          const { rows: [existing] } = await client.query(
+            `SELECT id FROM books WHERE google_id IS NULL AND title = $1 AND authors[1] = $2 LIMIT 1`,
+            [title, authors[0] ?? '']
+          );
+          if (existing) {
+            bookId = existing.id;
+          } else {
+            const { rows: [book] } = await client.query(
+              `INSERT INTO books (title, authors, isbn10, isbn13, publisher, published_date)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+              [title, authors, isbn10, isbn13, publisher, publishedDate]
+            );
+            bookId = book.id;
+          }
         }
-      }
 
-      // Upsert library entry
-      const { rows: [lb] } = await client.query(
-        `INSERT INTO library_books (user_id, book_id, status, notes)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id, book_id) DO UPDATE
-           SET notes = COALESCE(EXCLUDED.notes, library_books.notes)
-         RETURNING id, xmax`,
-        [uid, bookId, status, note]
-      );
-      if (lb.xmax === '0') imported++;  // xmax=0 means INSERT (not UPDATE)
+        // Upsert library entry
+        const { rows: [lb] } = await client.query(
+          `INSERT INTO library_books (user_id, book_id, status, notes)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (user_id, book_id) DO UPDATE
+             SET notes = COALESCE(EXCLUDED.notes, library_books.notes)
+           RETURNING id, xmax`,
+          [uid, bookId, status, note]
+        );
+        if (lb.xmax === '0') imported++;  // xmax=0 means INSERT (not UPDATE)
 
-      // Shelves: find-or-create each named shelf, then add membership
-      for (const name of shelfNames) {
-        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        const { rows: [shelf] } = await client.query(
-          `INSERT INTO shelves (user_id, name, slug)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (user_id, slug) DO UPDATE SET name = shelves.name
-           RETURNING id`,
-          [uid, name, slug]
-        );
-        await client.query(
-          `INSERT INTO shelf_memberships (library_book_id, shelf_id)
-           VALUES ($1, $2)
-           ON CONFLICT DO NOTHING`,
-          [lb.id, shelf.id]
-        );
-      }
-
-      // Reading session
-      const hasSession = finishDate || startDate || (stars && stars > 0) || review;
-      if (hasSession) {
-        const { rows: [existingSess] } = await client.query(
-          `SELECT id FROM reading_sessions
-           WHERE user_id = $1 AND book_id = $2
-             AND finished_at::date IS NOT DISTINCT FROM $3::date
-           LIMIT 1`,
-          [uid, bookId, finishDate || null]
-        );
-        if (!existingSess) {
+        // Shelves: find-or-create each named shelf, then add membership
+        for (const name of shelfNames) {
+          const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          const { rows: [shelf] } = await client.query(
+            `INSERT INTO shelves (user_id, name, slug)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (user_id, slug) DO UPDATE SET name = shelves.name
+             RETURNING id`,
+            [uid, name, slug]
+          );
           await client.query(
-            `INSERT INTO reading_sessions (user_id, book_id, started_at, finished_at, rating, review)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [uid, bookId, startDate || null, finishDate || null,
-             stars && stars > 0 ? stars : null, review || null]
+            `INSERT INTO shelf_memberships (library_book_id, shelf_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [lb.id, shelf.id]
           );
         }
-      }
 
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
-      console.error(`Import error for "${title}":`, err.message);
-      skipped++;
-    } finally {
-      client.release();
+        // Reading session
+        const hasSession = finishDate || startDate || (stars && stars > 0) || review;
+        if (hasSession) {
+          const { rows: [existingSess] } = await client.query(
+            `SELECT id FROM reading_sessions
+             WHERE user_id = $1 AND book_id = $2
+               AND finished_at::date IS NOT DISTINCT FROM $3::date
+             LIMIT 1`,
+            [uid, bookId, finishDate || null]
+          );
+          if (!existingSess) {
+            await client.query(
+              `INSERT INTO reading_sessions (user_id, book_id, started_at, finished_at, rating, review)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [uid, bookId, startDate || null, finishDate || null,
+               stars && stars > 0 ? stars : null, review || null]
+            );
+          }
+        }
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error(`Import error for "${title}":`, err.message);
+        skipped++;
+      }
     }
+  } finally {
+    client.release();
   }
 
   res.json({ imported, skipped, total: records.length });

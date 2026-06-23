@@ -262,19 +262,32 @@ function attachInviteHandlers(container) {
   });
 
   container.querySelectorAll('.revoke-invite').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Revoke this invite code?')) return;
-      try {
-        await api.deleteInvite(btn.dataset.code);
-        btn.closest('[data-invite-code]').remove();
-        if (!container.querySelectorAll('[data-invite-code]').length) {
-          container.querySelector('#invites-list').innerHTML = `<p class="text-stone-500 text-sm italic">No invite codes yet.</p>`;
+    btn.addEventListener('click', () => {
+      const row = btn.closest('[data-invite-code]');
+      if (!row || row.querySelector('.revoke-confirm')) return;
+      btn.outerHTML = `
+        <span class="revoke-confirm flex items-center gap-1">
+          <button class="revoke-yes text-xs px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded font-medium">Revoke</button>
+          <button class="revoke-no text-xs px-1 text-stone-400 hover:text-stone-200">Cancel</button>
+        </span>`;
+      row.querySelector('.revoke-yes').addEventListener('click', async () => {
+        try {
+          await api.deleteInvite(btn.dataset.code);
+          row.remove();
+          if (!container.querySelectorAll('[data-invite-code]').length) {
+            container.querySelector('#invites-list').innerHTML = `<p class="text-stone-500 text-sm italic">No invite codes yet.</p>`;
+          }
+        } catch (err) {
+          inviteMsg.className = 'text-xs text-red-400';
+          inviteMsg.textContent = err.message;
+          inviteMsg.classList.remove('hidden');
         }
-      } catch (err) {
-        inviteMsg.className = 'text-xs text-red-400';
-        inviteMsg.textContent = err.message;
-        inviteMsg.classList.remove('hidden');
-      }
+      });
+      row.querySelector('.revoke-no').addEventListener('click', () => {
+        row.querySelector('.revoke-confirm').outerHTML =
+          `<button class="revoke-invite text-xs text-stone-500 hover:text-red-400 transition-colors" data-code="${escHtml(btn.dataset.code)}">Revoke</button>`;
+        attachInviteHandlers(container);
+      });
     });
   });
 }

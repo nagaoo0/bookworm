@@ -67,14 +67,64 @@ function attachShelfBar(container, shelves, library) {
       const raw = chip.dataset.shelf;
       const id = raw === 'all' ? null : Number(raw);
       setState({ selectedShelfId: id });
-      loadLibrary();
+      // Re-render content from already-loaded state — no network round-trip needed
+      const contentEl = container.querySelector('#shelf-content');
+      if (contentEl) renderShelfContent(contentEl, library, shelves, id);
+      // Update active chip styles
+      container.querySelectorAll('.shelf-chip[data-shelf]').forEach(c => {
+        const cId = c.dataset.shelf === 'all' ? null : Number(c.dataset.shelf);
+        const isActive = cId === id;
+        c.className = `shelf-chip ${isActive ? 'shelf-chip-active' : 'shelf-chip-idle'}`;
+        if (isActive && cId !== null) {
+          const s = shelves.find(s => s.id === cId);
+          if (s) c.style.cssText = `background:${escHtml(s.color)}22;border-color:${escHtml(s.color)};color:${escHtml(s.color)}`;
+        } else {
+          c.style.cssText = '';
+        }
+      });
+      // Re-attach card handlers for the newly rendered content
+      attachCardHandlers(container, shelves, library);
     });
   });
 
   container.querySelector('#new-shelf-btn')?.addEventListener('click', () => {
-    const name = prompt('New shelf name:');
-    if (!name?.trim()) return;
-    api.createShelf({ name: name.trim() }).then(() => loadLibrary());
+    showInlineShelfCreate(container);
+  });
+}
+
+function showInlineShelfCreate(container) {
+  const btn = container.querySelector('#new-shelf-btn');
+  if (!btn || container.querySelector('#inline-shelf-form')) return;
+
+  const form = document.createElement('form');
+  form.id = 'inline-shelf-form';
+  form.className = 'flex items-center gap-1.5';
+  form.innerHTML = `
+    <input name="name" required placeholder="Shelf name…" autofocus
+      class="bg-stone-800 border border-stone-600 rounded-lg px-2 py-1 text-sm
+             focus:outline-none focus:border-amber-500 w-36" />
+    <button type="submit"
+      class="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm">
+      Add
+    </button>
+    <button type="button" id="cancel-shelf-create"
+      class="px-2 py-1 text-stone-400 hover:text-stone-200 rounded-lg text-sm">
+      ✕
+    </button>`;
+
+  btn.replaceWith(form);
+  form.querySelector('input').focus();
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const name = new FormData(form).get('name').trim();
+    if (!name) return;
+    await api.createShelf({ name });
+    loadLibrary();
+  });
+
+  form.querySelector('#cancel-shelf-create').addEventListener('click', () => {
+    loadLibrary();
   });
 }
 
@@ -158,7 +208,7 @@ function attachCardHandlers(container, shelves, library) {
     });
   });
 
-  // Hover × remove
+  // Hover × remove — no confirm, undo is re-add from search
   container.querySelectorAll('.remove-card-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
@@ -287,12 +337,21 @@ function showContextMenu(x, y, card, shelves, library) {
     });
   });
 
-  // Remove
-  menu.querySelector('.ctx-remove').addEventListener('click', async () => {
-    menu.remove();
-    if (!confirm('Remove from library?')) return;
-    await api.removeFromLibrary(libId);
-    loadLibrary();
+  // Remove — show inline confirm inside menu instead of native confirm()
+  menu.querySelector('.ctx-remove').addEventListener('click', () => {
+    const removeBtn = menu.querySelector('.ctx-remove');
+    removeBtn.outerHTML = `
+      <div class="ctx-remove-confirm flex items-center gap-2 px-3 py-2">
+        <span class="text-stone-300 text-xs flex-1">Remove from library?</span>
+        <button class="ctx-remove-yes px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded font-medium">Yes</button>
+        <button class="ctx-remove-no px-2 py-0.5 text-stone-400 hover:text-stone-200 text-xs">No</button>
+      </div>`;
+    menu.querySelector('.ctx-remove-yes').addEventListener('click', async () => {
+      menu.remove();
+      await api.removeFromLibrary(libId);
+      loadLibrary();
+    });
+    menu.querySelector('.ctx-remove-no').addEventListener('click', () => menu.remove());
   });
 
   const dismiss = e => {
@@ -312,11 +371,14 @@ function renderShelfManager(shelves) {
       </summary>
       <div class="mt-4 space-y-3 max-w-md">
         ${shelves.length ? shelves.map(s => `
-          <div class="flex items-center gap-2 bg-stone-800 rounded-lg px-3 py-2" data-shelf-row="${s.id}">
-            <input type="color" value="${escHtml(s.color)}" class="shelf-color-input w-7 h-7 rounded cursor-pointer bg-transparent border-none" data-shelf-id="${s.id}" />
-            <span class="flex-1 text-sm font-medium">${escHtml(s.name)}</span>
-            <button class="rename-shelf-btn text-xs text-stone-400 hover:text-amber-400 px-2 transition-colors" data-shelf-id="${s.id}" data-shelf-name="${escHtml(s.name)}">Rename</button>
-            <button class="delete-shelf-btn text-xs text-stone-500 hover:text-red-400 px-1 transition-colors" data-shelf-id="${s.id}">✕</button>
+          <div class="flex flex-col gap-1" data-shelf-row="${s.id}">
+            <div class="flex items-center gap-2 bg-stone-800 rounded-lg px-3 py-2">
+              <input type="color" value="${escHtml(s.color)}" class="shelf-color-input w-7 h-7 rounded cursor-pointer bg-transparent border-none" data-shelf-id="${s.id}" />
+              <span class="flex-1 text-sm font-medium">${escHtml(s.name)}</span>
+              <button class="rename-shelf-btn text-xs text-stone-400 hover:text-amber-400 px-2 transition-colors" data-shelf-id="${s.id}" data-shelf-name="${escHtml(s.name)}">Rename</button>
+              <button class="delete-shelf-btn text-xs text-stone-500 hover:text-red-400 px-1 transition-colors" data-shelf-id="${s.id}">✕</button>
+            </div>
+            <p class="shelf-err text-xs text-red-400 px-1 hidden"></p>
           </div>`).join('') : `<p class="text-stone-500 text-sm italic">No shelves yet.</p>`}
 
         <form id="create-shelf-form" class="flex gap-2 mt-2">
@@ -346,27 +408,14 @@ function attachShelfManagerHandlers(container) {
   });
 
   container.querySelectorAll('.rename-shelf-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const newName = prompt('Rename shelf:', btn.dataset.shelfName);
-      if (!newName?.trim() || newName.trim() === btn.dataset.shelfName) return;
-      await api.updateShelf(btn.dataset.shelfId, { name: newName.trim() });
-      loadLibrary();
+    btn.addEventListener('click', () => {
+      showInlineRename(btn);
     });
   });
 
   container.querySelectorAll('.delete-shelf-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Delete this shelf? Books will stay in your library.')) return;
-      try {
-        await api.deleteShelf(btn.dataset.shelfId);
-        // If we were viewing this shelf, go back to All Books
-        if (getState().selectedShelfId === Number(btn.dataset.shelfId)) {
-          setState({ selectedShelfId: null });
-        }
-        loadLibrary();
-      } catch (err) {
-        alert(err.message);
-      }
+    btn.addEventListener('click', () => {
+      showInlineDeleteConfirm(btn);
     });
   });
 
@@ -376,6 +425,74 @@ function attachShelfManagerHandlers(container) {
       loadLibrary();
     });
   });
+}
+
+function showInlineRename(btn) {
+  const row = btn.closest('[data-shelf-row]');
+  if (!row || row.querySelector('.inline-rename')) return;
+  const nameSpan = row.querySelector('span.flex-1');
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = btn.dataset.shelfName;
+  input.className = 'inline-rename flex-1 bg-stone-700 border border-amber-500 rounded px-2 py-0.5 text-sm focus:outline-none';
+
+  const save = document.createElement('button');
+  save.textContent = 'Save';
+  save.className = 'text-xs px-2 py-1 bg-amber-500 text-stone-950 rounded font-semibold';
+
+  const cancel = document.createElement('button');
+  cancel.textContent = 'Cancel';
+  cancel.className = 'text-xs px-1 py-1 text-stone-400 hover:text-stone-200';
+
+  nameSpan.replaceWith(input);
+  btn.replaceWith(save);
+  input.after(cancel);
+  input.focus();
+  input.select();
+
+  const doSave = async () => {
+    const newName = input.value.trim();
+    if (!newName || newName === btn.dataset.shelfName) { loadLibrary(); return; }
+    await api.updateShelf(btn.dataset.shelfId, { name: newName });
+    loadLibrary();
+  };
+
+  save.addEventListener('click', doSave);
+  cancel.addEventListener('click', loadLibrary);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSave();
+    if (e.key === 'Escape') loadLibrary();
+  });
+}
+
+function showInlineDeleteConfirm(btn) {
+  const row = btn.closest('[data-shelf-row]');
+  if (!row || row.querySelector('.inline-confirm')) return;
+
+  const confirm = document.createElement('span');
+  confirm.className = 'inline-confirm flex items-center gap-1 text-xs';
+  confirm.innerHTML = `
+    <span class="text-stone-400">Delete?</span>
+    <button class="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded font-medium confirm-yes">Yes</button>
+    <button class="px-2 py-0.5 text-stone-400 hover:text-stone-200 confirm-no">No</button>`;
+
+  btn.replaceWith(confirm);
+
+  confirm.querySelector('.confirm-yes').addEventListener('click', async () => {
+    const errEl = row.querySelector('.shelf-err');
+    try {
+      await api.deleteShelf(btn.dataset.shelfId);
+      if (getState().selectedShelfId === Number(btn.dataset.shelfId)) {
+        setState({ selectedShelfId: null });
+      }
+      loadLibrary();
+    } catch (err) {
+      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+    }
+  });
+
+  confirm.querySelector('.confirm-no').addEventListener('click', loadLibrary);
 }
 
 function escHtml(str) {

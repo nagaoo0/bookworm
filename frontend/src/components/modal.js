@@ -286,10 +286,22 @@ async function loadSessions(bookId) {
       </div>`).join('');
 
     container.querySelectorAll('.delete-session').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this reading session?')) return;
-        await api.deleteSession(bookId, btn.dataset.sessionId);
-        loadSessions(bookId);
+      btn.addEventListener('click', () => {
+        const row = btn.closest('[data-session-id]');
+        if (!row || row.querySelector('.session-confirm')) return;
+        const orig = btn.outerHTML;
+        btn.outerHTML = `
+          <span class="session-confirm flex items-center gap-1">
+            <button class="sess-del-yes text-[10px] px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded">Delete</button>
+            <button class="sess-del-no text-[10px] px-1 text-stone-400 hover:text-stone-200">Cancel</button>
+          </span>`;
+        row.querySelector('.sess-del-yes').addEventListener('click', async () => {
+          await api.deleteSession(bookId, row.dataset.sessionId);
+          loadSessions(bookId);
+        });
+        row.querySelector('.sess-del-no').addEventListener('click', () => {
+          row.querySelector('.session-confirm').outerHTML = orig;
+        });
       });
     });
   } catch {
