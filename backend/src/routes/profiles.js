@@ -8,7 +8,7 @@ const router = Router();
 router.get('/:username', async (req, res, next) => {
   try {
     const { rows: [user] } = await pool.query(
-      `SELECT id, username, bio, avatar_url, accent FROM users WHERE username = $1`,
+      `SELECT id, username, bio, avatar_url, banner_url, accent FROM users WHERE username = $1`,
       [req.params.username]
     );
     if (!user) return res.status(404).json({ error: 'Profile not found' });
@@ -85,6 +85,7 @@ router.get('/:username', async (req, res, next) => {
       username: user.username,
       bio: user.bio ?? null,
       avatarUrl: user.avatar_url ?? null,
+      bannerUrl: user.banner_url ?? null,
       accent: user.accent ?? null,
       shelves: shelves.rows,
       library: library.rows,

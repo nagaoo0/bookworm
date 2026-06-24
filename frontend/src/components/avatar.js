@@ -15,7 +15,7 @@ export function avatarHTML(user, { size = 40, classes = '' } = {}) {
 
   if (user.avatarUrl) {
     return `<div class="${base}" style="${style}background:linear-gradient(135deg,hsl(${h},60%,40%),hsl(${(h+60)%360},50%,30%))">
-      <img src="${escHtml(user.avatarUrl)}" alt="" class="w-full h-full object-cover rounded-full" onerror="this.parentElement.innerHTML='<span style=\\'color:#fff;font-weight:700;font-size:${Math.round(size*0.4)}px\\'>${initial}</span>'" />
+      <img src="${escHtml(user.avatarUrl)}" alt="" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<span style=\\'color:#fff;font-weight:700;font-size:${Math.round(size*0.4)}px\\'>${initial}</span>'" />
     </div>`;
   }
 

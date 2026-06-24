@@ -51,11 +51,17 @@ function render(container, user, invites, goal, currentYear) {
         <!-- Avatar URL -->
         <div>
           <label class="text-xs text-stone-500 block mb-1">Profile picture URL</label>
-          <div class="flex gap-2">
-            <input id="avatar-url-input" type="url" value="${escHtml(user.avatarUrl ?? '')}"
-              placeholder="https://example.com/photo.jpg"
-              class="field-input flex-1 min-w-0" />
-          </div>
+          <input id="avatar-url-input" type="url" value="${escHtml(user.avatarUrl ?? '')}"
+            placeholder="https://example.com/photo.jpg"
+            class="field-input w-full" />
+        </div>
+
+        <!-- Banner URL -->
+        <div>
+          <label class="text-xs text-stone-500 block mb-1">Profile banner URL <span class="text-stone-600">(wide image, shown behind your name)</span></label>
+          <input id="banner-url-input" type="url" value="${escHtml(user.bannerUrl ?? '')}"
+            placeholder="https://example.com/banner.jpg"
+            class="field-input w-full" />
         </div>
 
         <button id="save-profile-btn"
@@ -107,10 +113,11 @@ function render(container, user, invites, goal, currentYear) {
   container.querySelector('#save-profile-btn')?.addEventListener('click', async () => {
     const bio = container.querySelector('#bio-input')?.value ?? '';
     const avatarUrl = container.querySelector('#avatar-url-input')?.value.trim() ?? '';
+    const bannerUrl = container.querySelector('#banner-url-input')?.value.trim() ?? '';
     const msg = container.querySelector('#profile-msg');
     try {
-      const updated = await api.updateMe({ bio: bio.trim() || null, avatarUrl: avatarUrl || null });
-      setState({ user: { ...getState().user, bio: updated.bio, avatarUrl: updated.avatarUrl } });
+      const updated = await api.updateMe({ bio: bio.trim() || null, avatarUrl: avatarUrl || null, bannerUrl: bannerUrl || null });
+      setState({ user: { ...getState().user, bio: updated.bio, avatarUrl: updated.avatarUrl, bannerUrl: updated.bannerUrl } });
       showToast('Profile saved.');
       if (msg) msg.classList.add('hidden');
     } catch (err) {

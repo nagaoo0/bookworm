@@ -15,7 +15,7 @@ router.get('/me', authMiddleware, (req, res) => {
   const u = req.user;
   res.json({
     id: u.id, username: u.username, isAdmin: u.is_admin, isPublic: u.is_public,
-    bio: u.bio ?? null, avatarUrl: u.avatar_url ?? null, accent: u.accent ?? null,
+    bio: u.bio ?? null, avatarUrl: u.avatar_url ?? null, bannerUrl: u.banner_url ?? null, accent: u.accent ?? null,
   });
 });
 
@@ -160,7 +160,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     );
     if (!row) return res.status(404).json({ error: 'User not found' });
 
-    const { isPublic, currentPassword, newPassword, bio, avatarUrl, accent } = req.body ?? {};
+    const { isPublic, currentPassword, newPassword, bio, avatarUrl, bannerUrl, accent } = req.body ?? {};
     const updates = [];
     const params = [];
 
@@ -198,6 +198,20 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
       updates.push(`avatar_url = $${params.length}`);
     }
 
+    if (bannerUrl !== undefined) {
+      if (bannerUrl && bannerUrl !== null) {
+        try {
+          const u = new URL(bannerUrl);
+          if (u.protocol !== 'http:' && u.protocol !== 'https:')
+            return res.status(400).json({ error: 'bannerUrl must be an http(s) URL' });
+        } catch {
+          return res.status(400).json({ error: 'bannerUrl is not a valid URL' });
+        }
+      }
+      params.push(bannerUrl || null);
+      updates.push(`banner_url = $${params.length}`);
+    }
+
     if (accent !== undefined) {
       if (accent !== null && !ALLOWED_ACCENTS.has(accent))
         return res.status(400).json({ error: 'accent must be one of: amber, blue, teal, rose' });
@@ -210,12 +224,12 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     params.push(req.user.id);
     const { rows: [user] } = await pool.query(
       `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}
-       RETURNING id, username, is_admin, is_public, bio, avatar_url, accent`,
+       RETURNING id, username, is_admin, is_public, bio, avatar_url, banner_url, accent`,
       params
     );
     res.json({
       id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public,
-      bio: user.bio ?? null, avatarUrl: user.avatar_url ?? null, accent: user.accent ?? null,
+      bio: user.bio ?? null, avatarUrl: user.avatar_url ?? null, bannerUrl: user.banner_url ?? null, accent: user.accent ?? null,
     });
   } catch (err) {
     next(err);

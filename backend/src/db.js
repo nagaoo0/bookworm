@@ -165,6 +165,7 @@ export async function migrate() {
     -- Profile enrichment
     ALTER TABLE users ADD COLUMN IF NOT EXISTS bio        TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS banner_url TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS accent     TEXT;
 
     -- Likes on reading sessions

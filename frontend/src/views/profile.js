@@ -40,7 +40,7 @@ function applyProfileAccent(container, accent) {
   container.style.setProperty('--color-amber-400', a.hover);
 }
 
-function renderTabs(container, { username, bio, avatarUrl, accent, shelves, library, statusBooks, feed, stats }, isFollowing) {
+function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, shelves, library, statusBooks, feed, stats }, isFollowing) {
   const { user, library: myLibrary } = getState();
   const myBookIds = new Set((myLibrary ?? []).map(b => String(b.book_id)));
   const isOwnProfile = user?.username === username;
@@ -64,13 +64,15 @@ function renderTabs(container, { username, bio, avatarUrl, accent, shelves, libr
     <div class="fade-in">
       <!-- Hero -->
       <div class="relative rounded-2xl overflow-hidden mb-6 p-6 sm:p-8"
-           style="background:linear-gradient(135deg, hsl(${hue},30%,10%) 0%, hsl(${(hue+40)%360},25%,8%) 100%);border:1px solid rgba(255,255,255,0.06)">
-        <div class="absolute inset-0 opacity-30"
-             style="background:radial-gradient(ellipse at top left, hsl(${hue},60%,30%) 0%, transparent 60%)"></div>
+           style="${bannerUrl
+             ? `background:url(${escHtml(bannerUrl)}) center/cover no-repeat;border:1px solid rgba(255,255,255,0.06)`
+             : `background:linear-gradient(135deg, hsl(${hue},30%,10%) 0%, hsl(${(hue+40)%360},25%,8%) 100%);border:1px solid rgba(255,255,255,0.06)`}">
+        <div class="absolute inset-0 ${bannerUrl ? 'opacity-60' : 'opacity-30'}"
+             style="background:${bannerUrl
+               ? `linear-gradient(135deg, hsl(${hue},40%,5%) 0%, rgba(0,0,0,0.55) 100%)`
+               : `radial-gradient(ellipse at top left, hsl(${hue},60%,30%) 0%, transparent 60%)`}"></div>
         <div class="relative flex items-center gap-5">
-          <div class="avatar-glow">
-            ${avatarHTML({ username, avatarUrl }, { size: 72, classes: 'avatar-glow' })}
-          </div>
+          ${avatarHTML({ username, avatarUrl }, { size: 72, classes: 'avatar-glow flex-shrink-0' })}
           <div class="flex-1 min-w-0">
             <h1 class="font-serif text-2xl sm:text-3xl font-bold text-white leading-tight">${escHtml(username)}</h1>
             ${bio ? `<p class="text-stone-300 text-sm mt-1 leading-snug line-clamp-3">${escHtml(bio)}</p>` : ''}
