@@ -48,9 +48,9 @@ router.get('/status', async (req, res, next) => {
 router.post('/:username', async (req, res, next) => {
   try {
     const { rows: [target] } = await pool.query(
-      'SELECT id FROM users WHERE username = $1 AND is_public = true', [req.params.username]
+      'SELECT id FROM users WHERE username = $1', [req.params.username]
     );
-    if (!target) return res.status(404).json({ error: 'User not found or private' });
+    if (!target) return res.status(404).json({ error: 'User not found' });
     if (target.id === req.user.id) return res.status(400).json({ error: 'Cannot follow yourself' });
 
     await pool.query(
