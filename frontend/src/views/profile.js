@@ -60,10 +60,10 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
     </div>
 
     <div id="tab-shelves" class="tab-panel">
-      ${renderShelvesTab(shelves, library, myBookIds)}
+      ${renderShelvesTab(shelves, library, myBookIds, isOwnProfile)}
     </div>
     <div id="tab-status" class="tab-panel hidden">
-      ${renderStatusTab(statusBooks, myBookIds)}
+      ${renderStatusTab(statusBooks, myBookIds, isOwnProfile)}
     </div>
     <div id="tab-feed" class="tab-panel hidden">
       ${renderFeedTab(feed)}
@@ -135,7 +135,7 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
   }
 }
 
-function renderShelvesTab(shelves, library, myBookIds = new Set()) {
+function renderShelvesTab(shelves, library, myBookIds = new Set(), isOwnProfile = false) {
   const byShelf = {};
   for (const s of shelves) byShelf[s.id] = (library ?? []).filter(b => (b.shelf_ids ?? []).includes(s.id));
 
@@ -178,7 +178,7 @@ function renderShelvesTab(shelves, library, myBookIds = new Set()) {
   return combined || `<p class="text-stone-500 italic text-center py-10">No books on shelves yet.</p>`;
 }
 
-function renderStatusTab({ to_read, reading, done }, myBookIds = new Set()) {
+function renderStatusTab({ to_read, reading, done }, myBookIds = new Set(), isOwnProfile = false) {
   const section = (label, books, color) => {
     if (!books.length) return '';
     return `
