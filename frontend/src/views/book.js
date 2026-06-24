@@ -67,8 +67,8 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
   container.innerHTML = `
     <div class="max-w-4xl mx-auto fade-in">
       <!-- Back -->
-      <button id="back-btn" class="flex items-center gap-1 text-stone-400 hover:text-stone-200 text-sm mb-6 transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <button id="back-btn" class="inline-flex items-center gap-1.5 text-stone-400 hover:text-stone-200 text-sm mb-6 transition-colors group">
+        <svg class="w-4 h-4 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
         </svg>
         Back
@@ -97,10 +97,16 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
             ${book.authors?.length ? `<p class="text-stone-400 mt-1">${escHtml(book.authors.join(', '))}</p>` : ''}
           </div>
 
-          <div class="flex flex-wrap gap-4 text-sm text-stone-400">
-            ${book.published_date ? `<span>📅 ${escHtml(book.published_date)}</span>` : ''}
-            ${book.page_count     ? `<span>📄 ${book.page_count} pages</span>` : ''}
-            ${book.publisher      ? `<span>🏢 ${escHtml(book.publisher)}</span>` : ''}
+          <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-stone-400">
+            ${book.published_date ? `<span class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              ${escHtml(book.published_date)}</span>` : ''}
+            ${book.page_count ? `<span class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              ${book.page_count} pages</span>` : ''}
+            ${book.publisher ? `<span class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+              ${escHtml(book.publisher)}</span>` : ''}
           </div>
 
           ${stars ? `<p class="text-amber-400">${stars} <span class="text-stone-500 text-sm ml-1">${sessions.filter(s => s.rating).length} rating${sessions.filter(s => s.rating).length !== 1 ? 's' : ''}</span></p>` : ''}
@@ -112,8 +118,9 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
 
           ${book.description ? `
           <details class="group">
-            <summary class="text-sm text-amber-400 hover:text-amber-300 cursor-pointer list-none flex items-center gap-1">
-              <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Description
+            <summary class="text-sm text-amber-400 hover:text-amber-300 cursor-pointer list-none flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+              Description
             </summary>
             <p class="mt-2 text-sm text-stone-300 leading-relaxed">${escHtml(book.description)}</p>
           </details>` : ''}
@@ -137,8 +144,9 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
 
         ${user ? `
         <details class="group" id="log-read-details">
-          <summary class="text-sm text-amber-400 hover:text-amber-300 cursor-pointer list-none flex items-center gap-1">
-            <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Log a read
+          <summary class="text-sm text-amber-400 hover:text-amber-300 cursor-pointer list-none flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+            Log a read
           </summary>
           <div class="mt-4 bg-stone-900 rounded-xl p-5 ring-1 ring-white/5">
             ${renderSessionForm()}

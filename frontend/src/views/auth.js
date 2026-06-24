@@ -6,16 +6,22 @@ export function renderAuth(container, onSuccess) {
   async function render() {
     const isRegister = mode === 'register';
     container.innerHTML = `
-      <div class="min-h-[80vh] flex items-center justify-center px-4">
-        <div class="w-full max-w-sm">
-          <div class="flex flex-col items-center mb-6 gap-2">
-            <div class="flex items-center justify-center bg-stone-800 rounded-full p-1">
-              <img src="/logo.png" class="h-24 w-24 sm:h-28 sm:w-28 md:h-32 md:w-32 rounded-full object-cover" alt="Bookworm logo" />
+      <div class="min-h-[80vh] flex items-center justify-center px-4 relative">
+        <div class="absolute inset-0 pointer-events-none overflow-hidden">
+          <div style="position:absolute;top:-40%;left:50%;transform:translateX(-50%);width:600px;height:600px;background:radial-gradient(ellipse at center,rgba(245,158,11,0.06) 0%,transparent 70%);border-radius:50%"></div>
+        </div>
+        <div class="w-full max-w-sm relative">
+          <div class="flex flex-col items-center mb-8 gap-3">
+            <div class="relative">
+              <div class="absolute inset-0 rounded-full bg-amber-400/20 blur-xl"></div>
+              <div class="relative flex items-center justify-center bg-stone-800 rounded-full p-1.5 ring-2 ring-amber-500/30">
+                <img src="/logo.png" class="h-20 w-20 sm:h-24 sm:w-24 rounded-full object-cover" alt="Bookworm logo" />
+              </div>
             </div>
-            <h1 class="font-serif text-2xl sm:text-3xl font-semibold text-amber-400">Bookworm</h1>
+            <h1 class="font-serif text-3xl sm:text-4xl font-bold text-amber-400 tracking-tight">Bookworm</h1>
             <p class="text-stone-400 text-sm">${isRegister ? 'Create your account' : 'Sign in to your library'}</p>
           </div>
-          <form id="auth-form" class="bg-stone-900 rounded-xl p-6 space-y-4 ring-1 ring-white/10 shadow-2xl">
+          <form id="auth-form" class="rounded-2xl p-6 space-y-4 shadow-2xl" style="background:rgba(22,19,17,0.9);border:1px solid rgba(68,64,60,0.5);backdrop-filter:blur(12px)">
             <div>
               <label for="auth-username" class="text-xs text-stone-400 block mb-1">Username</label>
               <input id="auth-username" type="text" name="username" required autofocus autocomplete="username"
@@ -40,7 +46,7 @@ export function renderAuth(container, onSuccess) {
             <input type="hidden" name="recaptchaToken" id="recaptcha-token" />
             ` : ''}
             <button type="submit" id="submit-btn"
-              class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2.5 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              class="w-full bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-xl py-2.5 text-sm transition-all duration-150 shadow-lg shadow-amber-500/20 hover:shadow-amber-400/30 disabled:opacity-50 disabled:cursor-not-allowed">
               ${isRegister ? 'Create account' : 'Sign in'}
             </button>
             <p id="auth-error" class="text-red-400 text-xs text-center hidden"></p>

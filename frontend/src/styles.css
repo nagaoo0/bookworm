@@ -10,7 +10,7 @@
   --color-accent: #f59e0b;
   --color-accent-hover: #fbbf24;
 
-  --font-serif: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-serif: 'Lora', Georgia, 'Times New Roman', serif;
   --font-sans:  'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
@@ -42,6 +42,8 @@ body {
   font-family: var(--font-sans);
   min-height: 100vh;
   margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .font-serif { font-family: var(--font-serif); }
@@ -94,14 +96,27 @@ body {
 
 /* ── Cover placeholder ─────────────────────────────────────────────────────── */
 .cover-placeholder {
-  background: linear-gradient(135deg, var(--color-surface-2) 0%, var(--color-surface) 100%);
+  background: linear-gradient(160deg, var(--color-surface-2) 0%, var(--color-surface) 60%, color-mix(in srgb, var(--color-surface-2) 80%, var(--color-accent)) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--color-muted);
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   text-align: center;
-  padding: 0.5rem;
+  padding: 0.75rem 0.5rem;
+  font-family: var(--font-serif);
+  font-style: italic;
+  position: relative;
+  overflow: hidden;
+}
+.cover-placeholder::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 40%, transparent) 0%, color-mix(in srgb, var(--color-accent) 20%, transparent) 100%);
 }
 
 /* ── Book card hover lift ──────────────────────────────────────────────────── */
@@ -301,4 +316,81 @@ body {
 .toast-item {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── Nav link states (theme-aware) ───────────────────────────────────────── */
+.nav-link-inactive {
+  color: var(--color-muted);
+  border-radius: 0.5rem;
+  transition: color 0.15s, background-color 0.15s;
+}
+.nav-link-inactive:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface-2) 80%, transparent);
+}
+.nav-link-mob-inactive {
+  color: var(--color-muted);
+  border-radius: 0.75rem;
+  transition: color 0.15s, background-color 0.15s;
+}
+.nav-link-mob-inactive:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface-2) 80%, transparent);
+}
+
+/* ── Reading section heading accent ──────────────────────────────────────── */
+.reading-section-heading {
+  position: relative;
+}
+.reading-section-heading::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 40%, transparent) 0%, transparent 100%);
+}
+
+/* ── Count badge ──────────────────────────────────────────────────────────── */
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* ── Library search input with theme vars ─────────────────────────────────── */
+.library-search {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+.library-search::placeholder {
+  color: var(--color-muted);
+}
+.library-search:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+/* ── Section sort select theme-aware ─────────────────────────────────────── */
+.section-sort-select {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  transition: border-color 0.15s, color 0.15s;
+}
+.section-sort-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  color: var(--color-text);
 }

@@ -22,7 +22,7 @@ setOnSessionSaved(loadLibrary);
 document.getElementById('app').innerHTML = `
   <div class="min-h-screen flex flex-col">
     <header id="app-header" class="sticky top-0 z-40 hidden"
-            style="background:rgba(12,10,9,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(68,64,60,0.5)">
+            style="background:color-mix(in srgb,var(--color-bg) 88%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--color-border);transition:background 0.2s">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
         <a href="#home" class="flex items-center gap-2.5 flex-shrink-0 group">
           <div class="relative">
@@ -73,7 +73,7 @@ document.getElementById('app').innerHTML = `
       </div>
 
       <!-- Mobile dropdown menu -->
-      <div id="mobile-menu" class="hidden sm:hidden panel-enter border-t border-stone-800/60" style="background:rgba(12,10,9,0.97)">
+      <div id="mobile-menu" class="hidden sm:hidden panel-enter border-t border-stone-800/60" style="background:color-mix(in srgb,var(--color-bg) 97%,transparent);backdrop-filter:blur(20px)">
         <div class="px-4 py-3 space-y-0.5">
           <a href="#home"     class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="home">Library</a>
           <a href="#search"   class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="search">Search</a>
@@ -97,7 +97,7 @@ document.getElementById('app').innerHTML = `
 
     <!-- Logged-out public profile header -->
     <header id="public-header" class="sticky top-0 z-40 hidden"
-            style="background:rgba(12,10,9,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(68,64,60,0.5)">
+            style="background:color-mix(in srgb,var(--color-bg) 88%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--color-border);transition:background 0.2s">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
         <span class="flex items-center gap-2.5 font-serif text-xl font-semibold text-amber-400">
           <img src="/logo.png" class="h-8 w-8 rounded-full ring-2 ring-amber-500/30" alt="" />
@@ -206,7 +206,7 @@ function openNotifPanel() {
   const panel = document.createElement('div');
   panel.id = 'notif-panel';
   panel.className = 'panel-enter fixed top-[3.75rem] right-4 z-50 w-80 rounded-2xl shadow-2xl overflow-hidden';
-  panel.style.cssText = 'background:rgba(22,19,17,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(68,64,60,0.6);box-shadow:0 20px 60px rgba(0,0,0,0.5)';
+  panel.style.cssText = 'background:color-mix(in srgb,var(--color-surface) 95%,transparent);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--color-border);box-shadow:0 20px 60px rgba(0,0,0,0.4)';
   panel.innerHTML = `
     <div class="flex items-center justify-between px-4 py-3" style="border-bottom:1px solid rgba(68,64,60,0.5)">
       <span class="font-semibold text-sm">Notifications</span>
@@ -322,18 +322,17 @@ async function navigate(route) {
   // Refresh active state on both nav bars
   document.querySelectorAll('.nav-link').forEach(a => {
     const active = a.dataset.route === route;
-    // Strip previous state classes, preserve base classes
-    a.className = 'nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150' +
+    a.className = 'nav-link relative px-3 py-1.5 text-sm font-medium' +
       (active
-        ? ' bg-amber-500/15 text-amber-400'
-        : ' text-stone-400 hover:text-stone-200 hover:bg-stone-800/60');
+        ? ' bg-amber-500/15 text-amber-400 rounded-lg'
+        : ' nav-link-inactive');
   });
   document.querySelectorAll('.nav-link-mob').forEach(a => {
     const active = a.dataset.route === route;
-    a.className = 'nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150' +
+    a.className = 'nav-link-mob flex items-center px-3 py-2.5 text-sm font-medium' +
       (active
-        ? ' bg-amber-500/15 text-amber-400'
-        : ' text-stone-400 hover:text-stone-200 hover:bg-stone-800/60');
+        ? ' bg-amber-500/15 text-amber-400 rounded-xl'
+        : ' nav-link-mob-inactive');
   });
 
   mainEl.classList.remove('fade-in');

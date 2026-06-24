@@ -79,8 +79,7 @@ export function renderHome(container) {
           </span>
           <input id="library-search" type="search" value="${escHtml(libraryQuery)}"
             placeholder="Filter by title or author…"
-            class="w-full bg-stone-800 border border-stone-700 rounded-xl pl-9 pr-4 py-2.5 text-sm
-                   focus:outline-none focus:border-amber-500 placeholder-stone-500 transition-colors" />
+            class="library-search w-full rounded-xl pl-9 pr-4 py-2.5 text-sm" />
         </div>
         <button id="select-mode-btn"
           class="flex-shrink-0 px-3 py-2.5 rounded-xl border border-stone-700 text-xs text-stone-400
@@ -292,37 +291,60 @@ function renderAllBooks(el, library, container, shelves) {
     if (!books.length) return '';
     const { open, sort } = sectionState[key];
     const sorted = sortBooks(books, sort);
-    const dot = `<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${color}"></span>`;
+    const isReading = key === 'reading';
+    const chevron = `
+      <svg class="w-4 h-4 text-stone-500 flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+      </svg>`;
+    const dot = `<span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${color}"></span>`;
+    const countBadge = `<span class="count-badge ml-0.5" style="background:${color}22;color:${color}">${books.length}</span>`;
+    const headingClass = `font-serif text-xl font-semibold${isReading ? ' reading-section-heading' : ''}`;
     const sortSelect = `
-      <select class="section-sort ml-auto bg-stone-800 border border-stone-700 rounded-md px-2 py-0.5
-                     text-xs text-stone-400 focus:outline-none focus:border-amber-500 cursor-pointer"
+      <select class="section-sort section-sort-select ml-auto rounded-md px-2 py-0.5 text-xs cursor-pointer"
               data-sort-section="${key}">
         ${SORT_OPTIONS.map(o => `<option value="${o.value}" ${sort === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
       </select>`;
     return `
       <section class="mb-10" data-status-section="${key}">
         <div class="flex items-center gap-2 mb-4">
-          <button class="section-toggle flex items-center gap-2 hover:opacity-80 transition-opacity"
+          <button class="section-toggle flex items-center gap-2 min-w-0 hover:opacity-80 transition-opacity"
                   data-toggle-section="${key}" aria-expanded="${open}">
-            <span class="text-stone-500 text-xs transition-transform ${open ? 'rotate-90' : ''}" style="display:inline-block">▶</span>
+            ${chevron}
             ${dot}
-            <h2 class="font-serif text-xl font-semibold">${label}</h2>
-            <span class="text-sm text-stone-500">${books.length}</span>
+            <h2 class="${headingClass}">${label}</h2>
+            ${countBadge}
           </button>
           ${open ? sortSelect : ''}
         </div>
-        ${open ? `<div class="book-grid">
-          ${sorted.map(b => bookCardHTML(b, { isReading: key === 'reading' })).join('')}
+        ${open ? `<div class="book-grid stagger">
+          ${sorted.map(b => bookCardHTML(b, { isReading: isReading })).join('')}
         </div>` : ''}
       </section>`;
   }).join('');
 
   const emptyHtml = libraryQuery
-    ? `<div class="text-center py-20"><p class="text-stone-400">No books match "<em>${escHtml(libraryQuery)}</em>".</p></div>`
-    : `<div class="text-center py-20 space-y-4">
-        <p class="text-stone-400 text-lg">Your library is empty.</p>
+    ? `<div class="text-center py-20 space-y-2">
+        <p class="text-stone-400">No books match "<em class="text-stone-300">${escHtml(libraryQuery)}</em>".</p>
+        <p class="text-stone-600 text-sm">Try a different title or author name.</p>
+       </div>`
+    : `<div class="text-center py-24 space-y-5 fade-in">
+        <svg class="w-20 h-20 mx-auto text-stone-700" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="8" y="20" width="14" height="44" rx="2" fill="currentColor" opacity="0.5"/>
+          <rect x="10" y="18" width="10" height="4" rx="1" fill="#f59e0b" opacity="0.6"/>
+          <rect x="26" y="14" width="12" height="50" rx="2" fill="currentColor" opacity="0.7"/>
+          <rect x="28" y="12" width="8" height="4" rx="1" fill="#f59e0b" opacity="0.4"/>
+          <rect x="42" y="22" width="16" height="42" rx="2" fill="currentColor" opacity="0.5"/>
+          <rect x="44" y="20" width="12" height="4" rx="1" fill="#f59e0b" opacity="0.7"/>
+          <rect x="62" y="30" width="10" height="34" rx="2" fill="currentColor" opacity="0.4"/>
+          <rect x="64" y="28" width="6" height="4" rx="1" fill="#f59e0b" opacity="0.5"/>
+          <line x1="4" y1="65" x2="76" y2="65" stroke="currentColor" stroke-width="2" stroke-opacity="0.4" stroke-linecap="round"/>
+        </svg>
+        <div class="space-y-1">
+          <p class="text-stone-300 text-lg font-serif font-semibold">Your library is empty</p>
+          <p class="text-stone-500 text-sm">Start building your reading collection.</p>
+        </div>
         <a href="#search"
-           class="inline-block px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+           class="inline-block px-6 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-stone-950 font-semibold rounded-xl text-sm transition-all duration-150 shadow-lg shadow-amber-500/20">
           Search for a book
         </a>
        </div>`;
@@ -361,7 +383,7 @@ function renderShelfGrid(el, shelf, books) {
         <span class="text-sm text-stone-500">${books.length}</span>
       </div>
       ${books.length
-        ? `<div class="book-grid">
+        ? `<div class="book-grid stagger">
              ${books.map(b => bookCardHTML(b, { showStatus: true })).join('')}
            </div>`
         : `<p class="text-stone-500 italic text-sm py-3">No books on this shelf yet.</p>`}
