@@ -47,6 +47,8 @@ export async function searchBooks(queryObj, maxResults = 20) {
   const params = new URLSearchParams({ q, maxResults, printType: 'books' });
   if (process.env.GOOGLE_BOOKS_API_KEY) params.set('key', process.env.GOOGLE_BOOKS_API_KEY);
   if (queryObj.language) params.set('langRestrict', queryObj.language);
+  // Pin results to US locale to avoid server-IP-based language bias
+  params.set('country', 'US');
 
   const res = await fetchWithTimeout(`${BASE}?${params}`);
   if (!res.ok) throw new Error(`Google Books API error: ${res.status}`);

@@ -32,18 +32,9 @@ function render(container, user, invites, goal, currentYear) {
         <h2 class="font-semibold text-stone-200">Profile</h2>
         <p class="text-sm text-stone-400">Signed in as <strong class="text-stone-200">${escHtml(user.username)}</strong>${user.isAdmin ? ' <span class="text-amber-400 text-xs">(admin)</span>' : ''}</p>
 
-        <label class="flex items-center gap-3 cursor-pointer group">
-          <div class="relative">
-            <input type="checkbox" id="public-toggle" class="sr-only peer" ${user.isPublic ? 'checked' : ''} />
-            <div class="w-10 h-5 bg-stone-700 rounded-full peer peer-checked:bg-amber-500 transition-colors"></div>
-            <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
-          </div>
-          <span class="text-sm text-stone-300 group-hover:text-stone-100">Public profile</span>
-        </label>
-        <p id="profile-link-row" class="text-xs text-stone-500 ${user.isPublic ? '' : 'hidden'}">
+        <p class="text-xs text-stone-500">
           Shareable link: <a href="${escHtml(profileUrl)}" class="text-amber-400 hover:underline">${escHtml(profileUrl)}</a>
         </p>
-        <p id="settings-profile-msg" class="text-xs hidden"></p>
       </section>
 
       <!-- Change password -->
@@ -80,25 +71,6 @@ function render(container, user, invites, goal, currentYear) {
       <!-- Invite manager (admin only) -->
       ${user.isAdmin ? renderInviteSection(invites) : ''}
     </div>`;
-
-  // Public profile toggle
-  const toggle = container.querySelector('#public-toggle');
-  const linkRow = container.querySelector('#profile-link-row');
-  const profileMsg = container.querySelector('#settings-profile-msg');
-
-  toggle.addEventListener('change', async () => {
-    try {
-      const updated = await api.updateMe({ isPublic: toggle.checked });
-      setState({ user: { ...getState().user, isPublic: updated.isPublic } });
-      linkRow.classList.toggle('hidden', !toggle.checked);
-      showToast(toggle.checked ? 'Profile is now public.' : 'Profile is now private.');
-      profileMsg.textContent = '';
-    } catch (err) {
-      toggle.checked = !toggle.checked; // revert
-      profileMsg.className = 'text-xs text-red-400';
-      profileMsg.textContent = err.message;
-    }
-  });
 
   // Change password
   container.querySelector('#change-pw-form').addEventListener('submit', async e => {

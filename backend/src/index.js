@@ -20,6 +20,7 @@ import commentsRouter from './routes/comments.js';
 import booksRouter from './routes/books.js';
 import challengesRouter from './routes/challenges.js';
 import groupsRouter from './routes/groups.js';
+import adminRouter from './routes/admin.js';
 import { getBook } from './googleBooks.js';
 
 const app = express();
@@ -77,8 +78,7 @@ app.get('/api/feed', async (req, res, next) => {
        FROM reading_sessions rs
        JOIN users u ON u.id = rs.user_id
        JOIN books b ON b.id = rs.book_id
-       WHERE u.is_public = true
-         AND (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
+       WHERE (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
          ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1)` : ''}
        ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
        LIMIT 100`,
@@ -98,7 +98,6 @@ app.get('/api/users', async (_req, res, next) => {
               COUNT(DISTINCT lb.id)::INT AS book_count
        FROM users u
        LEFT JOIN library_books lb ON lb.user_id = u.id
-       WHERE u.is_public = true
        GROUP BY u.username
        ORDER BY u.username`
     );
@@ -178,6 +177,7 @@ app.use('/api/books/:bookId/comments', commentsRouter);
 app.use('/api/books/:bookId', booksRouter);
 app.use('/api/challenges', challengesRouter);
 app.use('/api/groups', groupsRouter);
+app.use('/api/admin', adminRouter);
 
 // Global error handler — catches any thrown/rejected error in route handlers
 app.use((err, _req, res, _next) => {

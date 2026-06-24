@@ -125,4 +125,11 @@ export const api = {
 
   exportLibrary: () => fetch('/api/import-export/export', { credentials: 'include' }),
   importLibrary: (csv) => request('/import-export/import', { method: 'POST', body: { csv } }),
+
+  // Admin
+  adminGetUsers: () => request('/admin/users'),
+  adminDeleteUser: (id) => request(`/admin/users/${id}`, { method: 'DELETE' }),
+  adminResetPassword: (id, newPassword) => request(`/admin/users/${id}/reset-password`, { method: 'POST', body: { newPassword } }),
+  adminSetAdmin: (id, isAdmin) => request(`/admin/users/${id}`, { method: 'PATCH', body: { isAdmin } }),
+  adminRevokeSessions: (id) => request(`/admin/users/${id}/revoke-sessions`, { method: 'POST' }),
 };

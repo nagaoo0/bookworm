@@ -8,7 +8,7 @@ const router = Router();
 router.get('/:username', async (req, res, next) => {
   try {
     const { rows: [user] } = await pool.query(
-      `SELECT id, username FROM users WHERE username = $1 AND is_public = true`,
+      `SELECT id, username FROM users WHERE username = $1`,
       [req.params.username]
     );
     if (!user) return res.status(404).json({ error: 'Profile not found' });
