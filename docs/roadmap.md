@@ -30,9 +30,6 @@ A search input above the shelf bar that filters visible books by title or author
 #### Sort options on shelves
 Dropdown or segmented control per shelf: **Date added** (default), **Title A–Z**, **Author**, **Rating** (sessions average). Purely client-side sort of the already-loaded library array.
 
-#### "Currently reading" hero on Home
-A prominent banner or card row at the very top of the library view (above shelves) that highlights the 1–3 books currently being read, with a progress bar if progress tracking is enabled.
-
 #### Book detail page (`#book/:id`)
 A dedicated route showing cover, description, full metadata, all logged sessions, and notes — everything currently scattered across the modal. The modal becomes a quick-access shortcut; the detail page is the canonical view.
 

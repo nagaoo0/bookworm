@@ -99,9 +99,6 @@ export function renderHome(container) {
         <button id="bulk-cancel-btn" class="px-2 py-1.5 text-stone-500 hover:text-stone-200 transition-colors">✕</button>
       </div>
 
-      <!-- Currently reading hero -->
-      ${renderCurrentlyReadingHero(library, selectedShelfId)}
-
       <!-- Shelf selector bar -->
       <div class="shelf-bar flex items-center gap-2 overflow-x-auto">
         <button class="shelf-chip ${selectedShelfId == null ? 'shelf-chip-active' : 'shelf-chip-idle'}"
@@ -190,45 +187,6 @@ export function renderHome(container) {
       loadLibrary();
     });
   });
-}
-
-// ── Currently reading hero ────────────────────────────────────────────────────
-function renderCurrentlyReadingHero(library, selectedShelfId) {
-  if (selectedShelfId != null) return '';
-  const reading = library.filter(b => b.status === 'reading');
-  if (!reading.length) return '';
-
-  const cards = reading.slice(0, 3).map(b => {
-    const cover = b.cover_url
-      ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}"
-              class="w-full h-full object-cover" loading="lazy" />`
-      : `<div class="cover-placeholder w-full h-full font-serif text-xs">${escHtml(b.title)}</div>`;
-    const pct = b.progress_pct ?? null;
-    const progress = pct !== null
-      ? `<div class="absolute bottom-0 left-0 right-0 h-1 bg-black/40">
-           <div class="h-1 bg-amber-400" style="width:${pct}%"></div>
-         </div>`
-      : '';
-    return `
-      <a href="#book/${b.book_id}" class="group flex gap-3 items-start hover:bg-stone-800/60 rounded-xl p-2 -m-2 transition-colors">
-        <div class="relative w-12 aspect-[2/3] rounded overflow-hidden bg-stone-700 flex-shrink-0 shadow">
-          ${cover}${progress}
-        </div>
-        <div class="flex-1 min-w-0 pt-0.5">
-          <p class="font-serif text-sm font-semibold leading-snug line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
-          ${(b.authors ?? []).length ? `<p class="text-xs text-stone-500 mt-0.5 line-clamp-1">${escHtml(b.authors.join(', '))}</p>` : ''}
-          ${pct !== null ? `<p class="text-xs text-amber-500 mt-1">${pct}%</p>` : ''}
-        </div>
-      </a>`;
-  }).join('');
-
-  return `
-    <div class="bg-stone-900/60 border border-stone-800 rounded-2xl p-4">
-      <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-3">Currently reading</p>
-      <div class="grid grid-cols-1 sm:grid-cols-${Math.min(reading.length, 3)} gap-3">
-        ${cards}
-      </div>
-    </div>`;
 }
 
 // ── Shelf bar ─────────────────────────────────────────────────────────────────
