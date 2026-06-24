@@ -1,7 +1,6 @@
 import { api } from '../api.js';
 import { getState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from '../components/starRating.js';
-import { openModal } from '../components/modal.js';
 import { showToast } from '../components/toast.js';
 import { loadLibrary } from './home.js';
 
@@ -9,20 +8,36 @@ export async function renderBook(container, bookId) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
 
   try {
+    const { library, shelves } = getState();
     const [book, sessions, comments] = await Promise.all([
       api.getBookDetail(bookId),
       api.getSessions(bookId),
       api.getComments(bookId),
     ]);
-    render(container, book, sessions, comments);
+    mount(container, book, sessions, comments, library ?? [], shelves ?? []);
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
   }
 }
 
-function render(container, book, sessions, comments) {
-  const { user, library } = getState();
-  const libEntry = library?.find(b => String(b.book_id) === String(book.id));
+function mount(container, book, sessions, comments, library, shelves) {
+  const { user } = getState();
+  const libEntry = library.find(b => String(b.book_id) === String(book.id));
+
+  const reloadSessions = async () => {
+    const fresh = await api.getSessions(book.id).catch(() => sessions);
+    const list = container.querySelector('#session-list');
+    if (list) list.innerHTML = renderSessionList(fresh, book.id, reloadSessions);
+    attachSessionDeleteHandlers(container, book.id, reloadSessions);
+  };
+
+  const softReload = async () => {
+    await loadLibrary();
+    const newLib = getState().library ?? [];
+    const newShelves = getState().shelves ?? [];
+    const newEntry = newLib.find(b => String(b.book_id) === String(book.id));
+    renderLibraryPanel(container, book, newEntry, newShelves);
+  };
 
   const coverImg = book.cover_url
     ? `<img src="${escHtml(book.cover_url)}" alt="${escHtml(book.title)}"
@@ -31,8 +46,8 @@ function render(container, book, sessions, comments) {
          <span class="text-stone-600 text-4xl">📖</span>
        </div>`;
 
-  const avgRating = sessions.length
-    ? (sessions.reduce((s, r) => s + (r.rating ?? 0), 0) / sessions.filter(s => s.rating).length || 0)
+  const avgRating = sessions.filter(s => s.rating).length
+    ? sessions.reduce((s, r) => s + (r.rating ?? 0), 0) / sessions.filter(s => s.rating).length
     : 0;
   const stars = avgRating ? '★'.repeat(Math.round(avgRating)) + '☆'.repeat(5 - Math.round(avgRating)) : '';
 
@@ -47,21 +62,22 @@ function render(container, book, sessions, comments) {
       </button>
 
       <div class="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-8">
-        <!-- Cover -->
-        <div class="w-40 sm:w-full mx-auto sm:mx-0">
-          ${coverImg}
-          ${libEntry ? `
-          <button id="open-modal-btn"
-            class="mt-3 w-full px-3 py-2 bg-stone-800 hover:bg-stone-700 text-sm rounded-lg transition-colors text-center font-medium">
-            Log a read
-          </button>` : `
-          <button id="add-to-library-btn"
-            class="mt-3 w-full px-3 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 text-sm font-semibold rounded-lg transition-colors">
-            + Add to library
-          </button>`}
+        <!-- Cover column -->
+        <div class="w-40 sm:w-full mx-auto sm:mx-0 space-y-3">
+          <div id="cover-img-wrap">${coverImg}</div>
+
+          ${libEntry
+            ? `<button id="log-read-btn"
+                class="w-full px-3 py-2 bg-stone-800 hover:bg-stone-700 text-sm rounded-lg transition-colors text-center font-medium">
+                Log a read
+              </button>`
+            : `<button id="add-to-library-btn"
+                class="w-full px-3 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 text-sm font-semibold rounded-lg transition-colors">
+                + Add to library
+              </button>`}
         </div>
 
-        <!-- Details -->
+        <!-- Metadata column -->
         <div class="space-y-4">
           <div>
             <h1 class="font-serif text-2xl font-bold leading-tight">${escHtml(book.title)}</h1>
@@ -74,7 +90,7 @@ function render(container, book, sessions, comments) {
             ${book.publisher      ? `<span>🏢 ${escHtml(book.publisher)}</span>` : ''}
           </div>
 
-          ${stars ? `<p class="text-amber-400">${stars} <span class="text-stone-500 text-sm ml-1">${sessions.filter(s=>s.rating).length} rating${sessions.filter(s=>s.rating).length !== 1 ? 's' : ''}</span></p>` : ''}
+          ${stars ? `<p class="text-amber-400">${stars} <span class="text-stone-500 text-sm ml-1">${sessions.filter(s => s.rating).length} rating${sessions.filter(s => s.rating).length !== 1 ? 's' : ''}</span></p>` : ''}
 
           ${(book.categories ?? []).length ? `
           <div class="flex flex-wrap gap-2">
@@ -89,42 +105,32 @@ function render(container, book, sessions, comments) {
             <p class="mt-2 text-sm text-stone-300 leading-relaxed">${escHtml(book.description)}</p>
           </details>` : ''}
 
-          ${libEntry ? `
-          <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 space-y-2">
-            <p class="text-xs text-stone-500 uppercase tracking-wider font-medium">In your library</p>
-            <div class="flex items-center gap-3">
-              <span class="text-sm capitalize ${
-                libEntry.status === 'reading' ? 'text-amber-400' :
-                libEntry.status === 'done'    ? 'text-green-400' : 'text-stone-400'
-              }">${libEntry.status.replace('_', ' ')}</span>
-              ${libEntry.notes ? `<span class="text-xs text-stone-500 truncate italic">"${escHtml(libEntry.notes)}"</span>` : ''}
-            </div>
-          </div>` : ''}
+          <!-- Library panel (status, shelves, progress, notes, cover, meta) -->
+          <div id="library-panel">
+            ${renderLibraryPanelHTML(book, libEntry, shelves)}
+          </div>
         </div>
       </div>
 
       <!-- Reading sessions -->
       <section class="mt-10">
-        <h2 class="font-serif text-xl font-semibold mb-4">Reading history</h2>
-        ${sessions.length ? `
-        <div class="space-y-3">
-          ${sessions.map(s => {
-            const date = s.finished_at
-              ? new Date(s.finished_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-              : s.started_at ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}` : '';
-            const sStars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
-            return `
-            <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5">
-              <div class="flex items-start justify-between gap-4">
-                <div>
-                  ${sStars ? `<p class="text-amber-400 text-sm">${sStars}</p>` : ''}
-                  ${date   ? `<p class="text-xs text-stone-500 mt-0.5">${escHtml(date)}</p>` : ''}
-                  ${s.review ? `<p class="text-sm text-stone-300 mt-2 leading-relaxed">${escHtml(s.review)}</p>` : ''}
-                </div>
-              </div>
-            </div>`;
-          }).join('')}
-        </div>` : `<p class="text-stone-500 italic text-sm">No reads logged yet.</p>`}
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-serif text-xl font-semibold">Reading history</h2>
+        </div>
+
+        <div id="session-list" class="space-y-3 mb-5">
+          ${renderSessionList(sessions, book.id, reloadSessions)}
+        </div>
+
+        ${user ? `
+        <details class="group" id="log-read-details">
+          <summary class="text-sm text-amber-400 hover:text-amber-300 cursor-pointer list-none flex items-center gap-1">
+            <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Log a read
+          </summary>
+          <div class="mt-4 bg-stone-900 rounded-xl p-5 ring-1 ring-white/5">
+            ${renderSessionForm()}
+          </div>
+        </details>` : ''}
       </section>
 
       <!-- Comments -->
@@ -151,9 +157,10 @@ function render(container, book, sessions, comments) {
   // Back button
   container.querySelector('#back-btn')?.addEventListener('click', () => history.back());
 
-  // Open modal
-  container.querySelector('#open-modal-btn')?.addEventListener('click', () => {
-    openModal(book.id, book.title, libEntry?.id, libEntry?.notes ?? null);
+  // Log a read button (scrolls to / opens the details)
+  container.querySelector('#log-read-btn')?.addEventListener('click', () => {
+    const det = container.querySelector('#log-read-details');
+    if (det) { det.open = true; det.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   });
 
   // Add to library
@@ -162,18 +169,22 @@ function render(container, book, sessions, comments) {
     btn.disabled = true; btn.textContent = '…';
     try {
       await api.addToLibrary({
-        googleId: book.google_id,
-        title: book.title,
-        authors: book.authors,
-        coverUrl: book.cover_url,
-        pageCount: book.page_count,
+        googleId:      book.google_id,
+        title:         book.title,
+        authors:       book.authors,
+        coverUrl:      book.cover_url,
+        pageCount:     book.page_count,
         publishedDate: book.published_date,
-        description: book.description,
-        categories: book.categories,
+        description:   book.description,
+        categories:    book.categories,
       });
-      loadLibrary();
+      await loadLibrary();
+      const newEntry = (getState().library ?? []).find(b => String(b.book_id) === String(book.id));
       btn.textContent = '✓ Added';
       btn.classList.replace('bg-amber-500', 'bg-green-800');
+      if (newEntry) {
+        renderLibraryPanel(container, book, newEntry, getState().shelves ?? []);
+      }
     } catch (err) {
       btn.textContent = '+ Add to library';
       btn.disabled = false;
@@ -181,27 +192,346 @@ function render(container, book, sessions, comments) {
     }
   });
 
+  // Session form
+  const sessionStarsEl = container.querySelector('#session-stars');
+  let selectedRating = 0;
+  if (sessionStarsEl) {
+    attachStarHandlers(sessionStarsEl, val => { selectedRating = val; });
+  }
+
+  container.querySelector('#session-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const errEl = container.querySelector('#session-error');
+    try {
+      await api.addSession(book.id, {
+        startedAt:  fd.get('startedAt')  || null,
+        finishedAt: fd.get('finishedAt') || null,
+        rating:     selectedRating || null,
+        review:     fd.get('review')     || null,
+      });
+      e.target.reset();
+      selectedRating = 0;
+      if (sessionStarsEl) {
+        sessionStarsEl.innerHTML = starRatingHTML(0, { interactive: true });
+        attachStarHandlers(sessionStarsEl, val => { selectedRating = val; });
+      }
+      errEl?.classList.add('hidden');
+      await reloadSessions();
+    } catch (err) {
+      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+    }
+  });
+
+  attachSessionDeleteHandlers(container, book.id, reloadSessions);
+  attachLibraryPanelHandlers(container, book, libEntry, shelves, softReload);
+
   // Comment form
   container.querySelector('#comment-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const body = new FormData(e.target).get('body')?.trim();
     const errEl = container.querySelector('#comment-err');
-    errEl.classList.add('hidden');
+    errEl?.classList.add('hidden');
     if (!body) return;
     try {
       const newComment = await api.addComment(book.id, body);
       e.target.reset();
       const list = container.querySelector('#comments-list');
       list.insertAdjacentHTML('beforeend', renderComment(newComment, user));
-      attachDeleteHandlers(container, book.id);
+      attachCommentDeleteHandlers(container, book.id);
     } catch (err) {
-      errEl.textContent = err.message;
-      errEl.classList.remove('hidden');
+      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
     }
   });
 
-  attachDeleteHandlers(container, book.id);
+  attachCommentDeleteHandlers(container, book.id);
 }
+
+// ── Library panel ──────────────────────────────────────────────────────────────
+
+function renderLibraryPanel(container, book, libEntry, shelves) {
+  const panel = container.querySelector('#library-panel');
+  if (!panel) return;
+  panel.innerHTML = renderLibraryPanelHTML(book, libEntry, shelves);
+  attachLibraryPanelHandlers(container, book, libEntry, shelves, async () => {
+    await loadLibrary();
+    renderLibraryPanel(container, book, (getState().library ?? []).find(b => String(b.book_id) === String(book.id)), getState().shelves ?? []);
+  });
+}
+
+function renderLibraryPanelHTML(book, libEntry, shelves) {
+  if (!libEntry) return '';
+
+  const STATUSES = [
+    { key: 'to_read', label: 'To Read',  color: '#64748b' },
+    { key: 'reading', label: 'Reading',  color: '#f59e0b' },
+    { key: 'done',    label: 'Done',     color: '#22c55e' },
+  ];
+
+  const pct = libEntry.progress_pct ?? 0;
+
+  return `
+    <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 space-y-4">
+
+      <!-- Status -->
+      <div>
+        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-2">Status</p>
+        <div class="flex gap-2 flex-wrap">
+          ${STATUSES.map(s => `
+            <button class="lib-status-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
+              ${libEntry.status === s.key
+                ? 'ring-2 ring-offset-1 ring-offset-stone-900 text-stone-950'
+                : 'bg-stone-800 hover:bg-stone-700 text-stone-300'}"
+              data-status="${s.key}"
+              style="${libEntry.status === s.key ? `background:${s.color};ring-color:${s.color}` : ''}">
+              ${s.label}
+            </button>`).join('')}
+        </div>
+      </div>
+
+      ${shelves.length ? `
+      <!-- Shelves -->
+      <div>
+        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-2">Shelves</p>
+        <div class="flex flex-wrap gap-2">
+          ${shelves.map(s => {
+            const on = (libEntry.shelf_ids ?? []).includes(s.id);
+            return `
+              <button class="lib-shelf-btn flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors
+                ${on ? 'text-stone-950' : 'bg-stone-800 hover:bg-stone-700 text-stone-400'}"
+                data-shelf-id="${s.id}" data-on="${on}"
+                style="${on ? `background:${escHtml(s.color)}` : ''}">
+                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${escHtml(s.color)}"></span>
+                ${escHtml(s.name)}
+              </button>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
+
+      ${libEntry.status === 'reading' ? `
+      <!-- Progress -->
+      <div>
+        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-2">Progress</p>
+        <div class="flex items-center gap-3">
+          <input type="range" id="progress-slider" class="flex-1 accent-amber-400"
+                 min="0" max="100" step="5" value="${pct}" />
+          <span id="progress-label" class="text-xs text-stone-400 w-8 text-right">${pct}%</span>
+        </div>
+      </div>` : ''}
+
+      <!-- Notes -->
+      <div>
+        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-2">Notes</p>
+        <textarea id="book-notes" rows="3" placeholder="Quotes, context, anything to remember…"
+          class="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm
+                 resize-none focus:outline-none focus:border-amber-500">${escHtml(libEntry.notes ?? '')}</textarea>
+        <div class="flex items-center gap-2 mt-2">
+          <button id="save-notes-btn" class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded-lg text-xs font-medium transition-colors">Save notes</button>
+          <span id="notes-saved" class="text-xs text-green-400 opacity-0 transition-opacity">Saved</span>
+        </div>
+      </div>
+
+      <!-- Cover URL + Metadata -->
+      <details class="group">
+        <summary class="text-xs text-stone-400 hover:text-amber-400 cursor-pointer list-none flex items-center gap-1 transition-colors">
+          <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Book details &amp; cover
+        </summary>
+        <div class="mt-3 space-y-3">
+          <!-- Cover URL -->
+          <div>
+            <label class="text-xs text-stone-500 block mb-1">Cover image URL</label>
+            <div class="flex gap-2">
+              <input id="cover-url-input" type="url" placeholder="https://…"
+                class="flex-1 bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-xs
+                       focus:outline-none focus:border-amber-500" />
+              <button id="save-cover-btn"
+                class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
+                Set cover
+              </button>
+            </div>
+            <p id="cover-msg" class="text-xs mt-1 hidden"></p>
+          </div>
+
+          <!-- Metadata search -->
+          <div>
+            <label class="text-xs text-stone-500 block mb-1">Find metadata (Google Books)</label>
+            <div class="flex gap-2">
+              <input id="meta-search-input" type="text" value="${escHtml(book.title)}" placeholder="Search title or ISBN…"
+                class="flex-1 bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-xs
+                       focus:outline-none focus:border-amber-500" />
+              <button id="meta-search-btn"
+                class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
+                Search
+              </button>
+            </div>
+            <div id="meta-results" class="space-y-2 max-h-48 overflow-y-auto mt-2"></div>
+          </div>
+        </div>
+      </details>
+    </div>`;
+}
+
+function attachLibraryPanelHandlers(container, book, libEntry, shelves, softReload) {
+  if (!libEntry) return;
+
+  // Status buttons
+  container.querySelectorAll('.lib-status-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await api.setStatus(libEntry.id, btn.dataset.status);
+      softReload();
+    });
+  });
+
+  // Shelf toggles
+  container.querySelectorAll('.lib-shelf-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const shelfId = Number(btn.dataset.shelfId);
+      const on = btn.dataset.on === 'true';
+      if (on) {
+        await api.removeShelfMembership(libEntry.id, shelfId).catch(() => {});
+      } else {
+        await api.addShelfMembership(libEntry.id, shelfId).catch(() => {});
+      }
+      softReload();
+    });
+  });
+
+  // Progress slider
+  const slider = container.querySelector('#progress-slider');
+  const label  = container.querySelector('#progress-label');
+  if (slider) {
+    let saveTimer;
+    slider.addEventListener('input', () => {
+      if (label) label.textContent = slider.value + '%';
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async () => {
+        await api.setProgress(libEntry.id, { progress_pct: Number(slider.value) });
+        loadLibrary();
+      }, 600);
+    });
+  }
+
+  // Notes
+  container.querySelector('#save-notes-btn')?.addEventListener('click', async () => {
+    const text = container.querySelector('#book-notes')?.value ?? '';
+    await api.updateNotes(libEntry.id, text || null);
+    const savedEl = container.querySelector('#notes-saved');
+    if (savedEl) { savedEl.style.opacity = '1'; setTimeout(() => { savedEl.style.opacity = '0'; }, 1500); }
+    loadLibrary();
+  });
+
+  // Cover URL
+  container.querySelector('#save-cover-btn')?.addEventListener('click', async () => {
+    const coverUrl = container.querySelector('#cover-url-input')?.value.trim();
+    const msg = container.querySelector('#cover-msg');
+    if (!coverUrl) return;
+    try {
+      await api.updateMetadata(libEntry.id, { coverUrl });
+      await loadLibrary();
+      const wrap = container.querySelector('#cover-img-wrap');
+      if (wrap) wrap.innerHTML = `<img src="${escHtml(coverUrl)}" alt="" class="w-full object-cover rounded-xl shadow-2xl" />`;
+      if (msg) { msg.className = 'text-xs mt-1 text-green-400'; msg.textContent = 'Cover updated.'; msg.classList.remove('hidden'); }
+    } catch (err) {
+      if (msg) { msg.className = 'text-xs mt-1 text-red-400'; msg.textContent = err.message; msg.classList.remove('hidden'); }
+    }
+    if (msg) setTimeout(() => msg.classList.add('hidden'), 2500);
+  });
+
+  // Metadata search
+  const metaSearchBtn = container.querySelector('#meta-search-btn');
+  const metaSearchInput = container.querySelector('#meta-search-input');
+  metaSearchBtn?.addEventListener('click', () => {
+    const q = metaSearchInput?.value.trim();
+    if (q) runMetaSearch(container, q, libEntry.id, softReload);
+  });
+  metaSearchInput?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') metaSearchBtn?.click();
+  });
+}
+
+// ── Sessions ───────────────────────────────────────────────────────────────────
+
+function renderSessionForm() {
+  return `
+    <form id="session-form" class="space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-stone-400 block mb-1">Started</label>
+          <input type="date" name="startedAt"
+            class="w-full bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-sm
+                   focus:outline-none focus:border-amber-500" />
+        </div>
+        <div>
+          <label class="text-xs text-stone-400 block mb-1">Finished</label>
+          <input type="date" name="finishedAt"
+            class="w-full bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-sm
+                   focus:outline-none focus:border-amber-500" />
+        </div>
+      </div>
+      <div>
+        <label class="text-xs text-stone-400 block mb-1">Rating</label>
+        <div id="session-stars" class="flex gap-1">${starRatingHTML(0, { interactive: true })}</div>
+      </div>
+      <div>
+        <label class="text-xs text-stone-400 block mb-1">Review</label>
+        <textarea name="review" rows="3" placeholder="Your thoughts…"
+          class="w-full bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-sm
+                 resize-none focus:outline-none focus:border-amber-500"></textarea>
+      </div>
+      <button type="submit"
+        class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
+        Save Session
+      </button>
+      <p id="session-error" class="text-xs text-red-400 hidden"></p>
+    </form>`;
+}
+
+function renderSessionList(sessions, _bookId, _reload) {
+  if (!sessions.length) return `<p class="text-stone-500 italic text-sm">No reads logged yet.</p>`;
+  return sessions.map(s => {
+    const date = s.finished_at
+      ? new Date(s.finished_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+      : s.started_at ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}` : '';
+    const sStars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
+    return `
+      <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5" data-session-id="${s.id}">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            ${sStars ? `<p class="text-amber-400 text-sm">${sStars}</p>` : ''}
+            ${date   ? `<p class="text-xs text-stone-500 mt-0.5">${escHtml(date)}</p>` : ''}
+            ${s.review ? `<p class="text-sm text-stone-300 mt-2 leading-relaxed">${escHtml(s.review)}</p>` : ''}
+          </div>
+          <button class="delete-session text-stone-600 hover:text-red-400 text-xs flex-shrink-0 transition-colors" data-session-id="${s.id}">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function attachSessionDeleteHandlers(container, bookId, reload) {
+  container.querySelectorAll('.delete-session').forEach(btn => {
+    if (btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', () => {
+      const row = btn.closest('[data-session-id]');
+      if (!row || row.querySelector('.sess-confirm')) return;
+      const orig = btn.outerHTML;
+      btn.outerHTML = `
+        <span class="sess-confirm flex items-center gap-1">
+          <button class="sess-del-yes text-[10px] px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded">Delete</button>
+          <button class="sess-del-no text-[10px] px-1 text-stone-400 hover:text-stone-200">Cancel</button>
+        </span>`;
+      row.querySelector('.sess-del-yes').addEventListener('click', async () => {
+        await api.deleteSession(bookId, row.dataset.sessionId);
+        await reload();
+      });
+      row.querySelector('.sess-del-no').addEventListener('click', () => {
+        row.querySelector('.sess-confirm').outerHTML = orig;
+      });
+    });
+  });
+}
+
+// ── Comments ───────────────────────────────────────────────────────────────────
 
 function renderCommentsList(comments, user) {
   if (!comments.length) return `<p class="text-stone-500 italic text-sm">No comments yet — be the first!</p>`;
@@ -226,7 +556,7 @@ function renderComment(c, user) {
     </div>`;
 }
 
-function attachDeleteHandlers(container, bookId) {
+function attachCommentDeleteHandlers(container, bookId) {
   container.querySelectorAll('.delete-comment').forEach(btn => {
     if (btn.dataset.wired) return;
     btn.dataset.wired = '1';
@@ -241,6 +571,59 @@ function attachDeleteHandlers(container, bookId) {
       }
     });
   });
+}
+
+// ── Metadata search ────────────────────────────────────────────────────────────
+
+async function runMetaSearch(container, q, libId, onAttached) {
+  const el = container.querySelector('#meta-results');
+  if (!el) return;
+  el.innerHTML = `<p class="text-stone-400 text-xs">Searching…</p>`;
+  try {
+    const results = await api.search(`q=${encodeURIComponent(q)}`);
+    if (!results.length) {
+      el.innerHTML = `<p class="text-stone-500 text-xs italic">No results.</p>`;
+      return;
+    }
+    el.innerHTML = results.slice(0, 5).map((b, i) => `
+      <div class="flex gap-2 items-center bg-stone-800 rounded-lg px-3 py-2">
+        ${b.coverUrl
+          ? `<img src="${escHtml(b.coverUrl)}" class="w-8 h-11 object-cover rounded flex-shrink-0" />`
+          : `<div class="w-8 h-11 bg-stone-700 rounded flex-shrink-0"></div>`}
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-medium line-clamp-1">${escHtml(b.title)}</p>
+          <p class="text-[10px] text-stone-400 line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
+          ${b.publishedDate ? `<p class="text-[10px] text-stone-500">${escHtml(b.publishedDate)}</p>` : ''}
+        </div>
+        <button class="attach-meta-btn text-[10px] px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/40 transition-colors flex-shrink-0"
+                data-idx="${i}">Attach</button>
+      </div>`).join('');
+
+    el.querySelectorAll('.attach-meta-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const b = results[Number(btn.dataset.idx)];
+        btn.textContent = '…'; btn.disabled = true;
+        try {
+          await api.updateMetadata(libId, {
+            googleId:      b.googleId,
+            coverUrl:      b.coverUrl,
+            categories:    b.categories,
+            pageCount:     b.pageCount,
+            publishedDate: b.publishedDate,
+          });
+          btn.textContent = '✓ Done';
+          btn.classList.replace('bg-amber-500/20', 'bg-green-800/40');
+          btn.classList.replace('text-amber-400', 'text-green-400');
+          onAttached();
+        } catch {
+          btn.textContent = '✗'; btn.disabled = false;
+        }
+      });
+    });
+  } catch (err) {
+    el.innerHTML = `<p class="text-red-400 text-xs">${escHtml(err.message)}</p>`;
+  }
 }
 
 function escHtml(str) {
