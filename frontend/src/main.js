@@ -20,39 +20,51 @@ setOnSessionSaved(loadLibrary);
 // ── Layout ─────────────────────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
   <div class="min-h-screen flex flex-col">
-    <header id="app-header" class="sticky top-0 z-40 bg-stone-950/90 backdrop-blur border-b border-stone-800 hidden">
+    <header id="app-header" class="sticky top-0 z-40 hidden"
+            style="background:rgba(12,10,9,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(68,64,60,0.5)">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
-        <a href="#home" class="flex items-center gap-2 font-serif text-xl font-semibold text-amber-400
-                               hover:text-amber-300 transition-colors flex-shrink-0">
-          <img src="/logo.png" class="h-8 w-8 rounded-full" alt="" />
-          <span class="hidden sm:inline">Bookworm</span>
+        <a href="#home" class="flex items-center gap-2.5 flex-shrink-0 group">
+          <div class="relative">
+            <img src="/logo.png" class="h-8 w-8 rounded-full ring-2 ring-amber-500/30 group-hover:ring-amber-500/60 transition-all duration-200" alt="" />
+            <div class="absolute inset-0 rounded-full bg-amber-400/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          </div>
+          <span class="hidden sm:inline font-serif text-xl font-semibold text-amber-400 group-hover:text-amber-300 transition-colors">Bookworm</span>
         </a>
 
         <!-- Desktop nav -->
-        <nav class="hidden sm:flex gap-1 items-center">
-          <a href="#home"     class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="home">Library</a>
-          <a href="#search"   class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="search">Search</a>
-          <a href="#stats"    class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="stats">Stats</a>
-          <a href="#users"    class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="users">Readers</a>
-          <a id="my-profile-link" href="#" class="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors hidden">Profile</a>
-          <a href="#settings" class="nav-link px-3 py-1.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
-          <a id="admin-nav-link" href="#admin" class="nav-link hidden px-3 py-1.5 rounded-lg text-sm font-medium transition-colors text-amber-500 hover:text-amber-400" data-route="admin">Admin</a>
+        <nav class="hidden sm:flex gap-0.5 items-center">
+          <a href="#home"     class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="home">Library</a>
+          <a href="#search"   class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="search">Search</a>
+          <a href="#stats"    class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="stats">Stats</a>
+          <a href="#users"    class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="users">Readers</a>
+          <a id="my-profile-link" href="#" class="relative px-3 py-1.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800/60 transition-all duration-150 hidden">Profile</a>
+          <a href="#settings" class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="settings">Settings</a>
+          <a id="admin-nav-link" href="#admin" class="nav-link relative hidden px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 text-amber-500/90 hover:text-amber-400" data-route="admin">Admin</a>
+
+          <div class="w-px h-4 bg-stone-700 mx-1.5"></div>
+
           <!-- Notification bell -->
-          <button id="notif-btn" class="relative p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors hidden" aria-label="Notifications">
+          <button id="notif-btn" class="relative p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800/60 transition-all duration-150 hidden" aria-label="Notifications">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-9.95-4.47M9 17H4l1.405-1.405A2.032 2.032 0 006 14.158V11a6 6 0 016-6 6 6 0 016 6v3.159M13 21a2 2 0 01-4 0"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
             </svg>
-            <span id="notif-badge" class="hidden absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold"></span>
+            <span id="notif-badge" class="notif-pulse hidden absolute -top-0.5 -right-0.5 min-w-[1rem] h-4 px-0.5 bg-red-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold leading-none"></span>
           </button>
-          <span id="nav-username" class="ml-2 text-xs text-stone-500"></span>
-          <button id="logout-btn" class="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition-colors">
+
+          <div class="flex items-center gap-1.5 ml-1">
+            <div class="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+              <span id="nav-avatar-letter" class="text-amber-400 text-xs font-bold leading-none"></span>
+            </div>
+            <span id="nav-username" class="text-xs text-stone-400 font-medium"></span>
+          </div>
+          <button id="logout-btn" class="ml-1 px-3 py-1.5 rounded-lg text-sm font-medium text-stone-500 hover:text-stone-300 hover:bg-stone-800/60 transition-all duration-150">
             Sign out
           </button>
         </nav>
 
         <!-- Mobile hamburger -->
-        <button id="mobile-menu-btn" class="sm:hidden p-2 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors" aria-label="Menu">
+        <button id="mobile-menu-btn" class="sm:hidden p-2 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800/60 transition-colors" aria-label="Menu">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
           </svg>
@@ -60,31 +72,37 @@ document.getElementById('app').innerHTML = `
       </div>
 
       <!-- Mobile dropdown menu -->
-      <div id="mobile-menu" class="hidden sm:hidden border-t border-stone-800 bg-stone-950/95">
-        <div class="px-4 py-3 space-y-1">
-          <a href="#home"     class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="home">Library</a>
-          <a href="#search"   class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="search">Search</a>
-          <a href="#stats"    class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="stats">Stats</a>
-          <a href="#users"    class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="users">Readers</a>
-          <a id="my-profile-link-mob" href="#" class="block px-3 py-2.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors hidden">Profile</a>
-          <a href="#settings" class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
-          <a id="admin-nav-link-mob" href="#admin" class="nav-link-mob hidden px-3 py-2.5 rounded-lg text-sm font-medium text-amber-500 hover:text-amber-400 hover:bg-stone-800 transition-colors" data-route="admin">Admin</a>
-          <div class="border-t border-stone-800 pt-2 mt-2 flex items-center justify-between">
-            <span id="nav-username-mob" class="text-xs text-stone-500"></span>
-            <button id="logout-btn-mob" class="text-sm text-stone-400 hover:text-stone-200">Sign out</button>
+      <div id="mobile-menu" class="hidden sm:hidden panel-enter border-t border-stone-800/60" style="background:rgba(12,10,9,0.97)">
+        <div class="px-4 py-3 space-y-0.5">
+          <a href="#home"     class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="home">Library</a>
+          <a href="#search"   class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="search">Search</a>
+          <a href="#stats"    class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="stats">Stats</a>
+          <a href="#users"    class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="users">Readers</a>
+          <a id="my-profile-link-mob" href="#" class="flex items-center px-3 py-2.5 rounded-xl text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800/60 transition-all duration-150 hidden">Profile</a>
+          <a href="#settings" class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="settings">Settings</a>
+          <a id="admin-nav-link-mob" href="#admin" class="nav-link-mob hidden px-3 py-2.5 rounded-xl text-sm font-medium text-amber-500 hover:text-amber-400 hover:bg-stone-800/60 transition-all duration-150" data-route="admin">Admin</a>
+          <div class="border-t border-stone-800/60 pt-2.5 mt-2.5 flex items-center justify-between px-1">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center">
+                <span id="nav-avatar-letter-mob" class="text-amber-400 text-xs font-bold leading-none"></span>
+              </div>
+              <span id="nav-username-mob" class="text-xs text-stone-400 font-medium"></span>
+            </div>
+            <button id="logout-btn-mob" class="text-sm text-stone-400 hover:text-stone-200 transition-colors">Sign out</button>
           </div>
         </div>
       </div>
     </header>
 
     <!-- Logged-out public profile header -->
-    <header id="public-header" class="sticky top-0 z-40 bg-stone-950/90 backdrop-blur border-b border-stone-800 hidden">
+    <header id="public-header" class="sticky top-0 z-40 hidden"
+            style="background:rgba(12,10,9,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid rgba(68,64,60,0.5)">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-        <span class="flex items-center gap-2 font-serif text-xl font-semibold text-amber-400">
-          <img src="/logo.png" class="h-8 w-8 rounded-full" alt="" />
+        <span class="flex items-center gap-2.5 font-serif text-xl font-semibold text-amber-400">
+          <img src="/logo.png" class="h-8 w-8 rounded-full ring-2 ring-amber-500/30" alt="" />
           <span class="hidden sm:inline">Bookworm</span>
         </span>
-        <a href="#home" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+        <a href="#home" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-all duration-150 hover:shadow-lg hover:shadow-amber-500/20 active:scale-95">
           Sign in
         </a>
       </div>
@@ -99,7 +117,14 @@ const pubHeader = document.getElementById('public-header');
 
 // Mobile menu toggle
 document.getElementById('mobile-menu-btn')?.addEventListener('click', () => {
-  document.getElementById('mobile-menu')?.classList.toggle('hidden');
+  const menu = document.getElementById('mobile-menu');
+  if (!menu) return;
+  const isHidden = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !isHidden);
+  if (isHidden) {
+    menu.classList.add('panel-enter');
+    setTimeout(() => menu.classList.remove('panel-enter'), 250);
+  }
 });
 // Close mobile menu on nav link click or any main content interaction
 document.querySelectorAll('.nav-link-mob').forEach(a => {
@@ -131,6 +156,11 @@ function showApp(user) {
   pubHeader.classList.add('hidden');
   document.getElementById('nav-username').textContent = user.username;
   document.getElementById('nav-username-mob').textContent = user.username;
+  const letter = user.username[0].toUpperCase();
+  const avatarEl = document.getElementById('nav-avatar-letter');
+  const avatarMobEl = document.getElementById('nav-avatar-letter-mob');
+  if (avatarEl) avatarEl.textContent = letter;
+  if (avatarMobEl) avatarMobEl.textContent = letter;
 
   const profileHref = `#u/${user.username}`;
   const profLink = document.getElementById('my-profile-link');
@@ -160,11 +190,12 @@ function openNotifPanel() {
   document.getElementById('notif-panel')?.remove();
   const panel = document.createElement('div');
   panel.id = 'notif-panel';
-  panel.className = 'fixed top-14 right-4 z-50 w-80 bg-stone-900 border border-stone-700 rounded-xl shadow-2xl overflow-hidden';
+  panel.className = 'panel-enter fixed top-[3.75rem] right-4 z-50 w-80 rounded-2xl shadow-2xl overflow-hidden';
+  panel.style.cssText = 'background:rgba(22,19,17,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(68,64,60,0.6);box-shadow:0 20px 60px rgba(0,0,0,0.5)';
   panel.innerHTML = `
-    <div class="flex items-center justify-between px-4 py-3 border-b border-stone-800">
+    <div class="flex items-center justify-between px-4 py-3" style="border-bottom:1px solid rgba(68,64,60,0.5)">
       <span class="font-semibold text-sm">Notifications</span>
-      <button id="mark-all-read" class="text-xs text-amber-400 hover:underline">Mark all read</button>
+      <button id="mark-all-read" class="text-xs text-amber-400 hover:text-amber-300 transition-colors">Mark all read</button>
     </div>
     <div id="notif-list" class="max-h-80 overflow-y-auto">
       <div class="flex justify-center py-6"><div class="spinner"></div></div>
@@ -180,13 +211,17 @@ function openNotifPanel() {
     }
     list.innerHTML = items.map(n => {
       const timeAgo = formatTimeAgo(n.created_at);
-      const unread = !n.read_at ? 'bg-stone-800' : '';
+      const unreadBg = !n.read_at ? 'background:rgba(245,158,11,0.04)' : '';
+      const dot = !n.read_at ? `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 mt-1.5"></span>` : `<span class="w-1.5 flex-shrink-0"></span>`;
       let msg = '';
-      if (n.type === 'follow') msg = `<strong>@${escHtml(n.actor_username)}</strong> started following you.`;
-      if (n.type === 'comment') msg = `<strong>@${escHtml(n.actor_username)}</strong> commented on <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
-      return `<div class="px-4 py-3 text-sm border-b border-stone-800/50 ${unread}">
-        <p class="text-stone-200 leading-snug">${msg}</p>
-        <p class="text-stone-500 text-xs mt-1">${timeAgo}</p>
+      if (n.type === 'follow')  msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> started following you.`;
+      if (n.type === 'comment') msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> commented on <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
+      return `<div class="flex gap-2.5 px-4 py-3 text-sm" style="border-bottom:1px solid rgba(68,64,60,0.3);${unreadBg}">
+        ${dot}
+        <div class="flex-1 min-w-0">
+          <p class="text-stone-300 leading-snug">${msg}</p>
+          <p class="text-stone-500 text-xs mt-1">${timeAgo}</p>
+        </div>
       </div>`;
     }).join('');
   }).catch(() => {});
@@ -267,15 +302,21 @@ async function navigate(route) {
   setState({ route });
 
   // Refresh active state on both nav bars
-  const setActive = (sel, attr) => {
-    document.querySelectorAll(sel).forEach(a => {
-      const active = a.dataset[attr] === route;
-      a.className = a.className.replace(/text-amber-400|text-stone-400|bg-amber-500\/20|hover:[^ ]*/g, '').trim() +
-        (active ? ' bg-amber-500/20 text-amber-400' : ' text-stone-400 hover:text-stone-200 hover:bg-stone-800');
-    });
-  };
-  setActive('.nav-link', 'route');
-  setActive('.nav-link-mob', 'route');
+  document.querySelectorAll('.nav-link').forEach(a => {
+    const active = a.dataset.route === route;
+    // Strip previous state classes, preserve base classes
+    a.className = 'nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150' +
+      (active
+        ? ' bg-amber-500/15 text-amber-400'
+        : ' text-stone-400 hover:text-stone-200 hover:bg-stone-800/60');
+  });
+  document.querySelectorAll('.nav-link-mob').forEach(a => {
+    const active = a.dataset.route === route;
+    a.className = 'nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150' +
+      (active
+        ? ' bg-amber-500/15 text-amber-400'
+        : ' text-stone-400 hover:text-stone-200 hover:bg-stone-800/60');
+  });
 
   mainEl.classList.remove('fade-in');
   void mainEl.offsetWidth;

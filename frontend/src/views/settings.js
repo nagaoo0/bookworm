@@ -23,36 +23,48 @@ export async function renderSettings(container) {
 function render(container, user, invites, goal, currentYear) {
   const profileUrl = `${location.origin}${location.pathname}#u/${user.username}`;
 
+  const initial = user.username[0].toUpperCase();
+  const hue = [...user.username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+
   container.innerHTML = `
-    <div class="max-w-lg mx-auto space-y-8">
-      <h1 class="font-serif text-2xl font-semibold">Settings</h1>
+    <div class="max-w-lg mx-auto space-y-6 fade-in">
+      <h1 class="font-serif text-2xl font-bold">Settings</h1>
 
       <!-- Profile -->
-      <section class="bg-stone-900 rounded-xl p-5 space-y-4 ring-1 ring-white/10">
-        <h2 class="font-semibold text-stone-200">Profile</h2>
-        <p class="text-sm text-stone-400">Signed in as <strong class="text-stone-200">${escHtml(user.username)}</strong>${user.isAdmin ? ' <span class="text-amber-400 text-xs">(admin)</span>' : ''}</p>
-
-        <p class="text-xs text-stone-500">
-          Shareable link: <a href="${escHtml(profileUrl)}" class="text-amber-400 hover:underline">${escHtml(profileUrl)}</a>
-        </p>
+      <section class="card-section space-y-4">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
+               style="background:linear-gradient(135deg,hsl(${hue},60%,40%),hsl(${(hue+60)%360},50%,30%))">
+            <span class="text-white font-bold text-xl leading-none">${initial}</span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <p class="font-semibold text-stone-100">${escHtml(user.username)}</p>
+              ${user.isAdmin ? '<span class="text-xs text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded-full ring-1 ring-amber-400/20">admin</span>' : ''}
+            </div>
+            <p class="text-xs text-stone-500 mt-0.5">Your profile is public</p>
+          </div>
+        </div>
+        <div class="rounded-lg px-3 py-2.5 text-xs" style="background:rgba(12,10,9,0.6);border:1px solid rgba(68,64,60,0.5)">
+          <span class="text-stone-500">Shareable link: </span>
+          <a href="${escHtml(profileUrl)}" class="text-amber-400 hover:text-amber-300 transition-colors break-all">${escHtml(profileUrl)}</a>
+        </div>
       </section>
 
       <!-- Change password -->
-      <section class="bg-stone-900 rounded-xl p-5 space-y-3 ring-1 ring-white/10">
+      <section class="card-section space-y-3">
         <h2 class="font-semibold text-stone-200">Change password</h2>
         <form id="change-pw-form" class="space-y-3">
           <div>
-            <label class="text-xs text-stone-400 block mb-1">Current password</label>
-            <input type="password" name="currentPassword" required
-              class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+            <label class="text-xs text-stone-500 block mb-1">Current password</label>
+            <input type="password" name="currentPassword" required class="field-input" />
           </div>
           <div>
-            <label class="text-xs text-stone-400 block mb-1">New password</label>
-            <input type="password" name="newPassword" required
-              class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+            <label class="text-xs text-stone-500 block mb-1">New password</label>
+            <input type="password" name="newPassword" required class="field-input" />
           </div>
           <button type="submit"
-            class="px-4 py-2 bg-stone-700 hover:bg-stone-600 rounded-lg text-sm font-medium transition-colors">
+            class="px-4 py-2 bg-stone-700 hover:bg-stone-600 active:scale-[0.98] rounded-lg text-sm font-medium transition-all duration-150">
             Update password
           </button>
           <p id="pw-msg" class="text-xs hidden"></p>
@@ -108,18 +120,27 @@ function render(container, user, invites, goal, currentYear) {
 function renderGoalSection(goal, year) {
   const target = goal?.target ?? '';
   const read   = goal?.booksRead ?? 0;
+  const pct = target ? Math.min(100, Math.round((read / target) * 100)) : 0;
   return `
-    <section class="bg-stone-900 rounded-xl p-5 space-y-4 ring-1 ring-white/10">
-      <h2 class="font-semibold text-stone-200">Reading Goal — ${year}</h2>
-      <p class="text-xs text-stone-500">Set a target number of books to finish this year. Progress is shown on your Stats page.</p>
+    <section class="card-section space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold text-stone-200">Reading Goal — ${year}</h2>
+        ${target ? `<span class="text-xs text-stone-500">${read} / ${target} books</span>` : ''}
+      </div>
+      ${target ? `
+      <div class="space-y-1.5">
+        <div class="w-full rounded-full overflow-hidden" style="background:rgba(68,64,60,0.4);height:6px">
+          <div class="h-full rounded-full progress-fill" style="width:${pct}%;background:var(--color-accent)"></div>
+        </div>
+        <p class="text-xs text-stone-500">${pct}% of your ${year} goal</p>
+      </div>` : ''}
       <form id="goal-form" class="flex gap-3 items-center">
         <input type="number" id="goal-input" name="target" min="1" max="9999"
           value="${escHtml(String(target))}"
           placeholder="e.g. 24"
-          class="w-28 bg-stone-800 border border-stone-600 rounded-lg px-3 py-2 text-sm
-                 focus:outline-none focus:border-amber-500" />
+          class="field-input w-28" />
         <button type="submit"
-          class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+          class="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg text-sm transition-all duration-150 shadow-sm shadow-amber-500/20">
           Save
         </button>
         ${target ? `<button type="button" id="clear-goal-btn"
@@ -127,7 +148,6 @@ function renderGoalSection(goal, year) {
           Clear
         </button>` : ''}
       </form>
-      ${target ? `<p class="text-xs text-stone-500">${read} / ${target} books read this year.</p>` : ''}
     </section>`;
 }
 
@@ -183,7 +203,7 @@ function renderAppearanceSection() {
   };
 
   return `
-    <section id="appearance-section" class="bg-stone-900 rounded-xl p-5 space-y-5 ring-1 ring-white/10">
+    <section id="appearance-section" class="card-section space-y-5">
       <h2 class="font-semibold text-stone-200">Appearance</h2>
 
       <div class="space-y-2">
@@ -234,13 +254,13 @@ function attachAppearanceHandlers(container) {
 
 function renderImportExportSection() {
   return `
-    <section class="bg-stone-900 rounded-xl p-5 space-y-4 ring-1 ring-white/10">
+    <section class="card-section space-y-4">
       <h2 class="font-semibold text-stone-200">Import / Export</h2>
       <p class="text-xs text-stone-500">Tab-separated CSV. Compatible with the Places reading app format.</p>
 
       <div class="flex gap-3">
         <button id="export-btn"
-          class="px-4 py-2 bg-stone-700 hover:bg-stone-600 rounded-lg text-sm font-medium transition-colors">
+          class="px-4 py-2 bg-stone-700 hover:bg-stone-600 active:scale-[0.98] rounded-lg text-sm font-medium transition-all duration-150">
           ↓ Export library
         </button>
       </div>
@@ -323,11 +343,11 @@ function attachImportExportHandlers(container) {
 
 function renderInviteSection(invites) {
   return `
-    <section class="bg-stone-900 rounded-xl p-5 space-y-4 ring-1 ring-white/10">
+    <section class="card-section space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="font-semibold text-stone-200">Invite codes</h2>
         <button id="create-invite-btn"
-          class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+          class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg text-sm transition-all duration-150 shadow-sm shadow-amber-500/20">
           + New invite
         </button>
       </div>

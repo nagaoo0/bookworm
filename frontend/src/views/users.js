@@ -24,13 +24,13 @@ export async function renderUsers(container) {
 function render(container, users, feed, challenges, groups) {
   container.innerHTML = `
     <div class="max-w-2xl mx-auto fade-in">
-      <h1 class="text-2xl font-semibold mb-6">Readers</h1>
+      <h1 class="font-serif text-2xl font-bold mb-6">Readers</h1>
 
-      <div role="tablist" class="flex gap-1 mb-6 border-b border-stone-800 overflow-x-auto">
-        <button role="tab" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap" data-tab="feed">Feed</button>
-        <button role="tab" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap" data-tab="readers">Readers</button>
-        <button role="tab" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap" data-tab="challenges">Challenges</button>
-        <button role="tab" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap" data-tab="groups">Groups</button>
+      <div role="tablist" class="flex gap-0 mb-6 border-b border-stone-800 overflow-x-auto shelf-bar">
+        <button role="tab" class="readers-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="feed">Feed</button>
+        <button role="tab" class="readers-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="readers">Readers</button>
+        <button role="tab" class="readers-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="challenges">Challenges</button>
+        <button role="tab" class="readers-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="groups">Groups</button>
       </div>
 
       <div id="tab-feed" class="tab-panel hidden">
@@ -58,14 +58,27 @@ function render(container, users, feed, challenges, groups) {
     activeTab = tab;
     container.querySelectorAll('.readers-tab').forEach(btn => {
       const on = btn.dataset.tab === tab;
-      btn.className = `readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
-        on ? 'bg-stone-900 text-amber-400 border-b-2 border-amber-500'
-           : 'text-stone-400 hover:text-stone-200'
+      btn.className = `readers-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150 ${
+        on ? 'text-amber-400' : 'text-stone-400 hover:text-stone-200'
       }`;
       btn.setAttribute('aria-selected', String(on));
+      btn.querySelector('.tab-active-indicator')?.remove();
+      if (on) {
+        const bar = document.createElement('span');
+        bar.className = 'tab-active-indicator';
+        btn.appendChild(bar);
+      }
     });
-    container.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
-    container.querySelector(`#tab-${tab}`)?.classList.remove('hidden');
+    container.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.add('hidden');
+      p.classList.remove('fade-in');
+    });
+    const panel = container.querySelector(`#tab-${tab}`);
+    if (panel) {
+      panel.classList.remove('hidden');
+      void panel.offsetWidth;
+      panel.classList.add('fade-in');
+    }
   }
 
   setTab(activeTab);
@@ -104,32 +117,34 @@ function renderFeed(feed) {
     const msg = feedFilter === 'following'
       ? 'No activity from people you follow yet.'
       : 'No reviews yet — be the first!';
-    return `<p class="text-stone-500 italic text-center py-10">${msg}</p>`;
+    return `<div class="text-center py-16 text-stone-500 italic">${msg}</div>`;
   }
-  return `<div class="space-y-4">
+  return `<div class="space-y-3 stagger">
     ${feed.map(s => {
       const date = s.finished_at
         ? new Date(s.finished_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
         : s.started_at
         ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
         : '';
-      const stars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
+      const stars = s.rating ? Array.from({ length: 5 }, (_, i) =>
+        `<span style="color:${i < s.rating ? '#f59e0b' : '#44403c'}">★</span>`).join('') : '';
       const authors = Array.isArray(s.authors) ? s.authors.join(', ') : (s.authors ?? '');
       const cover = s.cover_url
-        ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-16 object-cover rounded shadow-md flex-shrink-0" />`
-        : `<div class="w-12 h-16 bg-stone-800 rounded flex-shrink-0"></div>`;
+        ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" />`
+        : `<div class="w-12 h-[4.5rem] bg-stone-800 rounded-lg flex-shrink-0"></div>`;
       return `
-        <div class="flex gap-4 bg-stone-900 rounded-xl p-4 ring-1 ring-white/5">
-          <a href="#book/${s.book_id}">${cover}</a>
+        <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-stone-800/40"
+             style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)">
+          <a href="#book/${s.book_id}" class="flex-shrink-0 hover:opacity-90 transition-opacity">${cover}</a>
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2 mb-1">
-              <a href="#book/${s.book_id}" class="font-semibold leading-tight line-clamp-2 hover:text-amber-400 transition-colors">${escHtml(s.title)}</a>
-              <a href="#u/${escHtml(s.username)}" class="text-xs text-amber-400 hover:underline flex-shrink-0">@${escHtml(s.username)}</a>
+              <a href="#book/${s.book_id}" class="font-semibold leading-tight line-clamp-2 hover:text-amber-400 transition-colors text-stone-100">${escHtml(s.title)}</a>
+              <a href="#u/${escHtml(s.username)}" class="text-xs text-amber-400/80 hover:text-amber-400 font-medium flex-shrink-0 transition-colors">@${escHtml(s.username)}</a>
             </div>
             ${authors ? `<p class="text-xs text-stone-400 mt-0.5">${escHtml(authors)}</p>` : ''}
             ${date    ? `<p class="text-xs text-stone-500 mt-1">${escHtml(date)}</p>` : ''}
-            ${stars   ? `<p class="text-amber-400 text-xs mt-1">${stars}</p>` : ''}
-            ${s.review ? `<p class="text-sm text-stone-300 mt-2 line-clamp-4">${escHtml(s.review)}</p>` : ''}
+            ${stars   ? `<p class="text-sm mt-1 leading-none">${stars}</p>` : ''}
+            ${s.review ? `<p class="text-sm text-stone-300 mt-2 line-clamp-4 leading-relaxed">${escHtml(s.review)}</p>` : ''}
           </div>
         </div>`;
     }).join('')}
@@ -140,23 +155,29 @@ function renderFeed(feed) {
 
 function renderReadersList(users) {
   if (!users.length) {
-    return `<p class="text-stone-500 italic text-center py-10">No public profiles yet.</p>`;
+    return `<div class="text-center py-16 text-stone-500 italic">No readers yet.</div>`;
   }
-  return `<div class="space-y-3">
-    ${users.map(u => `
-      <a href="#u/${escHtml(u.username)}"
-         class="flex items-center gap-4 bg-stone-900 hover:bg-stone-800 rounded-xl px-5 py-4 ring-1 ring-white/5 transition-colors">
-        <div class="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-          <span class="text-amber-400 font-bold text-lg">${escHtml(u.username[0].toUpperCase())}</span>
-        </div>
-        <div class="flex-1 min-w-0">
-          <p class="font-medium text-stone-100">${escHtml(u.username)}</p>
-          <p class="text-xs text-stone-500 mt-0.5">${u.book_count} book${u.book_count !== 1 ? 's' : ''} in library</p>
-        </div>
-        <svg class="w-4 h-4 text-stone-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-        </svg>
-      </a>`).join('')}
+  return `<div class="space-y-2 stagger">
+    ${users.map(u => {
+      const hue = [...u.username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+      return `
+        <a href="#u/${escHtml(u.username)}"
+           class="group flex items-center gap-4 rounded-xl px-5 py-3.5 transition-all duration-200 hover:translate-x-0.5"
+           style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)"
+           onmouseenter="this.style.borderColor='rgba(245,158,11,0.25)'" onmouseleave="this.style.borderColor='rgba(68,64,60,0.4)'">
+          <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 group-hover:scale-105"
+               style="background:linear-gradient(135deg,hsl(${hue},50%,35%),hsl(${(hue+50)%360},40%,25%))">
+            <span class="text-white font-bold text-base leading-none">${escHtml(u.username[0].toUpperCase())}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-stone-200 group-hover:text-amber-400 transition-colors">${escHtml(u.username)}</p>
+            <p class="text-xs text-stone-500 mt-0.5">${u.book_count} book${u.book_count !== 1 ? 's' : ''}</p>
+          </div>
+          <svg class="w-4 h-4 text-stone-600 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all duration-150 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </a>`;
+    }).join('')}
   </div>`;
 }
 

@@ -34,9 +34,7 @@ html.theme-sepia {
   --color-muted: #8a7060;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   background-color: var(--color-bg);
@@ -46,11 +44,9 @@ body {
   margin: 0;
 }
 
-.font-serif {
-  font-family: var(--font-serif);
-}
+.font-serif { font-family: var(--font-serif); }
 
-/* ── Book grid — card width driven by --grid-min-col pref ─────────────────── */
+/* ── Book grid ─────────────────────────────────────────────────────────────── */
 :root { --grid-min-col: 110px; }
 .book-grid {
   display: grid;
@@ -58,22 +54,45 @@ body {
   gap: 1rem;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--color-surface); }
-::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
 
-/* Star rating */
-.star-btn { cursor: pointer; transition: color 0.1s; }
+/* ── Star rating ───────────────────────────────────────────────────────────── */
+.star-btn { cursor: pointer; transition: color 0.1s, transform 0.1s; }
 .star-btn.filled { color: var(--color-accent); }
-.star-btn.empty { color: var(--color-border); }
-.star-btn:hover { color: var(--color-accent-hover); }
+.star-btn.empty  { color: var(--color-border); }
+.star-btn:hover  { color: var(--color-accent-hover); transform: scale(1.2); }
 
-/* Transitions */
-.fade-in { animation: fadeIn 0.2s ease-in; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+/* ── Page transitions ──────────────────────────────────────────────────────── */
+.fade-in {
+  animation: fadeInUp 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
 
-/* Book cover placeholder */
+/* Stagger children for grids / lists */
+.stagger > * {
+  animation: fadeInUp 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger > *:nth-child(1)  { animation-delay: 0.03s; }
+.stagger > *:nth-child(2)  { animation-delay: 0.06s; }
+.stagger > *:nth-child(3)  { animation-delay: 0.09s; }
+.stagger > *:nth-child(4)  { animation-delay: 0.12s; }
+.stagger > *:nth-child(5)  { animation-delay: 0.15s; }
+.stagger > *:nth-child(6)  { animation-delay: 0.18s; }
+.stagger > *:nth-child(7)  { animation-delay: 0.21s; }
+.stagger > *:nth-child(8)  { animation-delay: 0.24s; }
+.stagger > *:nth-child(n+9){ animation-delay: 0.27s; }
+
+/* ── Cover placeholder ─────────────────────────────────────────────────────── */
 .cover-placeholder {
   background: linear-gradient(135deg, var(--color-surface-2) 0%, var(--color-surface) 100%);
   display: flex;
@@ -85,7 +104,15 @@ body {
   padding: 0.5rem;
 }
 
-/* Shelf chip bar */
+/* ── Book card hover lift ──────────────────────────────────────────────────── */
+.book-card {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.book-card:hover {
+  transform: translateY(-4px);
+}
+
+/* ── Shelf chips ───────────────────────────────────────────────────────────── */
 .shelf-chip {
   display: inline-flex;
   align-items: center;
@@ -95,14 +122,15 @@ body {
   font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   white-space: nowrap;
   user-select: none;
 }
 .shelf-chip-active {
-  background: color-mix(in srgb, var(--color-accent) 13%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
   border-color: var(--color-accent);
   color: var(--color-accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 .shelf-chip-idle {
   background: transparent;
@@ -112,36 +140,165 @@ body {
 .shelf-chip-idle:hover {
   border-color: var(--color-muted);
   color: var(--color-text);
+  transform: translateY(-1px);
 }
 
-/* Spinner */
+/* ── Spinner ───────────────────────────────────────────────────────────────── */
 .spinner {
   width: 2rem;
   height: 2rem;
-  border: 3px solid var(--color-border);
+  border: 2.5px solid var(--color-border);
   border-top-color: var(--color-accent);
   border-radius: 50%;
-  animation: spin 0.7s linear infinite;
+  animation: spin 0.65s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Shelf bar scrollable on small screens */
+/* ── Shelf bar scroll ──────────────────────────────────────────────────────── */
 .shelf-bar { scrollbar-width: none; -ms-overflow-style: none; }
 .shelf-bar::-webkit-scrollbar { display: none; }
 
-/* Skeleton loading shimmer */
+/* ── Skeleton shimmer ──────────────────────────────────────────────────────── */
 .skeleton {
-  background: linear-gradient(90deg, var(--color-surface-2) 25%, var(--color-surface) 50%, var(--color-surface-2) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2) 25%,
+    color-mix(in srgb, var(--color-surface-2) 60%, var(--color-surface)) 50%,
+    var(--color-surface-2) 75%
+  );
   background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-  border-radius: 4px;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 6px;
 }
-@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
 
-/* On touch devices: always show the card overlay buttons */
+/* ── Touch: always show card buttons ──────────────────────────────────────── */
 @media (hover: none) {
   .finish-reading-btn,
-  .remove-card-btn {
-    opacity: 1 !important;
-  }
+  .remove-card-btn { opacity: 1 !important; }
+}
+
+/* ── Nav active underline slide ───────────────────────────────────────────── */
+.nav-link-active-bar {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 2px 2px 0 0;
+  box-shadow: 0 0 8px var(--color-accent);
+  animation: barSlideIn 0.2s ease both;
+}
+@keyframes barSlideIn {
+  from { transform: scaleX(0); opacity: 0; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+
+/* ── Tab underline ─────────────────────────────────────────────────────────── */
+.tab-active-indicator {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 2px 2px 0 0;
+  animation: barSlideIn 0.18s ease both;
+}
+
+/* ── Notification badge pulse ──────────────────────────────────────────────── */
+.notif-pulse {
+  animation: notifPulse 1.8s ease-in-out infinite;
+}
+@keyframes notifPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  50%       { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
+}
+
+/* ── Panel slide-down ──────────────────────────────────────────────────────── */
+.panel-enter {
+  animation: panelDown 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes panelDown {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Modal backdrop + scale-in ─────────────────────────────────────────────── */
+.modal-backdrop {
+  animation: backdropIn 0.18s ease both;
+}
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.modal-card {
+  animation: modalScaleIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes modalScaleIn {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── Follow button morph ───────────────────────────────────────────────────── */
+.follow-btn-transition {
+  transition: background-color 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+.follow-btn-transition:active { transform: scale(0.95); }
+
+/* ── Section card ──────────────────────────────────────────────────────────── */
+.card-section {
+  background: var(--color-surface);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border);
+  transition: border-color 0.2s;
+}
+.card-section:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+/* ── Input field ───────────────────────────────────────────────────────────── */
+.field-input {
+  width: 100%;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+.field-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+/* ── Progress bar animated fill ───────────────────────────────────────────── */
+.progress-fill {
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Avatar ring glow ──────────────────────────────────────────────────────── */
+.avatar-glow {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px color-mix(in srgb, var(--color-accent) 50%, transparent);
+}
+
+/* ── Gradient text ─────────────────────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-hover) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Toast ─────────────────────────────────────────────────────────────────── */
+.toast-item {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }

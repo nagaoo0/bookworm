@@ -27,24 +27,31 @@ export function renderSearch(container) {
   const { searchResults, searchQuery } = getState();
 
   container.innerHTML = `
-    <div class="max-w-2xl mx-auto mb-6 space-y-3">
+    <div class="max-w-2xl mx-auto mb-6 space-y-3 fade-in">
 
       <!-- Quick search -->
       <div class="relative">
-        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 text-lg select-none">🔍</span>
+        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 select-none pointer-events-none">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/>
+          </svg>
+        </span>
         <input id="search-input" type="text" value="${escHtml(searchQuery)}"
-          placeholder="Quick search — title, author, anything…"
-          class="w-full bg-stone-800 border border-stone-600 rounded-xl pl-10 pr-4 py-3 text-base
-                 focus:outline-none focus:border-amber-500 placeholder-stone-500 transition-colors" />
+          placeholder="Search by title, author, anything…"
+          class="w-full rounded-xl pl-10 pr-4 py-3 text-base transition-all duration-200
+                 placeholder-stone-500 outline-none"
+          style="background:rgba(41,37,36,0.8);border:1px solid rgba(68,64,60,0.8)" />
       </div>
 
       <!-- Advanced toggle -->
       <div>
         <button id="toggle-advanced"
-          class="text-xs text-stone-400 hover:text-amber-400 transition-colors flex items-center gap-1">
-          <span id="adv-arrow">▸</span> Advanced search
+          class="text-xs text-stone-500 hover:text-amber-400 transition-colors flex items-center gap-1.5 px-1">
+          <span id="adv-arrow" class="transition-transform duration-200">▸</span>
+          <span>Advanced search</span>
         </button>
-        <div id="advanced-form" class="hidden mt-3 bg-stone-800/60 rounded-xl p-4 ring-1 ring-white/5 space-y-3">
+        <div id="advanced-form" class="hidden mt-3 rounded-xl p-4 space-y-3"
+             style="background:rgba(28,25,23,0.8);border:1px solid rgba(68,64,60,0.5)">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             ${advField('adv-title',     'Book title',       'intitle: …')}
             ${advField('adv-author',    'Author',           'inauthor: …')}
@@ -54,14 +61,14 @@ export function renderSearch(container) {
             <div>
               <label class="text-xs text-stone-400 block mb-1">Language</label>
               <select id="adv-language"
-                class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm
-                       focus:outline-none focus:border-amber-500">
+                class="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all duration-150"
+                style="background:rgba(12,10,9,0.8);border:1px solid rgba(68,64,60,0.8);color:var(--color-text)">
                 ${LANGUAGES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
               </select>
             </div>
           </div>
           <button id="adv-search-btn"
-            class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2 text-sm transition-colors">
+            class="w-full bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg py-2 text-sm transition-all duration-150 shadow-md shadow-amber-500/20">
             Search
           </button>
         </div>
@@ -69,21 +76,29 @@ export function renderSearch(container) {
 
       <!-- Manual add -->
       <div class="flex items-center gap-3 pt-1">
-        <div class="flex-1 border-t border-stone-700"></div>
-        <span class="text-xs text-stone-500">or add manually</span>
-        <div class="flex-1 border-t border-stone-700"></div>
+        <div class="flex-1 border-t border-stone-800"></div>
+        <span class="text-xs text-stone-600">or add manually</span>
+        <div class="flex-1 border-t border-stone-800"></div>
       </div>
       <button id="toggle-manual"
-        class="w-full text-sm text-stone-400 hover:text-amber-400 border border-dashed border-stone-700
-               hover:border-amber-500/50 rounded-xl py-2.5 transition-colors">
+        class="w-full text-sm text-stone-500 hover:text-amber-400 rounded-xl py-2.5 transition-all duration-150"
+        style="border:1px dashed rgba(68,64,60,0.7)">
         + Add a book manually
       </button>
       <div id="manual-form-wrapper" class="hidden"></div>
     </div>
 
-    <div id="search-results" class="fade-in"></div>`;
+    <div id="search-results"></div>`;
 
   const input = container.querySelector('#search-input');
+  input.addEventListener('focus', () => {
+    input.style.borderColor = 'rgba(245,158,11,0.6)';
+    input.style.boxShadow = '0 0 0 3px rgba(245,158,11,0.12)';
+  });
+  input.addEventListener('blur', () => {
+    input.style.borderColor = 'rgba(68,64,60,0.8)';
+    input.style.boxShadow = '';
+  });
   input.focus();
   input.addEventListener('input', e => {
     clearTimeout(debounceTimer);
@@ -98,6 +113,11 @@ export function renderSearch(container) {
   container.querySelector('#toggle-advanced').addEventListener('click', () => {
     const hidden = advPanel.classList.toggle('hidden');
     advArrow.textContent = hidden ? '▸' : '▾';
+    advArrow.style.transform = hidden ? '' : 'rotate(90deg)';
+    if (!hidden) {
+      advPanel.classList.add('fade-in');
+      setTimeout(() => advPanel.classList.remove('fade-in'), 300);
+    }
   });
 
   container.querySelector('#adv-search-btn').addEventListener('click', () => {
@@ -167,7 +187,7 @@ function renderResults(container, results) {
   }
 
   el.innerHTML = `
-    <div class="book-grid">
+    <div class="book-grid stagger">
       ${results.map(b => bookCardHTML(b, { searchMode: true })).join('')}
     </div>`;
 
