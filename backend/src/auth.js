@@ -73,7 +73,8 @@ export async function authMiddleware(req, res, next) {
 
   try {
     const { rows } = await pool.query(
-      `SELECT s.token, u.id, u.username, u.is_admin, u.is_public
+      `SELECT s.token, u.id, u.username, u.is_admin, u.is_public,
+              u.bio, u.avatar_url, u.accent
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token = $1 AND s.expires_at > now()`,
       [token]

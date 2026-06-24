@@ -162,6 +162,24 @@ export async function migrate() {
     ALTER TABLE library_books ADD COLUMN IF NOT EXISTS progress_page INT;
     ALTER TABLE library_books ADD COLUMN IF NOT EXISTS progress_pct  SMALLINT CHECK (progress_pct >= 0 AND progress_pct <= 100);
 
+    -- Profile enrichment
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS bio        TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS accent     TEXT;
+
+    -- Likes on reading sessions
+    CREATE TABLE IF NOT EXISTS session_likes (
+      user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      session_id INT NOT NULL REFERENCES reading_sessions(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, session_id)
+    );
+
+    -- Extend notification types (idempotent swap)
+    ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+    ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+      CHECK (type IN ('follow','comment','like','mention'));
+
     -- Reading challenges
     CREATE TABLE IF NOT EXISTS challenges (
       id          SERIAL PRIMARY KEY,

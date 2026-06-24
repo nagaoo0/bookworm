@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { getState } from '../store.js';
 import { showToast } from '../components/toast.js';
+import { avatarHTML } from '../components/avatar.js';
 
 let feedFilter = 'all'; // 'all' | 'following'
 let activeTab = 'feed';
@@ -53,6 +54,7 @@ function render(container, users, feed, challenges, groups) {
 
   renderChallengesTab(container.querySelector('#tab-challenges'), challenges, container, users, feed, groups);
   renderGroupsTab(container.querySelector('#tab-groups'), groups, container, users, feed, challenges);
+  attachFeedLikes(container.querySelector('#feed-content'));
 
   function setTab(tab) {
     activeTab = tab;
@@ -96,6 +98,7 @@ function render(container, users, feed, challenges, groups) {
       try {
         const newFeed = await api.getFeed(feedFilter === 'following' ? 'following' : undefined);
         feedContent.innerHTML = renderFeed(newFeed);
+        attachFeedLikes(feedContent);
       } catch {
         feedContent.innerHTML = `<p class="text-stone-500 italic text-center py-10">Could not load feed.</p>`;
       }
@@ -110,6 +113,11 @@ function render(container, users, feed, challenges, groups) {
   });
 }
 
+function linkifyMentions(text) {
+  return escHtml(text).replace(/@([a-zA-Z0-9_-]{2,32})/g,
+    (_, u) => `<a href="#u/${u}" class="text-amber-400 hover:text-amber-300 transition-colors">@${escHtml(u)}</a>`);
+}
+
 // ── Feed ───────────────────────────────────────────────────────────────────────
 
 function renderFeed(feed) {
@@ -119,6 +127,7 @@ function renderFeed(feed) {
       : 'No reviews yet — be the first!';
     return `<div class="text-center py-16 text-stone-500 italic">${msg}</div>`;
   }
+  const { user } = getState();
   return `<div class="space-y-3 stagger">
     ${feed.map(s => {
       const date = s.finished_at
@@ -132,6 +141,14 @@ function renderFeed(feed) {
       const cover = s.cover_url
         ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" />`
         : `<div class="w-12 h-[4.5rem] bg-stone-800 rounded-lg flex-shrink-0"></div>`;
+      const likeCount = s.like_count ?? 0;
+      const liked = !!s.liked;
+      const sid = s.session_id ?? s.id;
+      const likeBtn = user ? `
+        <button class="like-btn flex items-center gap-1 text-xs transition-colors ${liked ? 'text-rose-400' : 'text-stone-500 hover:text-rose-400'}"
+                data-session-id="${sid}" data-liked="${liked}" data-count="${likeCount}">
+          ${liked ? '♥' : '♡'} <span class="like-count">${likeCount > 0 ? likeCount : ''}</span>
+        </button>` : (likeCount > 0 ? `<span class="text-xs text-stone-500">♥ ${likeCount}</span>` : '');
       return `
         <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-stone-800/40"
              style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)">
@@ -139,16 +156,43 @@ function renderFeed(feed) {
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2 mb-1">
               <a href="#book/${s.book_id}" class="font-semibold leading-tight line-clamp-2 hover:text-amber-400 transition-colors text-stone-100">${escHtml(s.title)}</a>
-              <a href="#u/${escHtml(s.username)}" class="text-xs text-amber-400/80 hover:text-amber-400 font-medium flex-shrink-0 transition-colors">@${escHtml(s.username)}</a>
+              <div class="flex items-center gap-1.5 flex-shrink-0">
+                ${avatarHTML({ username: s.username, avatarUrl: s.avatar_url }, { size: 20 })}
+                <a href="#u/${escHtml(s.username)}" class="text-xs text-amber-400/80 hover:text-amber-400 font-medium transition-colors">@${escHtml(s.username)}</a>
+              </div>
             </div>
             ${authors ? `<p class="text-xs text-stone-400 mt-0.5">${escHtml(authors)}</p>` : ''}
             ${date    ? `<p class="text-xs text-stone-500 mt-1">${escHtml(date)}</p>` : ''}
             ${stars   ? `<p class="text-sm mt-1 leading-none">${stars}</p>` : ''}
-            ${s.review ? `<p class="text-sm text-stone-300 mt-2 line-clamp-4 leading-relaxed">${escHtml(s.review)}</p>` : ''}
+            ${s.review ? `<p class="text-sm text-stone-300 mt-2 line-clamp-4 leading-relaxed">${linkifyMentions(s.review)}</p>` : ''}
+            <div class="mt-2 flex items-center gap-3">${likeBtn}</div>
           </div>
         </div>`;
     }).join('')}
   </div>`;
+}
+
+function attachFeedLikes(el) {
+  if (!el) return;
+  el.querySelectorAll('.like-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sid = btn.dataset.sessionId;
+      const wasLiked = btn.dataset.liked === 'true';
+      btn.disabled = true;
+      try {
+        const result = wasLiked ? await api.unlikeSession(sid) : await api.likeSession(sid);
+        const count = result.likeCount;
+        btn.dataset.liked = String(!wasLiked);
+        btn.dataset.count = count;
+        btn.innerHTML = `${!wasLiked ? '♥' : '♡'} <span class="like-count">${count > 0 ? count : ''}</span>`;
+        btn.className = `like-btn flex items-center gap-1 text-xs transition-colors ${!wasLiked ? 'text-rose-400' : 'text-stone-500 hover:text-rose-400'}`;
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 // ── Readers list ───────────────────────────────────────────────────────────────
@@ -158,16 +202,13 @@ function renderReadersList(users) {
     return `<div class="text-center py-16 text-stone-500 italic">No readers yet.</div>`;
   }
   return `<div class="space-y-2 stagger">
-    ${users.map(u => {
-      const hue = [...u.username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
-      return `
+    ${users.map(u => `
         <a href="#u/${escHtml(u.username)}"
            class="group flex items-center gap-4 rounded-xl px-5 py-3.5 transition-all duration-200 hover:translate-x-0.5"
            style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)"
            onmouseenter="this.style.borderColor='rgba(245,158,11,0.25)'" onmouseleave="this.style.borderColor='rgba(68,64,60,0.4)'">
-          <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 group-hover:scale-105"
-               style="background:linear-gradient(135deg,hsl(${hue},50%,35%),hsl(${(hue+50)%360},40%,25%))">
-            <span class="text-white font-bold text-base leading-none">${escHtml(u.username[0].toUpperCase())}</span>
+          <div class="transition-all duration-200 group-hover:scale-105">
+            ${avatarHTML({ username: u.username, avatarUrl: u.avatar_url }, { size: 40 })}
           </div>
           <div class="flex-1 min-w-0">
             <p class="font-semibold text-stone-200 group-hover:text-amber-400 transition-colors">${escHtml(u.username)}</p>
@@ -176,8 +217,7 @@ function renderReadersList(users) {
           <svg class="w-4 h-4 text-stone-600 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all duration-150 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
           </svg>
-        </a>`;
-    }).join('')}
+        </a>`).join('')}
   </div>`;
 }
 

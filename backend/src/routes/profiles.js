@@ -8,10 +8,22 @@ const router = Router();
 router.get('/:username', async (req, res, next) => {
   try {
     const { rows: [user] } = await pool.query(
-      `SELECT id, username FROM users WHERE username = $1`,
+      `SELECT id, username, bio, avatar_url, accent FROM users WHERE username = $1`,
       [req.params.username]
     );
     if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    // Optional viewer id for likes
+    const viewerToken = req.cookies?.bw_session;
+    let viewerId = null;
+    if (viewerToken) {
+      const { rows: [s] } = await pool.query(
+        `SELECT u.id FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token = $1 AND s.expires_at > now()`,
+        [viewerToken]
+      );
+      viewerId = s?.id ?? null;
+    }
 
     const [shelves, library, sessions] = await Promise.all([
       pool.query(
@@ -34,16 +46,31 @@ router.get('/:username', async (req, res, next) => {
          ORDER BY lb.added_at DESC`,
         [user.id]
       ),
-      pool.query(
-        `SELECT rs.id, rs.finished_at, rs.started_at, rs.rating, rs.review,
-                b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id
-         FROM reading_sessions rs
-         JOIN books b ON b.id = rs.book_id
-         WHERE rs.user_id = $1
-         ORDER BY rs.finished_at DESC NULLS LAST, rs.created_at DESC
-         LIMIT 50`,
-        [user.id]
-      ),
+      viewerId !== null
+        ? pool.query(
+            `SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
+                    b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
+                    (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
+                    EXISTS(SELECT 1 FROM session_likes sl WHERE sl.session_id = rs.id AND sl.user_id = $2) AS liked
+             FROM reading_sessions rs
+             JOIN books b ON b.id = rs.book_id
+             WHERE rs.user_id = $1
+             ORDER BY rs.finished_at DESC NULLS LAST, rs.created_at DESC
+             LIMIT 50`,
+            [user.id, viewerId]
+          )
+        : pool.query(
+            `SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
+                    b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
+                    (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
+                    false AS liked
+             FROM reading_sessions rs
+             JOIN books b ON b.id = rs.book_id
+             WHERE rs.user_id = $1
+             ORDER BY rs.finished_at DESC NULLS LAST, rs.created_at DESC
+             LIMIT 50`,
+            [user.id]
+          ),
     ]);
 
     // Build status groups — notes intentionally excluded from public profile
@@ -56,6 +83,9 @@ router.get('/:username', async (req, res, next) => {
 
     res.json({
       username: user.username,
+      bio: user.bio ?? null,
+      avatarUrl: user.avatar_url ?? null,
+      accent: user.accent ?? null,
       shelves: shelves.rows,
       library: library.rows,
       statusBooks,

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { notifyMentions } from '../mentions.js';
 
 const router = Router({ mergeParams: true });
 
@@ -33,6 +34,16 @@ router.post('/', async (req, res, next) => {
        RETURNING id, body, created_at`,
       [req.params.bookId, req.user.id, body]
     );
+
+    // Notify mentioned users (non-fatal)
+    const { rows: [book] } = await pool.query(`SELECT title FROM books WHERE id = $1`, [req.params.bookId]);
+    notifyMentions(pool, {
+      text: body,
+      actorId: req.user.id,
+      actorUsername: req.user.username,
+      payload: { bookId: req.params.bookId, title: book?.title ?? '' },
+    }).catch(() => {});
+
     res.status(201).json({ ...comment, username: req.user.username });
   } catch (err) {
     next(err);

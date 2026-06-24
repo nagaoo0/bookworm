@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { notifyMentions } from '../mentions.js';
 
 const router = Router({ mergeParams: true });
 
@@ -39,6 +40,15 @@ router.post('/', async (req, res, next) => {
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [req.user.id, req.params.bookId, startedAt ?? null, finishedAt ?? null, rating ?? null, review ?? null]
     );
+    if (review) {
+      const { rows: [book] } = await pool.query(`SELECT title FROM books WHERE id = $1`, [req.params.bookId]);
+      notifyMentions(pool, {
+        text: review,
+        actorId: req.user.id,
+        actorUsername: req.user.username,
+        payload: { bookId: req.params.bookId, title: book?.title ?? '' },
+      }).catch(() => {});
+    }
     res.status(201).json(rows[0]);
   } catch (err) {
     next(err);
@@ -66,6 +76,15 @@ router.patch('/:sessionId', async (req, res, next) => {
       ]
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    if ('review' in req.body && review) {
+      const { rows: [book] } = await pool.query(`SELECT title FROM books WHERE id = $1`, [req.params.bookId]);
+      notifyMentions(pool, {
+        text: review,
+        actorId: req.user.id,
+        actorUsername: req.user.username,
+        payload: { bookId: req.params.bookId, title: book?.title ?? '' },
+      }).catch(() => {});
+    }
     res.json(rows[0]);
   } catch (err) {
     next(err);

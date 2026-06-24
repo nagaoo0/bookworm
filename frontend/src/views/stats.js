@@ -42,6 +42,8 @@ export function render(container, s, opts = {}, goal = null) {
   container.innerHTML = `
     <div class="${opts.compact ? '' : 'max-w-2xl mx-auto '}space-y-8 fade-in">
 
+      ${!opts.compact ? `<div class="flex items-center justify-between"><h1 class="font-serif text-2xl font-bold">Stats</h1><a href="#wrapped" class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 hover:bg-stone-800/60" style="border:1px solid rgba(68,64,60,0.5);color:var(--color-accent)">✨ Year in Review</a></div>` : ''}
+
       ${goalSection}
 
       <!-- Summary cards -->

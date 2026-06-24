@@ -3,6 +3,8 @@ import { getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { render as renderStatsContent } from './stats.js';
 import { showToast } from '../components/toast.js';
+import { avatarHTML } from '../components/avatar.js';
+import { ACCENT_COLORS } from '../prefs.js';
 
 const lastTab = new Map();
 
@@ -29,14 +31,22 @@ export async function renderProfile(container, username) {
   }
 }
 
-function renderTabs(container, { username, shelves, library, statusBooks, feed, stats }, isFollowing) {
+function applyProfileAccent(container, accent) {
+  if (!accent || !ACCENT_COLORS[accent]) return;
+  const a = ACCENT_COLORS[accent];
+  container.style.setProperty('--color-accent', a.main);
+  container.style.setProperty('--color-accent-hover', a.hover);
+  container.style.setProperty('--color-amber-500', a.main);
+  container.style.setProperty('--color-amber-400', a.hover);
+}
+
+function renderTabs(container, { username, bio, avatarUrl, accent, shelves, library, statusBooks, feed, stats }, isFollowing) {
   const { user, library: myLibrary } = getState();
   const myBookIds = new Set((myLibrary ?? []).map(b => String(b.book_id)));
   const isOwnProfile = user?.username === username;
 
-  const initial = username[0].toUpperCase();
-  // Deterministic hue from username for the avatar gradient
   const hue = [...username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+  const accentMain = (accent && ACCENT_COLORS[accent]) ? ACCENT_COLORS[accent].main : `hsl(${hue},60%,50%)`;
 
   const followBtnHtml = !isOwnProfile ? `
     <button id="follow-btn"
@@ -48,6 +58,8 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
       ${isFollowing ? '✓ Following' : '+ Follow'}
     </button>` : '';
 
+  const wrappedLink = `<a href="#u/${escHtml(username)}/wrapped" class="text-xs text-stone-500 hover:text-amber-400 transition-colors flex items-center gap-1">✨ Year in Review</a>`;
+
   container.innerHTML = `
     <div class="fade-in">
       <!-- Hero -->
@@ -56,13 +68,13 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
         <div class="absolute inset-0 opacity-30"
              style="background:radial-gradient(ellipse at top left, hsl(${hue},60%,30%) 0%, transparent 60%)"></div>
         <div class="relative flex items-center gap-5">
-          <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center flex-shrink-0 avatar-glow"
-               style="background:linear-gradient(135deg,hsl(${hue},60%,40%),hsl(${(hue+60)%360},50%,30%))">
-            <span class="text-white font-bold text-2xl sm:text-3xl">${initial}</span>
+          <div class="avatar-glow">
+            ${avatarHTML({ username, avatarUrl }, { size: 72, classes: 'avatar-glow' })}
           </div>
           <div class="flex-1 min-w-0">
             <h1 class="font-serif text-2xl sm:text-3xl font-bold text-white leading-tight">${escHtml(username)}</h1>
-            <p class="text-stone-400 text-sm mt-1">${library.length} book${library.length !== 1 ? 's' : ''} in library</p>
+            ${bio ? `<p class="text-stone-300 text-sm mt-1 leading-snug line-clamp-3">${escHtml(bio)}</p>` : ''}
+            <p class="text-stone-400 text-xs mt-1">${library.length} book${library.length !== 1 ? 's' : ''} in library · ${wrappedLink}</p>
           </div>
           ${followBtnHtml}
         </div>
@@ -123,12 +135,16 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
     }
   }
 
+  // Apply profile owner's accent color to this view
+  if (accent) applyProfileAccent(container, accent);
+
   refreshTabs(lastTab.get(username) ?? 'shelves');
 
   // Pre-render shelves content
   container.querySelector('#tab-shelves').innerHTML = renderShelvesTab(shelves, library, myBookIds, isOwnProfile);
   container.querySelector('#tab-status').innerHTML  = renderStatusTab(statusBooks, myBookIds, isOwnProfile);
   container.querySelector('#tab-feed').innerHTML    = renderFeedTab(feed);
+  attachFeedLikeHandlers(container.querySelector('#tab-feed'), feed);
 
   container.querySelectorAll('.profile-tab').forEach(btn => {
     btn.addEventListener('click', () => refreshTabs(btn.dataset.tab));
@@ -231,11 +247,17 @@ function renderStatusTab({ to_read, reading, done }, myBookIds = new Set(), isOw
   return html || `<div class="text-center py-16 text-stone-500 italic">No status data yet.</div>`;
 }
 
+function linkifyMentions(text) {
+  return escHtml(text).replace(/@([a-zA-Z0-9_-]{2,32})/g,
+    (_, u) => `<a href="#u/${u}" class="text-amber-400 hover:text-amber-300 transition-colors">@${escHtml(u)}</a>`);
+}
+
 function renderFeedTab(feed) {
   if (!feed.length) {
     return `<div class="text-center py-16 text-stone-500 italic">No reading activity yet.</div>`;
   }
 
+  const { user } = getState();
   return `
     <div class="space-y-3 max-w-2xl stagger">
       ${feed.map(s => {
@@ -250,6 +272,14 @@ function renderFeedTab(feed) {
         const cover = s.cover_url
           ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" />`
           : `<div class="w-12 h-[4.5rem] bg-stone-800 rounded-lg flex-shrink-0"></div>`;
+        const likeCount = s.like_count ?? 0;
+        const liked = !!s.liked;
+        const sid = s.session_id ?? s.id;
+        const likeBtn = user ? `
+          <button class="like-btn flex items-center gap-1 text-xs transition-colors ${liked ? 'text-rose-400' : 'text-stone-500 hover:text-rose-400'}"
+                  data-session-id="${sid}" data-liked="${liked}" data-count="${likeCount}">
+            ${liked ? '♥' : '♡'} <span class="like-count">${likeCount > 0 ? likeCount : ''}</span>
+          </button>` : (likeCount > 0 ? `<span class="text-xs text-stone-500">♥ ${likeCount}</span>` : '');
 
         return `
           <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-stone-800/40"
@@ -260,11 +290,37 @@ function renderFeedTab(feed) {
               ${authors ? `<p class="text-xs text-stone-400 mt-0.5">${escHtml(authors)}</p>` : ''}
               ${date    ? `<p class="text-xs text-stone-500 mt-1">${escHtml(date)}</p>` : ''}
               ${stars   ? `<p class="text-sm mt-1 leading-none">${stars}</p>` : ''}
-              ${s.review ? `<p class="text-sm text-stone-300 mt-2 line-clamp-3 leading-relaxed">${escHtml(s.review)}</p>` : ''}
+              ${s.review ? `<p class="text-sm text-stone-300 mt-2 line-clamp-3 leading-relaxed">${linkifyMentions(s.review)}</p>` : ''}
+              <div class="mt-2 flex items-center gap-3">${likeBtn}</div>
             </div>
           </div>`;
       }).join('')}
     </div>`;
+}
+
+function attachFeedLikeHandlers(tabEl, feed) {
+  if (!tabEl) return;
+  tabEl.querySelectorAll('.like-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sid = btn.dataset.sessionId;
+      const wasLiked = btn.dataset.liked === 'true';
+      const countEl = btn.querySelector('.like-count');
+      let count = parseInt(btn.dataset.count, 10) || 0;
+      btn.disabled = true;
+      try {
+        const result = wasLiked ? await api.unlikeSession(sid) : await api.likeSession(sid);
+        count = result.likeCount;
+        btn.dataset.liked = String(!wasLiked);
+        btn.dataset.count = count;
+        btn.innerHTML = `${!wasLiked ? '♥' : '♡'} <span class="like-count">${count > 0 ? count : ''}</span>`;
+        btn.className = `like-btn flex items-center gap-1 text-xs transition-colors ${!wasLiked ? 'text-rose-400' : 'text-stone-500 hover:text-rose-400'}`;
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 function escHtml(str) {

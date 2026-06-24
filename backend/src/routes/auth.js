@@ -13,7 +13,10 @@ const USERNAME_RE = /^[a-zA-Z0-9_-]{2,32}$/;
 // GET /api/auth/me — returns the logged-in user, or 401
 router.get('/me', authMiddleware, (req, res) => {
   const u = req.user;
-  res.json({ id: u.id, username: u.username, isAdmin: u.is_admin, isPublic: u.is_public });
+  res.json({
+    id: u.id, username: u.username, isAdmin: u.is_admin, isPublic: u.is_public,
+    bio: u.bio ?? null, avatarUrl: u.avatar_url ?? null, accent: u.accent ?? null,
+  });
 });
 
 // POST /api/auth/register  { username, password, inviteCode? }
@@ -145,7 +148,9 @@ router.post('/logout', async (req, res, next) => {
   }
 });
 
-// PATCH /api/auth/me  { isPublic?, currentPassword?, newPassword? }
+const ALLOWED_ACCENTS = new Set(['amber', 'blue', 'teal', 'rose']);
+
+// PATCH /api/auth/me  { isPublic?, currentPassword?, newPassword?, bio?, avatarUrl?, accent? }
 router.patch('/me', authMiddleware, async (req, res, next) => {
   try {
     // Re-fetch password_hash since authMiddleware doesn't load it
@@ -155,7 +160,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     );
     if (!row) return res.status(404).json({ error: 'User not found' });
 
-    const { isPublic, currentPassword, newPassword } = req.body ?? {};
+    const { isPublic, currentPassword, newPassword, bio, avatarUrl, accent } = req.body ?? {};
     const updates = [];
     const params = [];
 
@@ -173,14 +178,45 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
       updates.push(`password_hash = $${params.length}`);
     }
 
+    if (bio !== undefined) {
+      const trimmed = bio === null ? null : String(bio).trim().slice(0, 500);
+      params.push(trimmed || null);
+      updates.push(`bio = $${params.length}`);
+    }
+
+    if (avatarUrl !== undefined) {
+      if (avatarUrl && avatarUrl !== null) {
+        try {
+          const u = new URL(avatarUrl);
+          if (u.protocol !== 'http:' && u.protocol !== 'https:')
+            return res.status(400).json({ error: 'avatarUrl must be an http(s) URL' });
+        } catch {
+          return res.status(400).json({ error: 'avatarUrl is not a valid URL' });
+        }
+      }
+      params.push(avatarUrl || null);
+      updates.push(`avatar_url = $${params.length}`);
+    }
+
+    if (accent !== undefined) {
+      if (accent !== null && !ALLOWED_ACCENTS.has(accent))
+        return res.status(400).json({ error: 'accent must be one of: amber, blue, teal, rose' });
+      params.push(accent || null);
+      updates.push(`accent = $${params.length}`);
+    }
+
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
     params.push(req.user.id);
     const { rows: [user] } = await pool.query(
-      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING id, username, is_admin, is_public`,
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}
+       RETURNING id, username, is_admin, is_public, bio, avatar_url, accent`,
       params
     );
-    res.json({ id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public });
+    res.json({
+      id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public,
+      bio: user.bio ?? null, avatarUrl: user.avatar_url ?? null, accent: user.accent ?? null,
+    });
   } catch (err) {
     next(err);
   }

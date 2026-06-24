@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { getState, setState } from '../store.js';
 import { loadPrefs, savePrefs, ACCENT_COLORS } from '../prefs.js';
 import { showToast } from '../components/toast.js';
+import { avatarHTML } from '../components/avatar.js';
 
 export async function renderSettings(container) {
   const { user } = getState();
@@ -23,9 +24,6 @@ export async function renderSettings(container) {
 function render(container, user, invites, goal, currentYear) {
   const profileUrl = `${location.origin}${location.pathname}#u/${user.username}`;
 
-  const initial = user.username[0].toUpperCase();
-  const hue = [...user.username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
-
   container.innerHTML = `
     <div class="max-w-lg mx-auto space-y-6 fade-in">
       <h1 class="font-serif text-2xl font-bold">Settings</h1>
@@ -33,10 +31,7 @@ function render(container, user, invites, goal, currentYear) {
       <!-- Profile -->
       <section class="card-section space-y-4">
         <div class="flex items-center gap-4">
-          <div class="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
-               style="background:linear-gradient(135deg,hsl(${hue},60%,40%),hsl(${(hue+60)%360},50%,30%))">
-            <span class="text-white font-bold text-xl leading-none">${initial}</span>
-          </div>
+          ${avatarHTML(user, { size: 48 })}
           <div>
             <div class="flex items-center gap-2">
               <p class="font-semibold text-stone-100">${escHtml(user.username)}</p>
@@ -45,6 +40,30 @@ function render(container, user, invites, goal, currentYear) {
             <p class="text-xs text-stone-500 mt-0.5">Your profile is public</p>
           </div>
         </div>
+
+        <!-- Bio -->
+        <div>
+          <label class="text-xs text-stone-500 block mb-1">Bio <span class="text-stone-600">(shown on your public profile)</span></label>
+          <textarea id="bio-input" rows="2" maxlength="500" placeholder="A few words about you…"
+            class="field-input w-full resize-none">${escHtml(user.bio ?? '')}</textarea>
+        </div>
+
+        <!-- Avatar URL -->
+        <div>
+          <label class="text-xs text-stone-500 block mb-1">Profile picture URL</label>
+          <div class="flex gap-2">
+            <input id="avatar-url-input" type="url" value="${escHtml(user.avatarUrl ?? '')}"
+              placeholder="https://example.com/photo.jpg"
+              class="field-input flex-1 min-w-0" />
+          </div>
+        </div>
+
+        <button id="save-profile-btn"
+          class="px-4 py-2 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg text-sm transition-all duration-150 shadow-sm shadow-amber-500/20">
+          Save profile
+        </button>
+        <p id="profile-msg" class="text-xs hidden"></p>
+
         <div class="rounded-lg px-3 py-2.5 text-xs" style="background:rgba(12,10,9,0.6);border:1px solid rgba(68,64,60,0.5)">
           <span class="text-stone-500">Shareable link: </span>
           <a href="${escHtml(profileUrl)}" class="text-amber-400 hover:text-amber-300 transition-colors break-all">${escHtml(profileUrl)}</a>
@@ -83,6 +102,21 @@ function render(container, user, invites, goal, currentYear) {
       <!-- Invite manager (admin only) -->
       ${user.isAdmin ? renderInviteSection(invites) : ''}
     </div>`;
+
+  // Save profile (bio + avatarUrl)
+  container.querySelector('#save-profile-btn')?.addEventListener('click', async () => {
+    const bio = container.querySelector('#bio-input')?.value ?? '';
+    const avatarUrl = container.querySelector('#avatar-url-input')?.value.trim() ?? '';
+    const msg = container.querySelector('#profile-msg');
+    try {
+      const updated = await api.updateMe({ bio: bio.trim() || null, avatarUrl: avatarUrl || null });
+      setState({ user: { ...getState().user, bio: updated.bio, avatarUrl: updated.avatarUrl } });
+      showToast('Profile saved.');
+      if (msg) msg.classList.add('hidden');
+    } catch (err) {
+      if (msg) { msg.className = 'text-xs text-red-400'; msg.textContent = err.message; msg.classList.remove('hidden'); }
+    }
+  });
 
   // Change password
   container.querySelector('#change-pw-form').addEventListener('submit', async e => {
@@ -248,7 +282,11 @@ function attachAppearanceHandlers(container) {
     btn.addEventListener('click', () => { savePrefs({ cardSize: btn.dataset.size }); refresh(); });
   });
   container.querySelectorAll('.accent-btn').forEach(btn => {
-    btn.addEventListener('click', () => { savePrefs({ accent: btn.dataset.accent }); refresh(); });
+    btn.addEventListener('click', () => {
+      savePrefs({ accent: btn.dataset.accent });
+      api.updateMe({ accent: btn.dataset.accent }).catch(() => {});
+      refresh();
+    });
   });
 }
 

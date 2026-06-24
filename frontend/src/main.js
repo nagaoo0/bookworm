@@ -1,5 +1,5 @@
 import './styles.css';
-import { applyPrefs } from './prefs.js';
+import { applyPrefs, savePrefs } from './prefs.js';
 import { getState, setState, subscribe } from './store.js';
 
 applyPrefs();
@@ -12,6 +12,7 @@ import { renderProfile } from './views/profile.js';
 import { renderUsers } from './views/users.js';
 import { renderBook } from './views/book.js';
 import { renderAdmin } from './views/admin.js';
+import { renderWrapped } from './views/wrapped.js';
 import { setOnSessionSaved } from './components/modal.js';
 import { api, setOnUnauthorized } from './api.js';
 
@@ -150,17 +151,31 @@ async function refreshNotifBadge() {
   } catch { /* non-fatal */ }
 }
 
+function updateNavAvatar(user) {
+  const letter = user.username[0].toUpperCase();
+  const avatarEl = document.getElementById('nav-avatar-letter');
+  const avatarMobEl = document.getElementById('nav-avatar-letter-mob');
+  if (user.avatarUrl) {
+    const imgHtml = `<img src="${escHtml(user.avatarUrl)}" alt="" class="w-full h-full object-cover rounded-full"
+      onerror="this.style.display='none';this.nextSibling.style.display='inline'"/><span style="display:none">${escHtml(letter)}</span>`;
+    if (avatarEl) { avatarEl.parentElement.innerHTML = imgHtml; }
+    if (avatarMobEl) { avatarMobEl.parentElement.innerHTML = imgHtml; }
+  } else {
+    if (avatarEl) avatarEl.textContent = letter;
+    if (avatarMobEl) avatarMobEl.textContent = letter;
+  }
+}
+
 function showApp(user) {
   setState({ user });
   headerEl.classList.remove('hidden');
   pubHeader.classList.add('hidden');
   document.getElementById('nav-username').textContent = user.username;
   document.getElementById('nav-username-mob').textContent = user.username;
-  const letter = user.username[0].toUpperCase();
-  const avatarEl = document.getElementById('nav-avatar-letter');
-  const avatarMobEl = document.getElementById('nav-avatar-letter-mob');
-  if (avatarEl) avatarEl.textContent = letter;
-  if (avatarMobEl) avatarMobEl.textContent = letter;
+  updateNavAvatar(user);
+
+  // Sync server-stored accent to local prefs
+  if (user.accent) savePrefs({ accent: user.accent });
 
   const profileHref = `#u/${user.username}`;
   const profLink = document.getElementById('my-profile-link');
@@ -216,6 +231,8 @@ function openNotifPanel() {
       let msg = '';
       if (n.type === 'follow')  msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> started following you.`;
       if (n.type === 'comment') msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> commented on <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
+      if (n.type === 'like')    msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> liked your review of <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
+      if (n.type === 'mention') msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> mentioned you in a review of <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
       return `<div class="flex gap-2.5 px-4 py-3 text-sm" style="border-bottom:1px solid rgba(68,64,60,0.3);${unreadBg}">
         ${dot}
         <div class="flex-1 min-w-0">
@@ -293,6 +310,7 @@ const ROUTES = ['home', 'search', 'stats', 'users', 'settings', 'admin'];
 function getRoute() {
   const hash = location.hash.slice(1) || 'home';
   if (ROUTES.includes(hash)) return hash;
+  if (hash === 'wrapped') return hash;
   if (hash.startsWith('u/')) return hash;
   if (hash.startsWith('book/')) return hash;
   return 'home';
@@ -335,12 +353,23 @@ async function navigate(route) {
     await renderUsers(mainEl);
   } else if (route === 'admin') {
     await renderAdmin(mainEl);
+  } else if (route === 'wrapped') {
+    await renderWrapped(mainEl, null);
   } else if (route.startsWith('u/')) {
-    const username = route.slice(2);
-    if (getState().user) {
-      await renderProfile(mainEl, username);
+    const path = route.slice(2);
+    if (path.endsWith('/wrapped')) {
+      const username = path.slice(0, -8);
+      if (getState().user) {
+        await renderWrapped(mainEl, username);
+      } else {
+        headerEl.classList.add('hidden');
+        pubHeader.classList.remove('hidden');
+        await renderWrapped(mainEl, username);
+      }
+    } else if (getState().user) {
+      await renderProfile(mainEl, path);
     } else {
-      showPublicProfile(username);
+      showPublicProfile(path);
     }
   } else if (route.startsWith('book/')) {
     const bookId = route.slice(5);
@@ -355,7 +384,14 @@ subscribe(state => {
 window.addEventListener('hashchange', () => {
   const route = getRoute();
   if (route.startsWith('u/') && !getState().user) {
-    showPublicProfile(route.slice(2));
+    const path = route.slice(2);
+    if (path.endsWith('/wrapped')) {
+      headerEl.classList.add('hidden');
+      pubHeader.classList.remove('hidden');
+      renderWrapped(mainEl, path.slice(0, -8));
+    } else {
+      showPublicProfile(path);
+    }
   } else if (route === 'users' && !getState().user) {
     pubHeader.classList.remove('hidden');
     headerEl.classList.add('hidden');
@@ -375,7 +411,13 @@ window.addEventListener('hashchange', () => {
     showApp(user);
   } catch {
     if (route.startsWith('u/')) {
-      showPublicProfile(route.slice(2));
+      const path = route.slice(2);
+      if (path.endsWith('/wrapped')) {
+        pubHeader.classList.remove('hidden');
+        renderWrapped(mainEl, path.slice(0, -8));
+      } else {
+        showPublicProfile(path);
+      }
     } else if (route === 'users') {
       pubHeader.classList.remove('hidden');
       renderUsers(mainEl);

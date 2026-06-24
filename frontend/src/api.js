@@ -126,6 +126,10 @@ export const api = {
   exportLibrary: () => fetch('/api/import-export/export', { credentials: 'include' }),
   importLibrary: (csv) => request('/import-export/import', { method: 'POST', body: { csv } }),
 
+  // Likes
+  likeSession: (id) => request(`/sessions/${id}/like`, { method: 'POST' }),
+  unlikeSession: (id) => request(`/sessions/${id}/like`, { method: 'DELETE' }),
+
   // Admin
   adminGetUsers: () => request('/admin/users'),
   adminDeleteUser: (id) => request(`/admin/users/${id}`, { method: 'DELETE' }),

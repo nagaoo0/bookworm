@@ -21,6 +21,7 @@ import booksRouter from './routes/books.js';
 import challengesRouter from './routes/challenges.js';
 import groupsRouter from './routes/groups.js';
 import adminRouter from './routes/admin.js';
+import likesRouter from './routes/likes.js';
 import { getBook } from './googleBooks.js';
 
 const app = express();
@@ -58,9 +59,9 @@ app.use('/api/profiles', profilesRouter);
 // Feed — public, but supports ?filter=following (requires session cookie if provided)
 app.get('/api/feed', async (req, res, next) => {
   try {
-    // Optionally resolve current user from session cookie for "following" filter
+    // Optionally resolve current user from session cookie for "following" filter and likes
     let currentUserId = null;
-    const token = req.cookies?.session;
+    const token = req.cookies?.bw_session;
     if (token) {
       const { rows: [sess] } = await pool.query(
         `SELECT user_id FROM sessions WHERE token = $1 AND expires_at > now()`, [token]
@@ -70,19 +71,39 @@ app.get('/api/feed', async (req, res, next) => {
 
     const followingOnly = req.query.filter === 'following' && currentUserId;
 
-    const params = followingOnly ? [currentUserId] : [];
+    if (currentUserId) {
+      const params = [currentUserId];
+      const { rows } = await pool.query(
+        `SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
+                u.username, u.avatar_url,
+                b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
+                (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
+                EXISTS(SELECT 1 FROM session_likes sl WHERE sl.session_id = rs.id AND sl.user_id = $1) AS liked
+         FROM reading_sessions rs
+         JOIN users u ON u.id = rs.user_id
+         JOIN books b ON b.id = rs.book_id
+         WHERE (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
+           ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1)` : ''}
+         ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
+         LIMIT 100`,
+        params
+      );
+      return res.json(rows);
+    }
+
+    // Anonymous viewer — no liked status
     const { rows } = await pool.query(
-      `SELECT rs.id, rs.finished_at, rs.started_at, rs.rating, rs.review,
-              u.username,
-              b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id
+      `SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
+              u.username, u.avatar_url,
+              b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
+              (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
+              false AS liked
        FROM reading_sessions rs
        JOIN users u ON u.id = rs.user_id
        JOIN books b ON b.id = rs.book_id
        WHERE (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
-         ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1)` : ''}
        ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
-       LIMIT 100`,
-      params
+       LIMIT 100`
     );
     res.json(rows);
   } catch (err) {
@@ -94,11 +115,11 @@ app.get('/api/feed', async (req, res, next) => {
 app.get('/api/users', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT u.username,
+      `SELECT u.username, u.avatar_url, u.accent,
               COUNT(DISTINCT lb.id)::INT AS book_count
        FROM users u
        LEFT JOIN library_books lb ON lb.user_id = u.id
-       GROUP BY u.username
+       GROUP BY u.id
        ORDER BY u.username`
     );
     res.json(rows);
@@ -171,6 +192,7 @@ app.use('/api/stats', statsRouter);
 app.use('/api/invites', invitesRouter);
 app.use('/api/import-export', importExportRouter);
 app.use('/api/follows', followsRouter);
+app.use('/api/sessions', likesRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/goals', goalsRouter);
 app.use('/api/books/:bookId/comments', commentsRouter);
