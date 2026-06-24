@@ -290,7 +290,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
       const newComment = await api.addComment(book.id, body);
       e.target.reset();
       const list = container.querySelector('#comments-list');
-      list.insertAdjacentHTML('beforeend', renderComment(newComment, user));
+      list?.insertAdjacentHTML('beforeend', renderComment(newComment, user));
       attachCommentDeleteHandlers(container, book.id);
     } catch (err) {
       if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }

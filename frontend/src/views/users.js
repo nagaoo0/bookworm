@@ -1,4 +1,5 @@
 import { api } from '../api.js';
+import { getState } from '../store.js';
 import { showToast } from '../components/toast.js';
 
 let feedFilter = 'all'; // 'all' | 'following'
@@ -7,11 +8,12 @@ let activeTab = 'feed';
 export async function renderUsers(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
+    const loggedIn = !!getState().user;
     const [users, feed, challenges, groups] = await Promise.all([
       api.getUsers(),
       api.getFeed(feedFilter === 'following' ? 'following' : undefined).catch(() => []),
-      api.getChallenges().catch(() => []),
-      api.getGroups().catch(() => []),
+      loggedIn ? api.getChallenges().catch(() => []) : Promise.resolve([]),
+      loggedIn ? api.getGroups().catch(() => []) : Promise.resolve([]),
     ]);
     render(container, users, feed, challenges, groups);
   } catch (err) {
@@ -261,7 +263,7 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
 function challengeCard(c, isPast = false) {
   const start = new Date(c.start_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   const end   = new Date(c.end_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  const pct   = Math.min(100, Math.round((c.progress / c.goal) * 100));
+  const pct   = c.goal > 0 ? Math.min(100, Math.round((c.progress / c.goal) * 100)) : 0;
   return `
     <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5">
       <div class="flex items-start justify-between gap-3 mb-2">
@@ -341,7 +343,7 @@ function challengeCreateForm() {
 
 // ── Groups ─────────────────────────────────────────────────────────────────────
 
-function renderGroupsTab(el, groups, rootContainer) {
+function renderGroupsTab(el, groups, rootContainer, _users, _feed, _challenges) {
   el.innerHTML = `
     <div class="space-y-6">
       <div class="flex gap-2">

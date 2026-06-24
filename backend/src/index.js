@@ -68,6 +68,7 @@ app.get('/api/feed', async (req, res, next) => {
 
     const followingOnly = req.query.filter === 'following' && currentUserId;
 
+    const params = followingOnly ? [currentUserId] : [];
     const { rows } = await pool.query(
       `SELECT rs.id, rs.finished_at, rs.started_at, rs.rating, rs.review,
               u.username,
@@ -77,9 +78,10 @@ app.get('/api/feed', async (req, res, next) => {
        JOIN books b ON b.id = rs.book_id
        WHERE u.is_public = true
          AND (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
-         ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = ${currentUserId})` : ''}
+         ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1)` : ''}
        ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
-       LIMIT 100`
+       LIMIT 100`,
+      params
     );
     res.json(rows);
   } catch (err) {
