@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
-import { authMiddleware, hashPassword } from '../auth.js';
+import { hashPassword } from '../auth.js';
 
 const router = Router();
 
@@ -9,7 +9,7 @@ function adminOnly(req, res, next) {
   next();
 }
 
-router.use(authMiddleware, adminOnly);
+router.use(adminOnly);
 
 // GET /api/admin/users
 router.get('/users', async (_req, res, next) => {
@@ -17,7 +17,7 @@ router.get('/users', async (_req, res, next) => {
     const { rows } = await pool.query(
       `SELECT u.id, u.username, u.is_admin, u.created_at,
               COUNT(DISTINCT lb.id)::INT AS book_count,
-              COUNT(DISTINCT s.id)::INT AS session_count,
+              COUNT(DISTINCT s.token)::INT AS session_count,
               MAX(s.created_at) AS last_active
        FROM users u
        LEFT JOIN library_books lb ON lb.user_id = u.id

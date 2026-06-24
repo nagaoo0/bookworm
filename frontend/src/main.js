@@ -68,7 +68,7 @@ document.getElementById('app').innerHTML = `
           <a href="#users"    class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="users">Readers</a>
           <a id="my-profile-link-mob" href="#" class="block px-3 py-2.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors hidden">Profile</a>
           <a href="#settings" class="nav-link-mob block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors" data-route="settings">Settings</a>
-          <a id="admin-nav-link-mob" href="#admin" class="nav-link-mob hidden block px-3 py-2.5 rounded-lg text-sm font-medium text-amber-500 hover:text-amber-400 hover:bg-stone-800 transition-colors" data-route="admin">Admin</a>
+          <a id="admin-nav-link-mob" href="#admin" class="nav-link-mob hidden px-3 py-2.5 rounded-lg text-sm font-medium text-amber-500 hover:text-amber-400 hover:bg-stone-800 transition-colors" data-route="admin">Admin</a>
           <div class="border-t border-stone-800 pt-2 mt-2 flex items-center justify-between">
             <span id="nav-username-mob" class="text-xs text-stone-500"></span>
             <button id="logout-btn-mob" class="text-sm text-stone-400 hover:text-stone-200">Sign out</button>
@@ -224,6 +224,9 @@ function escHtml(str) {
 function showAuth() {
   headerEl.classList.add('hidden');
   pubHeader.classList.add('hidden');
+  // Ensure admin-only nav links are hidden when logged out
+  document.getElementById('admin-nav-link')?.classList.add('hidden');
+  document.getElementById('admin-nav-link-mob')?.classList.add('hidden');
   setState({ user: null, shelves: [], library: [], selectedShelfId: null });
   renderAuth(mainEl, showApp);
 }
