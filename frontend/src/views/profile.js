@@ -33,7 +33,7 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
   const myBookIds = new Set((myLibrary ?? []).map(b => String(b.book_id)));
   const isOwnProfile = user?.username === username;
 
-  const followBtn = !isOwnProfile ? `
+  const followBtnHtml = !isOwnProfile ? `
     <button id="follow-btn"
       class="px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
         isFollowing
@@ -49,7 +49,7 @@ function renderTabs(container, { username, shelves, library, statusBooks, feed, 
         <h1 class="font-serif text-2xl font-semibold">${escHtml(username)}</h1>
         <p class="text-stone-500 text-sm mt-1">${library.length} book${library.length !== 1 ? 's' : ''}</p>
       </div>
-      ${followBtn}
+      ${followBtnHtml}
     </div>
 
     <div role="tablist" class="flex gap-1 mb-6 border-b border-stone-800">
