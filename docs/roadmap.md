@@ -11,57 +11,34 @@ What's built, what's known to need work, and ideas for future improvements.
 - **Remove / move books** — hover × to remove; right-click ⋯ context menu to move between shelves or update status
 - **Reading sessions** — log reads with start/end dates, 1–5 star rating, and review; same book can be read multiple times
 - **Book notes** — free-form notes field per library entry, separate from session reviews
-- **Stats** — total books read, total read-throughs, currently reading count, average rating, books-per-year bar chart, genres pie chart
+- **Stats** — total books read, total read-throughs, currently reading count, average rating, books-per-year bar chart, genres pie chart, activity heatmap
 - **Public profiles** — optional public profile at `#u/<username>` with shelves, reading piles, history, and stats tabs
-- **Community feed** — `#readers` page shows recent activity from all public users and a list of readers
+- **Community feed** — `#readers` page shows recent activity; filter by all or following
 - **Import / Export** — tab-separated CSV compatible with Places reading app format
 - **Appearance** — dark / sepia / light theme; miniature–large card sizes; accent color picker
 - **Self-hosted** — runs on any VPS with `docker compose up --build`
 - **Library search & filter** — real-time client-side filter by title/author; sort by date added, title, author
-- **Book detail page** — dedicated `#book/:id` route with sessions, notes, status, shelves, progress, comments
+- **Book detail page** — dedicated `#book/:id` route with sessions, notes, status, shelves, progress, comments, recommendations, friends' activity
 - **Bulk actions** — checkbox multi-select with floating bar: set status, remove
 - **Progress tracking** — percent-read slider on currently-reading books; progress bar on cover card
 - **Reading goals** — yearly goal with progress bar on Stats page
-- **Follow / unfollow** — follow button on profiles and reader cards
+- **Follow / unfollow** — follow button on profiles and reader cards; following-only feed filter
 - **Book comments** — per-book comments on the detail page; author can delete
 - **Activity notifications** — bell icon with unread badge; follow and comment notifications
+- **Recommendations** — "Readers also have" section on book detail page (co-occurrence)
+- **Friends on this book** — followed users' status and reviews on the book detail page
+- **Reading challenges** — create/join time-boxed reading challenges with a leaderboard
+- **Reading groups** — create groups with invite codes; shared group feed of member activity
 
 ---
 
 ## Next up
-
-### UI / UX
-
-#### Reading log / calendar heatmap
-A GitHub-style activity heatmap on the Stats page showing days on which sessions were logged.
-
-#### Recommendations ("People who read X also read Y")
-Co-occurrence query across `library_books`: find books most commonly paired with a given title in other users' libraries. Surface them on the book detail page.
-
-#### "Also read" indicator
-When viewing someone else's public profile, books present in both their library and yours get a subtle shared-badge overlay on the cover card.
 
 #### Pagination / virtual scroll
 `LIMIT`/`OFFSET` on the library API; "Load more" button or intersection-observer infinite scroll. Needed once a library exceeds ~300 books.
 
 #### Series / collections
 A `series` field on `books` and a series grouping on shelves — "Dune (5 of 6 read)".
-
----
-
-### Social
-
-#### Feed filter (following only)
-The Feed tab on `#readers` defaults to showing only followed users' activity, with a toggle for "All readers".
-
-#### "Want to read" exchange
-On a book's detail page, show which followed users have it on their to-read list and which have already reviewed it.
-
-#### Reading challenges
-A public time-boxed challenge (e.g. "Read 5 sci-fi books in July 2026") that any user can join. A `challenges` table + `challenge_entries` join. A leaderboard on the `#readers` page.
-
-#### Reading groups / book clubs
-A `groups` table (name, description, invite code). Members share a group shelf with a group-scoped feed and comments.
 
 ---
 

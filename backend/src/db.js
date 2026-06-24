@@ -161,6 +161,44 @@ export async function migrate() {
     -- Progress tracking on currently-reading books
     ALTER TABLE library_books ADD COLUMN IF NOT EXISTS progress_page INT;
     ALTER TABLE library_books ADD COLUMN IF NOT EXISTS progress_pct  SMALLINT CHECK (progress_pct >= 0 AND progress_pct <= 100);
+
+    -- Reading challenges
+    CREATE TABLE IF NOT EXISTS challenges (
+      id          SERIAL PRIMARY KEY,
+      created_by  INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title       TEXT NOT NULL,
+      description TEXT,
+      goal        INT NOT NULL CHECK (goal > 0),
+      start_date  DATE NOT NULL,
+      end_date    DATE NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CHECK (end_date > start_date)
+    );
+
+    CREATE TABLE IF NOT EXISTS challenge_entries (
+      challenge_id INT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+      user_id      INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      joined_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (challenge_id, user_id)
+    );
+
+    -- Reading groups
+    CREATE TABLE IF NOT EXISTS reading_groups (
+      id          SERIAL PRIMARY KEY,
+      name        TEXT NOT NULL,
+      description TEXT,
+      invite_code TEXT NOT NULL UNIQUE,
+      created_by  INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS group_members (
+      group_id   INT NOT NULL REFERENCES reading_groups(id) ON DELETE CASCADE,
+      user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role       TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin','member')),
+      joined_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (group_id, user_id)
+    );
   `);
   console.log('Database schema ready.');
 }

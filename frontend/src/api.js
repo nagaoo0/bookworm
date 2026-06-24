@@ -96,6 +96,10 @@ export const api = {
   setGoal: (year, target) => request(`/goals/${year}`, { method: 'PUT', body: { target } }),
   deleteGoal: (year) => request(`/goals/${year}`, { method: 'DELETE' }),
 
+  // Book social / recommendations
+  getRecommendations: (bookId) => request(`/books/${bookId}/recommendations`),
+  getBookSocial: (bookId) => request(`/books/${bookId}/social`),
+
   // Comments
   getComments: (bookId) => request(`/books/${bookId}/comments`),
   addComment: (bookId, body) => request(`/books/${bookId}/comments`, { method: 'POST', body: { body } }),
@@ -103,6 +107,20 @@ export const api = {
 
   // Progress
   setProgress: (libId, data) => request(`/library/${libId}`, { method: 'PATCH', body: data }),
+
+  // Challenges
+  getChallenges: () => request('/challenges'),
+  createChallenge: (data) => request('/challenges', { method: 'POST', body: data }),
+  joinChallenge: (id) => request(`/challenges/${id}/join`, { method: 'POST' }),
+  leaveChallenge: (id) => request(`/challenges/${id}/join`, { method: 'DELETE' }),
+  getChallengeLeaderboard: (id) => request(`/challenges/${id}/leaderboard`),
+
+  // Groups
+  getGroups: () => request('/groups'),
+  createGroup: (data) => request('/groups', { method: 'POST', body: data }),
+  joinGroup: (code) => request(`/groups/join`, { method: 'POST', body: { code } }),
+  leaveGroup: (id) => request(`/groups/${id}/leave`, { method: 'POST' }),
+  getGroupFeed: (id) => request(`/groups/${id}/feed`),
 
   exportLibrary: () => fetch('/api/import-export/export', { credentials: 'include' }),
   importLibrary: (csv) => request('/import-export/import', { method: 'POST', body: { csv } }),

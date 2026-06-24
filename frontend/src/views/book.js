@@ -8,19 +8,21 @@ export async function renderBook(container, bookId) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
 
   try {
-    const { library, shelves } = getState();
-    const [book, sessions, comments] = await Promise.all([
+    const { library, shelves, user } = getState();
+    const [book, sessions, comments, recs, social] = await Promise.all([
       api.getBookDetail(bookId),
       api.getSessions(bookId),
       api.getComments(bookId),
+      api.getRecommendations(bookId).catch(() => []),
+      user ? api.getBookSocial(bookId).catch(() => []) : Promise.resolve([]),
     ]);
-    mount(container, book, sessions, comments, library ?? [], shelves ?? []);
+    mount(container, book, sessions, comments, library ?? [], shelves ?? [], recs, social);
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
   }
 }
 
-function mount(container, book, sessions, comments, library, shelves) {
+function mount(container, book, sessions, comments, library, shelves, recs = [], social = []) {
   const { user } = getState();
   const libEntry = library.find(b => String(b.book_id) === String(book.id));
 
@@ -132,6 +134,57 @@ function mount(container, book, sessions, comments, library, shelves) {
           </div>
         </details>` : ''}
       </section>
+
+      <!-- Friends on this book -->
+      ${social.length ? `
+      <section class="mt-10">
+        <h2 class="font-serif text-xl font-semibold mb-4">Friends &amp; this book</h2>
+        <div class="space-y-3">
+          ${social.map(u => {
+            const stars = u.rating ? '★'.repeat(u.rating) + '☆'.repeat(5 - u.rating) : '';
+            const statusLabel = u.status === 'to_read' ? 'Wants to read' : u.status === 'reading' ? 'Currently reading' : 'Read it';
+            const statusColor = u.status === 'reading' ? 'text-amber-400' : u.status === 'done' ? 'text-green-400' : 'text-stone-400';
+            return `
+              <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                      <a href="#u/${escHtml(u.username)}" class="text-sm font-medium text-amber-400 hover:underline">@${escHtml(u.username)}</a>
+                      <span class="text-xs ${statusColor}">${statusLabel}</span>
+                    </div>
+                    ${stars ? `<p class="text-amber-400 text-xs">${stars}</p>` : ''}
+                    ${u.review ? `<p class="text-sm text-stone-300 mt-1 leading-relaxed line-clamp-3">${escHtml(u.review)}</p>` : ''}
+                  </div>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>
+      </section>` : ''}
+
+      <!-- Recommendations -->
+      ${recs.length ? `
+      <section class="mt-10">
+        <h2 class="font-serif text-xl font-semibold mb-4">Readers also have</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          ${recs.map(b => {
+            const cover = b.cover_url
+              ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
+              : `<div class="w-full h-full bg-stone-700 flex items-center justify-center p-2">
+                   <span class="text-stone-500 font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span>
+                 </div>`;
+            const authors = Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? '');
+            return `
+              <a href="#book/${b.id}" class="group flex flex-col">
+                <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-stone-800 shadow
+                            ring-1 ring-white/5 group-hover:ring-amber-500/40 transition-all">
+                  ${cover}
+                </div>
+                <p class="mt-2 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
+                ${authors ? `<p class="text-[11px] text-stone-500 mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
+              </a>`;
+          }).join('')}
+        </div>
+      </section>` : ''}
 
       <!-- Comments -->
       <section class="mt-10">

@@ -17,6 +17,9 @@ import followsRouter from './routes/follows.js';
 import notificationsRouter from './routes/notifications.js';
 import goalsRouter from './routes/goals.js';
 import commentsRouter from './routes/comments.js';
+import booksRouter from './routes/books.js';
+import challengesRouter from './routes/challenges.js';
+import groupsRouter from './routes/groups.js';
 
 const app = express();
 
@@ -133,6 +136,9 @@ app.use('/api/follows', followsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/goals', goalsRouter);
 app.use('/api/books/:bookId/comments', commentsRouter);
+app.use('/api/books/:bookId', booksRouter);
+app.use('/api/challenges', challengesRouter);
+app.use('/api/groups', groupsRouter);
 
 // Global error handler — catches any thrown/rejected error in route handlers
 app.use((err, _req, res, _next) => {

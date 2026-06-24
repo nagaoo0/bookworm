@@ -79,6 +79,13 @@ export function render(container, s, opts = {}, goal = null) {
         </div>
       </section>` : ''}
 
+      <!-- Reading heatmap -->
+      ${Object.keys(s.dailySessions ?? {}).length ? `
+      <section>
+        <h2 class="font-serif text-xl font-semibold mb-4">Reading Activity</h2>
+        <div id="${opts.heatmapId ?? 'reading-heatmap'}" class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 overflow-x-auto"></div>
+      </section>` : ''}
+
     </div>`;
 
   const barId  = opts.barCanvasId ?? 'monthly-chart';
@@ -87,6 +94,7 @@ export function render(container, s, opts = {}, goal = null) {
 
   drawMonthlyChart(s.monthly ?? {}, currentYear, barId);
   drawPieChart(s.categoriesByYear ?? {}, currentYear, pieId);
+  drawHeatmap(s.dailySessions ?? {}, opts.heatmapId ?? 'reading-heatmap');
 
   container.querySelector(`#${yearId}`)?.addEventListener('change', e => {
     const y = Number(e.target.value);
@@ -209,5 +217,97 @@ function statCard(label, value) {
     <div class="bg-stone-800 rounded-xl p-4 text-center ring-1 ring-white/5">
       <div class="font-serif text-3xl font-bold text-amber-400">${value}</div>
       <div class="text-xs text-stone-400 mt-1 uppercase tracking-wider">${label}</div>
+    </div>`;
+}
+
+function drawHeatmap(dailySessions, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  // Build a 52-week grid ending today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Start from the Sunday 52 weeks ago
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - 364);
+  // Rewind to previous Sunday
+  startDate.setDate(startDate.getDate() - startDate.getDay());
+
+  const maxVal = Math.max(1, ...Object.values(dailySessions));
+
+  // Build week columns
+  const weeks = [];
+  let cur = new Date(startDate);
+  while (cur <= today) {
+    const week = [];
+    for (let d = 0; d < 7; d++) {
+      const key = cur.toISOString().slice(0, 10);
+      const count = dailySessions[key] ?? 0;
+      const isFuture = cur > today;
+      week.push({ key, count, isFuture, date: new Date(cur) });
+      cur.setDate(cur.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+
+  // Month labels
+  const monthLabels = [];
+  let lastMonth = -1;
+  weeks.forEach((week, wi) => {
+    const m = week[0].date.getMonth();
+    if (m !== lastMonth) {
+      monthLabels.push({ wi, label: week[0].date.toLocaleString('default', { month: 'short' }) });
+      lastMonth = m;
+    }
+  });
+
+  const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const cellSize = 12;
+  const gap = 3;
+  const labelW = 28;
+  const labelH = 18;
+
+  const totalW = labelW + weeks.length * (cellSize + gap);
+  const totalH = labelH + 7 * (cellSize + gap);
+
+  const cells = weeks.map((week, wi) =>
+    week.map((day, di) => {
+      if (day.isFuture) return '';
+      const x = labelW + wi * (cellSize + gap);
+      const y = labelH + di * (cellSize + gap);
+      const intensity = day.count === 0 ? 0 : Math.max(0.15, day.count / maxVal);
+      const fill = day.count === 0 ? '#292524' : `rgba(245,158,11,${intensity.toFixed(2)})`;
+      const label = `${day.key}: ${day.count} session${day.count !== 1 ? 's' : ''}`;
+      return `<rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" rx="2"
+                fill="${fill}" class="heatmap-cell" data-tip="${label}">
+                <title>${label}</title>
+              </rect>`;
+    }).join('')
+  ).join('');
+
+  const monthLabelsSVG = monthLabels.map(({ wi, label }) => {
+    const x = labelW + wi * (cellSize + gap);
+    return `<text x="${x}" y="${labelH - 4}" fill="#78716c" font-size="10" font-family="sans-serif">${label}</text>`;
+  }).join('');
+
+  const dayLabelsSVG = [1, 3, 5].map(di => {
+    const y = labelH + di * (cellSize + gap) + cellSize - 2;
+    return `<text x="0" y="${y}" fill="#78716c" font-size="10" font-family="sans-serif">${DAY_LABELS[di]}</text>`;
+  }).join('');
+
+  el.innerHTML = `
+    <svg width="${totalW}" height="${totalH}" style="display:block">
+      ${monthLabelsSVG}
+      ${dayLabelsSVG}
+      ${cells}
+    </svg>
+    <div class="flex items-center gap-1.5 mt-3 justify-end">
+      <span class="text-xs text-stone-500">Less</span>
+      ${[0, 0.25, 0.5, 0.75, 1].map(v =>
+        `<div style="width:12px;height:12px;border-radius:2px;background:${v === 0 ? '#292524' : `rgba(245,158,11,${v})`}"></div>`
+      ).join('')}
+      <span class="text-xs text-stone-500">More</span>
     </div>`;
 }

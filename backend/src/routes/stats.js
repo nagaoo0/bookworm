@@ -5,7 +5,7 @@ const router = Router();
 
 // Shared stats computation — accepts a user id, works for both /stats and profile stats
 export async function computeStats(uid) {
-  const [totals, perYear, avgRating, currentlyReading, monthly, categoriesPerYear] = await Promise.all([
+  const [totals, perYear, avgRating, currentlyReading, monthly, categoriesPerYear, dailySessions] = await Promise.all([
     pool.query(
       `SELECT COUNT(DISTINCT book_id) AS total_books, COUNT(*) AS total_sessions
        FROM reading_sessions WHERE user_id = $1 AND finished_at IS NOT NULL`,
@@ -48,6 +48,15 @@ export async function computeStats(uid) {
        GROUP BY year, b.categories`,
       [uid]
     ),
+    // Daily finished counts for heatmap (last 12 months)
+    pool.query(
+      `SELECT TO_CHAR(finished_at, 'YYYY-MM-DD') AS day, COUNT(*) AS count
+       FROM reading_sessions
+       WHERE user_id = $1 AND finished_at IS NOT NULL
+         AND finished_at >= now() - interval '12 months'
+       GROUP BY day ORDER BY day`,
+      [uid]
+    ),
   ]);
 
   const yearMap = {};
@@ -69,6 +78,9 @@ export async function computeStats(uid) {
     }
   }
 
+  const dailyMap = {};
+  for (const row of dailySessions.rows) dailyMap[row.day] = Number(row.count);
+
   return {
     totalBooks: Number(totals.rows[0].total_books),
     totalSessions: Number(totals.rows[0].total_sessions),
@@ -77,6 +89,7 @@ export async function computeStats(uid) {
     currentlyReading: Number(currentlyReading.rows[0].count),
     monthly: monthlyMap,
     categoriesByYear: catsByYear,
+    dailySessions: dailyMap,
   };
 }
 

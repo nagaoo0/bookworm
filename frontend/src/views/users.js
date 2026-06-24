@@ -1,32 +1,37 @@
 import { api } from '../api.js';
+import { showToast } from '../components/toast.js';
 
 let feedFilter = 'all'; // 'all' | 'following'
+let activeTab = 'feed';
 
 export async function renderUsers(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
-    const [users, feed] = await Promise.all([
+    const [users, feed, challenges, groups] = await Promise.all([
       api.getUsers(),
       api.getFeed(feedFilter === 'following' ? 'following' : undefined).catch(() => []),
+      api.getChallenges().catch(() => []),
+      api.getGroups().catch(() => []),
     ]);
-    render(container, users, feed);
+    render(container, users, feed, challenges, groups);
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
   }
 }
 
-function render(container, users, feed) {
+function render(container, users, feed, challenges, groups) {
   container.innerHTML = `
     <div class="max-w-2xl mx-auto fade-in">
       <h1 class="text-2xl font-semibold mb-6">Readers</h1>
 
-      <div role="tablist" class="flex gap-1 mb-6 border-b border-stone-800">
-        <button role="tab" aria-selected="true"  class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="feed">Feed</button>
-        <button role="tab" aria-selected="false" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors" data-tab="readers">Readers</button>
+      <div role="tablist" class="flex gap-1 mb-6 border-b border-stone-800 overflow-x-auto">
+        <button role="tab" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap" data-tab="feed">Feed</button>
+        <button role="tab" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap" data-tab="readers">Readers</button>
+        <button role="tab" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap" data-tab="challenges">Challenges</button>
+        <button role="tab" class="readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap" data-tab="groups">Groups</button>
       </div>
 
-      <div id="tab-feed" class="tab-panel">
-        <!-- Feed filter toggle -->
+      <div id="tab-feed" class="tab-panel hidden">
         <div class="flex gap-2 mb-4">
           <button class="feed-filter-btn text-xs px-3 py-1.5 rounded-full border transition-colors ${feedFilter === 'all' ? 'bg-amber-500 border-amber-500 text-stone-950 font-semibold' : 'border-stone-600 text-stone-400 hover:border-stone-400'}"
                   data-filter="all">All readers</button>
@@ -35,25 +40,33 @@ function render(container, users, feed) {
         </div>
         <div id="feed-content">${renderFeed(feed)}</div>
       </div>
-      <div id="tab-readers" class="tab-panel hidden"></div>
+
+      <div id="tab-readers" class="tab-panel hidden">
+        ${renderReadersList(users)}
+      </div>
+
+      <div id="tab-challenges" class="tab-panel hidden"></div>
+      <div id="tab-groups" class="tab-panel hidden"></div>
     </div>`;
 
-  container.querySelector('#tab-readers').innerHTML = renderReadersList(users);
+  renderChallengesTab(container.querySelector('#tab-challenges'), challenges, container, users, feed, groups);
+  renderGroupsTab(container.querySelector('#tab-groups'), groups, container, users, feed, challenges);
 
-  function setTab(active) {
+  function setTab(tab) {
+    activeTab = tab;
     container.querySelectorAll('.readers-tab').forEach(btn => {
-      const on = btn.dataset.tab === active;
-      btn.className = `readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+      const on = btn.dataset.tab === tab;
+      btn.className = `readers-tab px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
         on ? 'bg-stone-900 text-amber-400 border-b-2 border-amber-500'
            : 'text-stone-400 hover:text-stone-200'
       }`;
       btn.setAttribute('aria-selected', String(on));
     });
     container.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
-    container.querySelector(`#tab-${active}`)?.classList.remove('hidden');
+    container.querySelector(`#tab-${tab}`)?.classList.remove('hidden');
   }
 
-  setTab('feed');
+  setTab(activeTab);
 
   container.querySelectorAll('.readers-tab').forEach(btn => {
     btn.addEventListener('click', () => setTab(btn.dataset.tab));
@@ -71,7 +84,6 @@ function render(container, users, feed) {
       } catch {
         feedContent.innerHTML = `<p class="text-stone-500 italic text-center py-10">Could not load feed.</p>`;
       }
-      // Update button styles
       container.querySelectorAll('.feed-filter-btn').forEach(b => {
         const active = b.dataset.filter === feedFilter;
         b.className = `feed-filter-btn text-xs px-3 py-1.5 rounded-full border transition-colors ${
@@ -83,6 +95,8 @@ function render(container, users, feed) {
   });
 }
 
+// ── Feed ───────────────────────────────────────────────────────────────────────
+
 function renderFeed(feed) {
   if (!feed.length) {
     const msg = feedFilter === 'following'
@@ -90,7 +104,6 @@ function renderFeed(feed) {
       : 'No reviews yet — be the first!';
     return `<p class="text-stone-500 italic text-center py-10">${msg}</p>`;
   }
-
   return `<div class="space-y-4">
     ${feed.map(s => {
       const date = s.finished_at
@@ -103,15 +116,13 @@ function renderFeed(feed) {
       const cover = s.cover_url
         ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-16 object-cover rounded shadow-md flex-shrink-0" />`
         : `<div class="w-12 h-16 bg-stone-800 rounded flex-shrink-0"></div>`;
-
       return `
         <div class="flex gap-4 bg-stone-900 rounded-xl p-4 ring-1 ring-white/5">
-          ${cover}
+          <a href="#book/${s.book_id}">${cover}</a>
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2 mb-1">
-              <p class="font-semibold leading-tight line-clamp-2">${escHtml(s.title)}</p>
-              <a href="#u/${escHtml(s.username)}"
-                 class="text-xs text-amber-400 hover:underline flex-shrink-0">@${escHtml(s.username)}</a>
+              <a href="#book/${s.book_id}" class="font-semibold leading-tight line-clamp-2 hover:text-amber-400 transition-colors">${escHtml(s.title)}</a>
+              <a href="#u/${escHtml(s.username)}" class="text-xs text-amber-400 hover:underline flex-shrink-0">@${escHtml(s.username)}</a>
             </div>
             ${authors ? `<p class="text-xs text-stone-400 mt-0.5">${escHtml(authors)}</p>` : ''}
             ${date    ? `<p class="text-xs text-stone-500 mt-1">${escHtml(date)}</p>` : ''}
@@ -123,11 +134,12 @@ function renderFeed(feed) {
   </div>`;
 }
 
+// ── Readers list ───────────────────────────────────────────────────────────────
+
 function renderReadersList(users) {
   if (!users.length) {
     return `<p class="text-stone-500 italic text-center py-10">No public profiles yet.</p>`;
   }
-
   return `<div class="space-y-3">
     ${users.map(u => `
       <a href="#u/${escHtml(u.username)}"
@@ -144,6 +156,367 @@ function renderReadersList(users) {
         </svg>
       </a>`).join('')}
   </div>`;
+}
+
+// ── Challenges ─────────────────────────────────────────────────────────────────
+
+function renderChallengesTab(el, challenges, rootContainer, users, feed, groups) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const active   = challenges.filter(c => c.end_date >= today);
+  const past     = challenges.filter(c => c.end_date < today);
+
+  el.innerHTML = `
+    <div class="space-y-6">
+      <button id="new-challenge-btn"
+        class="w-full py-2.5 border border-dashed border-stone-600 rounded-xl text-sm text-stone-400
+               hover:border-amber-500 hover:text-amber-400 transition-colors">
+        + Create challenge
+      </button>
+
+      <div id="challenge-form-wrap" class="hidden"></div>
+
+      ${active.length ? `
+      <section>
+        <h3 class="text-sm font-semibold text-stone-400 uppercase tracking-wider mb-3">Active</h3>
+        <div class="space-y-3" id="active-challenges">
+          ${active.map(c => challengeCard(c)).join('')}
+        </div>
+      </section>` : `<p class="text-stone-500 italic text-sm text-center py-6">No active challenges yet.</p>`}
+
+      ${past.length ? `
+      <section>
+        <h3 class="text-sm font-semibold text-stone-400 uppercase tracking-wider mb-3">Past</h3>
+        <div class="space-y-3">${past.map(c => challengeCard(c, true)).join('')}</div>
+      </section>` : ''}
+    </div>`;
+
+  el.querySelector('#new-challenge-btn')?.addEventListener('click', () => {
+    const wrap = el.querySelector('#challenge-form-wrap');
+    wrap.classList.toggle('hidden');
+    if (!wrap.classList.contains('hidden') && !wrap.innerHTML.trim()) {
+      wrap.innerHTML = challengeCreateForm();
+      wrap.querySelector('#challenge-create-form').addEventListener('submit', async e => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const errEl = wrap.querySelector('#challenge-err');
+        try {
+          await api.createChallenge({
+            title: fd.get('title'),
+            description: fd.get('description'),
+            goal: fd.get('goal'),
+            startDate: fd.get('startDate'),
+            endDate: fd.get('endDate'),
+          });
+          showToast('Challenge created!', 'success');
+          renderUsers(rootContainer);
+        } catch (err) {
+          errEl.textContent = err.message; errEl.classList.remove('hidden');
+        }
+      });
+      wrap.querySelector('#cancel-challenge-btn')?.addEventListener('click', () => {
+        wrap.classList.add('hidden');
+        wrap.innerHTML = '';
+      });
+    }
+  });
+
+  el.querySelectorAll('.join-challenge-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const joined = btn.dataset.joined === 'true';
+      try {
+        if (joined) { await api.leaveChallenge(id); }
+        else { await api.joinChallenge(id); }
+        renderUsers(rootContainer);
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+  });
+
+  el.querySelectorAll('.leaderboard-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const panel = el.querySelector(`#lb-${id}`);
+      if (!panel) return;
+      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+      panel.innerHTML = `<div class="flex justify-center py-4"><div class="spinner"></div></div>`;
+      panel.classList.remove('hidden');
+      try {
+        const { leaderboard } = await api.getChallengeLeaderboard(id);
+        panel.innerHTML = leaderboard.length
+          ? `<ol class="space-y-1.5 mt-2">
+              ${leaderboard.map((u, i) => `
+                <li class="flex items-center gap-3 text-sm">
+                  <span class="w-5 text-right text-stone-500 font-mono text-xs">${i + 1}</span>
+                  <a href="#u/${escHtml(u.username)}" class="flex-1 text-stone-200 hover:text-amber-400">${escHtml(u.username)}</a>
+                  <span class="text-amber-400 font-semibold">${u.books_read}</span>
+                </li>`).join('')}
+             </ol>`
+          : `<p class="text-stone-500 text-sm italic mt-2">No participants yet.</p>`;
+      } catch { panel.innerHTML = `<p class="text-red-400 text-xs mt-2">Failed to load.</p>`; }
+    });
+  });
+}
+
+function challengeCard(c, isPast = false) {
+  const start = new Date(c.start_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const end   = new Date(c.end_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const pct   = Math.min(100, Math.round((c.progress / c.goal) * 100));
+  return `
+    <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5">
+      <div class="flex items-start justify-between gap-3 mb-2">
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-stone-100">${escHtml(c.title)}</p>
+          ${c.description ? `<p class="text-xs text-stone-400 mt-0.5 line-clamp-2">${escHtml(c.description)}</p>` : ''}
+          <p class="text-xs text-stone-500 mt-1">${start} – ${end} · ${c.goal} books · ${c.participant_count} participant${c.participant_count !== 1 ? 's' : ''}</p>
+        </div>
+        ${!isPast ? `
+        <button class="join-challenge-btn flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
+          ${c.joined ? 'bg-stone-700 hover:bg-red-900/40 text-stone-300 hover:text-red-400' : 'bg-amber-500 hover:bg-amber-400 text-stone-950'}"
+          data-id="${c.id}" data-joined="${c.joined}">
+          ${c.joined ? 'Leave' : 'Join'}
+        </button>` : ''}
+      </div>
+      ${c.joined && !isPast ? `
+      <div class="mb-2">
+        <div class="flex items-center justify-between text-xs text-stone-500 mb-1">
+          <span>Your progress</span><span>${c.progress} / ${c.goal}</span>
+        </div>
+        <div class="w-full bg-stone-800 rounded-full h-1.5 overflow-hidden">
+          <div class="h-1.5 rounded-full bg-amber-400 transition-all" style="width:${pct}%"></div>
+        </div>
+      </div>` : ''}
+      <button class="leaderboard-btn text-xs text-stone-500 hover:text-amber-400 transition-colors" data-id="${c.id}">
+        Leaderboard ▾
+      </button>
+      <div id="lb-${c.id}" class="hidden"></div>
+    </div>`;
+}
+
+function challengeCreateForm() {
+  const today = new Date().toISOString().slice(0, 10);
+  return `
+    <form id="challenge-create-form" class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 space-y-3">
+      <p class="text-sm font-semibold">New challenge</p>
+      <div>
+        <label class="text-xs text-stone-400 block mb-1">Title</label>
+        <input name="title" required placeholder="e.g. Read 5 sci-fi books in July"
+          class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500" />
+      </div>
+      <div>
+        <label class="text-xs text-stone-400 block mb-1">Description (optional)</label>
+        <textarea name="description" rows="2" placeholder="What's the challenge about?"
+          class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:border-amber-500"></textarea>
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="text-xs text-stone-400 block mb-1">Goal (books)</label>
+          <input name="goal" type="number" min="1" max="9999" required value="5"
+            class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500" />
+        </div>
+        <div>
+          <label class="text-xs text-stone-400 block mb-1">Start</label>
+          <input name="startDate" type="date" required value="${today}"
+            class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500" />
+        </div>
+        <div>
+          <label class="text-xs text-stone-400 block mb-1">End</label>
+          <input name="endDate" type="date" required
+            class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500" />
+        </div>
+      </div>
+      <p id="challenge-err" class="text-xs text-red-400 hidden"></p>
+      <div class="flex gap-2">
+        <button type="submit"
+          class="flex-1 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+          Create
+        </button>
+        <button type="button" id="cancel-challenge-btn"
+          class="px-4 py-2 text-stone-400 hover:text-stone-200 rounded-lg text-sm transition-colors">
+          Cancel
+        </button>
+      </div>
+    </form>`;
+}
+
+// ── Groups ─────────────────────────────────────────────────────────────────────
+
+function renderGroupsTab(el, groups, rootContainer) {
+  el.innerHTML = `
+    <div class="space-y-6">
+      <div class="flex gap-2">
+        <button id="new-group-btn"
+          class="flex-1 py-2.5 border border-dashed border-stone-600 rounded-xl text-sm text-stone-400
+                 hover:border-amber-500 hover:text-amber-400 transition-colors">
+          + Create group
+        </button>
+        <button id="join-group-btn"
+          class="flex-1 py-2.5 border border-dashed border-stone-600 rounded-xl text-sm text-stone-400
+                 hover:border-amber-500 hover:text-amber-400 transition-colors">
+          Join by code
+        </button>
+      </div>
+
+      <div id="group-form-wrap" class="hidden"></div>
+
+      ${groups.length
+        ? `<div class="space-y-3" id="groups-list">${groups.map(g => groupCard(g)).join('')}</div>`
+        : `<p class="text-stone-500 italic text-sm text-center py-6">You're not in any groups yet.</p>`}
+    </div>`;
+
+  el.querySelector('#new-group-btn')?.addEventListener('click', () => {
+    showGroupForm(el, 'create', rootContainer);
+  });
+
+  el.querySelector('#join-group-btn')?.addEventListener('click', () => {
+    showGroupForm(el, 'join', rootContainer);
+  });
+
+  el.querySelectorAll('.leave-group-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api.leaveGroup(btn.dataset.id);
+        renderUsers(rootContainer);
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+  });
+
+  el.querySelectorAll('.group-feed-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const panel = el.querySelector(`#gf-${id}`);
+      if (!panel) return;
+      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+      panel.innerHTML = `<div class="flex justify-center py-4"><div class="spinner"></div></div>`;
+      panel.classList.remove('hidden');
+      try {
+        const feed = await api.getGroupFeed(id);
+        panel.innerHTML = feed.length
+          ? `<div class="space-y-3 mt-3">
+              ${feed.map(s => {
+                const stars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
+                const cover = s.cover_url
+                  ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-10 h-14 object-cover rounded flex-shrink-0" />`
+                  : `<div class="w-10 h-14 bg-stone-800 rounded flex-shrink-0"></div>`;
+                return `
+                  <div class="flex gap-3 bg-stone-800 rounded-xl p-3">
+                    <a href="#book/${s.book_id}">${cover}</a>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-start justify-between gap-1">
+                        <a href="#book/${s.book_id}" class="text-xs font-semibold hover:text-amber-400 line-clamp-1">${escHtml(s.title)}</a>
+                        <a href="#u/${escHtml(s.username)}" class="text-[11px] text-amber-400 hover:underline flex-shrink-0">@${escHtml(s.username)}</a>
+                      </div>
+                      ${stars ? `<p class="text-amber-400 text-xs mt-0.5">${stars}</p>` : ''}
+                      ${s.review ? `<p class="text-xs text-stone-300 mt-1 line-clamp-2">${escHtml(s.review)}</p>` : ''}
+                    </div>
+                  </div>`;
+              }).join('')}
+             </div>`
+          : `<p class="text-stone-500 text-sm italic mt-2">No activity yet.</p>`;
+      } catch { panel.innerHTML = `<p class="text-red-400 text-xs mt-2">Failed to load.</p>`; }
+    });
+  });
+}
+
+function groupCard(g) {
+  return `
+    <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5">
+      <div class="flex items-start justify-between gap-3 mb-1">
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-stone-100">${escHtml(g.name)}</p>
+          ${g.description ? `<p class="text-xs text-stone-400 mt-0.5 line-clamp-2">${escHtml(g.description)}</p>` : ''}
+          <p class="text-xs text-stone-500 mt-1">${g.member_count} member${g.member_count !== 1 ? 's' : ''} · by @${escHtml(g.created_by)}</p>
+          ${g.role === 'admin' ? `<p class="text-xs text-stone-500 mt-0.5">Invite code: <span class="font-mono text-amber-500">${escHtml(g.invite_code)}</span></p>` : ''}
+        </div>
+        <button class="leave-group-btn flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold
+                       bg-stone-700 hover:bg-red-900/40 text-stone-300 hover:text-red-400 transition-colors"
+                data-id="${g.id}">Leave</button>
+      </div>
+      <button class="group-feed-btn text-xs text-stone-500 hover:text-amber-400 transition-colors mt-1" data-id="${g.id}">
+        Group feed ▾
+      </button>
+      <div id="gf-${g.id}" class="hidden"></div>
+    </div>`;
+}
+
+function showGroupForm(el, mode, rootContainer) {
+  const wrap = el.querySelector('#group-form-wrap');
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = mode === 'create' ? groupCreateForm() : groupJoinForm();
+
+  if (mode === 'create') {
+    wrap.querySelector('#group-create-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const errEl = wrap.querySelector('#group-err');
+      try {
+        await api.createGroup({ name: fd.get('name'), description: fd.get('description') });
+        showToast('Group created!', 'success');
+        renderUsers(rootContainer);
+      } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+    });
+  } else {
+    wrap.querySelector('#group-join-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const errEl = wrap.querySelector('#group-err');
+      try {
+        await api.joinGroup(fd.get('code'));
+        showToast('Joined group!', 'success');
+        renderUsers(rootContainer);
+      } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+    });
+  }
+
+  wrap.querySelector('.cancel-group-btn')?.addEventListener('click', () => {
+    wrap.classList.add('hidden');
+    wrap.innerHTML = '';
+  });
+}
+
+function groupCreateForm() {
+  return `
+    <form id="group-create-form" class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 space-y-3">
+      <p class="text-sm font-semibold">New group</p>
+      <div>
+        <label class="text-xs text-stone-400 block mb-1">Name</label>
+        <input name="name" required placeholder="e.g. Sci-fi Club"
+          class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500" />
+      </div>
+      <div>
+        <label class="text-xs text-stone-400 block mb-1">Description (optional)</label>
+        <textarea name="description" rows="2"
+          class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm resize-none focus:outline-none focus:border-amber-500"></textarea>
+      </div>
+      <p id="group-err" class="text-xs text-red-400 hidden"></p>
+      <div class="flex gap-2">
+        <button type="submit"
+          class="flex-1 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+          Create
+        </button>
+        <button type="button" class="cancel-group-btn px-4 py-2 text-stone-400 hover:text-stone-200 rounded-lg text-sm">Cancel</button>
+      </div>
+    </form>`;
+}
+
+function groupJoinForm() {
+  return `
+    <form id="group-join-form" class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 space-y-3">
+      <p class="text-sm font-semibold">Join a group</p>
+      <div>
+        <label class="text-xs text-stone-400 block mb-1">Invite code</label>
+        <input name="code" required placeholder="8-character code"
+          class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+      </div>
+      <p id="group-err" class="text-xs text-red-400 hidden"></p>
+      <div class="flex gap-2">
+        <button type="submit"
+          class="flex-1 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-colors">
+          Join
+        </button>
+        <button type="button" class="cancel-group-btn px-4 py-2 text-stone-400 hover:text-stone-200 rounded-lg text-sm">Cancel</button>
+      </div>
+    </form>`;
 }
 
 function escHtml(str) {
