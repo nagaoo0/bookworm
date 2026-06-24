@@ -153,7 +153,7 @@ function renderShelvesTab(shelves, library, myBookIds = new Set()) {
           <span class="text-sm font-normal text-stone-500 ml-2">${readingBooks.length}</span>
         </h2>
         <div class="book-grid">
-          ${readingBooks.map(b => bookCardHTML(b, { readOnly: true, isReading: true, alsoRead: myBookIds.has(String(b.book_id)) })).join('')}
+          ${readingBooks.map(b => bookCardHTML(b, { readOnly: true, isReading: true, alsoRead: !isOwnProfile && myBookIds.has(String(b.book_id)) })).join('')}
         </div>
       </section>` : '';
 
@@ -169,7 +169,7 @@ function renderShelvesTab(shelves, library, myBookIds = new Set()) {
           <span class="text-sm text-stone-500">${books.length}</span>
         </div>
         <div class="book-grid">
-          ${books.map(b => bookCardHTML(b, { readOnly: true, alsoRead: myBookIds.has(String(b.book_id)) })).join('')}
+          ${books.map(b => bookCardHTML(b, { readOnly: true, alsoRead: !isOwnProfile && myBookIds.has(String(b.book_id)) })).join('')}
         </div>
       </section>`;
   }).join('');
@@ -187,7 +187,7 @@ function renderStatusTab({ to_read, reading, done }, myBookIds = new Set()) {
           <span class="text-sm font-normal text-stone-500 ml-2">${books.length}</span>
         </h2>
         <div class="book-grid">
-          ${books.map(b => bookCardHTML(b, { readOnly: true, alsoRead: myBookIds.has(String(b.book_id)) })).join('')}
+          ${books.map(b => bookCardHTML(b, { readOnly: true, alsoRead: !isOwnProfile && myBookIds.has(String(b.book_id)) })).join('')}
         </div>
       </section>`;
   };

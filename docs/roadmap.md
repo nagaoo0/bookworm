@@ -17,93 +17,55 @@ What's built, what's known to need work, and ideas for future improvements.
 - **Import / Export** — tab-separated CSV compatible with Places reading app format
 - **Appearance** — dark / sepia / light theme; miniature–large card sizes; accent color picker
 - **Self-hosted** — runs on any VPS with `docker compose up --build`
+- **Library search & filter** — real-time client-side filter by title/author; sort by date added, title, author
+- **Book detail page** — dedicated `#book/:id` route with sessions, notes, status, shelves, progress, comments
+- **Bulk actions** — checkbox multi-select with floating bar: set status, remove
+- **Progress tracking** — percent-read slider on currently-reading books; progress bar on cover card
+- **Reading goals** — yearly goal with progress bar on Stats page
+- **Follow / unfollow** — follow button on profiles and reader cards
+- **Book comments** — per-book comments on the detail page; author can delete
+- **Activity notifications** — bell icon with unread badge; follow and comment notifications
 
 ---
 
-## UI / UX improvements
+## Next up
 
-### In progress / next up
-
-#### Library search & filter
-A search input above the shelf bar that filters visible books by title or author in real time (client-side). No API call needed — filter the already-loaded `library` array in state. Pair with a sort dropdown (added date, title A–Z, author, rating).
-
-#### Sort options on shelves
-Dropdown or segmented control per shelf: **Date added** (default), **Title A–Z**, **Author**, **Rating** (sessions average). Purely client-side sort of the already-loaded library array.
-
-#### Book detail page (`#book/:id`)
-A dedicated route showing cover, description, full metadata, all logged sessions, and notes — everything currently scattered across the modal. The modal becomes a quick-access shortcut; the detail page is the canonical view.
-
-#### Skeleton loading cards
-Replace the centered spinner with grey placeholder cards that match the grid layout. Reduces layout shift and feels faster.
-
-#### Keyboard navigation in context menu
-Arrow keys navigate items, `Enter` selects, `Escape` closes. The menu already exists; this is a small event-listener addition.
-
-#### Swipe-to-dismiss on toast notifications
-Touch users can swipe the toast left/right to dismiss early.
-
-#### Empty shelf states with CTA
-When a shelf has no books, show a friendly message and a direct link to search.
-
-#### Bulk actions
-Checkbox multi-select on cards; a floating action bar appears when books are selected offering Move to shelf, Change status, Remove.
-
-#### Reading goals
-A yearly reading goal (e.g. "read 24 books in 2026"). Stored in a `goals` table (`user_id`, `year`, `target`). A progress bar appears on the Stats page and optionally in the nav.
-
----
-
-### Medium-term UI/UX
-
-#### Progress tracking
-An optional "current page" or "percent read" field on the currently-reading status. Stored in `library_books.progress_page` / `progress_pct`. A thin progress bar renders at the bottom of the cover card.
-
-#### Recommendations ("People who read X also read Y")
-Co-occurrence query across `library_books`: find books most commonly paired with a given title in other users' libraries. Surface them in the book detail page and as a "Discover" section on Home.
-
-#### Pagination / virtual scroll
-`LIMIT`/`OFFSET` on the library API; "Load more" button or intersection-observer infinite scroll. Needed once a library exceeds ~300 books.
+### UI / UX
 
 #### Reading log / calendar heatmap
 A GitHub-style activity heatmap on the Stats page showing days on which sessions were logged.
+
+#### Recommendations ("People who read X also read Y")
+Co-occurrence query across `library_books`: find books most commonly paired with a given title in other users' libraries. Surface them on the book detail page.
+
+#### "Also read" indicator
+When viewing someone else's public profile, books present in both their library and yours get a subtle shared-badge overlay on the cover card.
+
+#### Pagination / virtual scroll
+`LIMIT`/`OFFSET` on the library API; "Load more" button or intersection-observer infinite scroll. Needed once a library exceeds ~300 books.
 
 #### Series / collections
 A `series` field on `books` and a series grouping on shelves — "Dune (5 of 6 read)".
 
 ---
 
-## Social features
+### Social
 
-### In progress / next up
-
-#### Follow / unfollow
-A `follows` table (`follower_id`, `following_id`). Follow button on public profile pages and on reader cards. The Feed tab on `#readers` defaults to showing only followed users' activity, with a toggle for "All readers".
-
-#### "Also read" indicator
-When viewing someone else's public profile, books present in both their library and yours get a subtle shared-badge overlay on the cover card.
-
-#### Book comments
-A `comments` table (`book_id`, `user_id`, `body`, `created_at`). Comments appear in the book detail page and optionally on profile history cards. Visible to all logged-in users; only the author can delete.
-
-#### Activity notifications
-A `notifications` table (`user_id`, `type`, `payload`, `read_at`). Types: `follow`, `comment`. A bell icon in the nav shows an unread count badge; clicking it opens a notification panel.
-
----
-
-### Medium-term social
-
-#### Reading challenges
-A public time-boxed challenge (e.g. "Read 5 sci-fi books in July 2026") that any user can join. A `challenges` table + `challenge_entries` join. A leaderboard on the `#readers` page shows participants and their progress.
+#### Feed filter (following only)
+The Feed tab on `#readers` defaults to showing only followed users' activity, with a toggle for "All readers".
 
 #### "Want to read" exchange
-On a book's detail page, show which followed users have it on their to-read list and which have already reviewed it — implicit recommendations from people you trust.
+On a book's detail page, show which followed users have it on their to-read list and which have already reviewed it.
+
+#### Reading challenges
+A public time-boxed challenge (e.g. "Read 5 sci-fi books in July 2026") that any user can join. A `challenges` table + `challenge_entries` join. A leaderboard on the `#readers` page.
 
 #### Reading groups / book clubs
-A `groups` table (name, description, invite code). Members share a group shelf that everyone can add to, with a group-scoped feed of activity and comments. Requires a group admin role.
+A `groups` table (name, description, invite code). Members share a group shelf with a group-scoped feed and comments.
 
 ---
 
-## Known issues (carry-over)
+## Known issues
 
 - **No pagination** — library loads all books at once; will slow down with very large collections.
 - **Cover images for manual entries** — only works if you paste a URL; no image search fallback.
