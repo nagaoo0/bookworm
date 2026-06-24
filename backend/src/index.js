@@ -20,6 +20,7 @@ import commentsRouter from './routes/comments.js';
 import booksRouter from './routes/books.js';
 import challengesRouter from './routes/challenges.js';
 import groupsRouter from './routes/groups.js';
+import { getBook } from './googleBooks.js';
 
 const app = express();
 
@@ -102,6 +103,42 @@ app.get('/api/users', async (_req, res, next) => {
        ORDER BY u.username`
     );
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Public: look up (or upsert) a book by Google ID — used when navigating to a search result
+app.get('/api/books/by-google/:googleId', async (req, res, next) => {
+  try {
+    const { googleId } = req.params;
+    // Try the DB first
+    const { rows: [existing] } = await pool.query(
+      `SELECT id, google_id, title, authors, cover_url, page_count,
+              published_date, description, categories, publisher
+       FROM books WHERE google_id = $1`,
+      [googleId]
+    );
+    if (existing) return res.json(existing);
+
+    // Not in DB yet — fetch from Google Books and insert
+    const g = await getBook(googleId);
+    const { rows: [inserted] } = await pool.query(
+      `INSERT INTO books (google_id, title, authors, cover_url, page_count, published_date, description, categories)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (google_id) DO UPDATE
+         SET title          = EXCLUDED.title,
+             authors        = EXCLUDED.authors,
+             cover_url      = EXCLUDED.cover_url,
+             page_count     = EXCLUDED.page_count,
+             published_date = EXCLUDED.published_date,
+             description    = EXCLUDED.description,
+             categories     = EXCLUDED.categories
+       RETURNING id, google_id, title, authors, cover_url, page_count,
+                 published_date, description, categories, publisher`,
+      [g.googleId, g.title, g.authors, g.coverUrl, g.pageCount, g.publishedDate, g.description, g.categories]
+    );
+    res.json(inserted);
   } catch (err) {
     next(err);
   }

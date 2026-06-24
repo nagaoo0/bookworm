@@ -187,6 +187,15 @@ function renderResults(container, results) {
     const book = results.find(b => b.googleId === card.dataset.googleId);
     if (!book) return;
 
+    // Clicking the card body navigates to the detail page; add-area handles its own clicks
+    if (book.googleId) {
+      card.style.cursor = 'pointer';
+      addArea.addEventListener('click', e => e.stopPropagation());
+      card.addEventListener('click', () => {
+        location.hash = `#book/g:${book.googleId}`;
+      });
+    }
+
     const existing = book.googleId ? (libraryByGoogleId[book.googleId] ?? []) : [];
 
     if (existing.length) {
@@ -212,7 +221,7 @@ function renderResults(container, results) {
     }
 
     addArea.querySelector('.add-btn').addEventListener('click', async e => {
-      e.stopPropagation();
+      e.stopPropagation(); // don't bubble to card click handler
       const shelfId = Number(addArea.querySelector('.shelf-select')?.value) || undefined;
       const btn = addArea.querySelector('.add-btn');
       btn.disabled = true;

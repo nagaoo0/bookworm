@@ -9,12 +9,23 @@ export async function renderBook(container, bookId) {
 
   try {
     const { library, shelves, user } = getState();
+
+    // Support #book/g:<googleId> — resolve to a DB record first, then rewrite URL
+    let resolvedId = bookId;
+    if (bookId.startsWith('g:')) {
+      const googleId = bookId.slice(2);
+      const resolved = await api.getBookByGoogleId(googleId);
+      resolvedId = resolved.id;
+      // Rewrite hash without triggering another navigation
+      history.replaceState(null, '', `#book/${resolvedId}`);
+    }
+
     const [book, sessions, comments, recs, social] = await Promise.all([
-      api.getBookDetail(bookId),
-      api.getSessions(bookId),
-      api.getComments(bookId),
-      api.getRecommendations(bookId).catch(() => []),
-      user ? api.getBookSocial(bookId).catch(() => []) : Promise.resolve([]),
+      api.getBookDetail(resolvedId),
+      user ? api.getSessions(resolvedId).catch(() => []) : Promise.resolve([]),
+      api.getComments(resolvedId),
+      api.getRecommendations(resolvedId).catch(() => []),
+      user ? api.getBookSocial(resolvedId).catch(() => []) : Promise.resolve([]),
     ]);
     mount(container, book, sessions, comments, library ?? [], shelves ?? [], recs, social);
   } catch (err) {
