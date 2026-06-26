@@ -87,7 +87,9 @@ router.get('/:username', async (req, res, next) => {
                   '{}'::INT[]
                 ) AS shelf_ids,
                 b.id AS book_id, b.google_id, b.title, b.authors,
-                b.cover_url, b.page_count, b.published_date
+                COALESCE(lb.cover_url_override,      b.cover_url)      AS cover_url,
+                COALESCE(lb.page_count_override,     b.page_count)     AS page_count,
+                COALESCE(lb.published_date_override, b.published_date) AS published_date
          FROM library_books lb
          JOIN books b ON b.id = lb.book_id
          LEFT JOIN shelf_memberships sm ON sm.library_book_id = lb.id

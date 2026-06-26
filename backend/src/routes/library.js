@@ -12,7 +12,11 @@ const LIBRARY_SELECT = `
            '{}'::INT[]
          ) AS shelf_ids,
          b.id AS book_id, b.google_id, b.title, b.authors,
-         b.cover_url, b.page_count, b.published_date, b.description, b.categories
+         COALESCE(lb.cover_url_override,      b.cover_url)      AS cover_url,
+         COALESCE(lb.page_count_override,     b.page_count)     AS page_count,
+         COALESCE(lb.published_date_override, b.published_date) AS published_date,
+         COALESCE(lb.description_override,    b.description)    AS description,
+         COALESCE(lb.categories_override,     b.categories)     AS categories
   FROM library_books lb
   JOIN books b ON b.id = lb.book_id
   LEFT JOIN shelf_memberships sm ON sm.library_book_id = lb.id`;
@@ -196,54 +200,77 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-// ── PATCH /api/library/:id/metadata — update the underlying book record ───────
+// ── PATCH /api/library/:id/metadata — update per-user overrides ───────────────
 router.patch('/:id/metadata', async (req, res, next) => {
   try {
-  // Verify the library entry belongs to this user
-  const { rows: [lb] } = await pool.query(
-    `SELECT book_id FROM library_books WHERE id = $1 AND user_id = $2`,
-    [req.params.id, req.user.id]
-  );
-  if (!lb) return res.status(404).json({ error: 'Not found' });
+    const { rows: [lb] } = await pool.query(
+      `SELECT id, book_id FROM library_books WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!lb) return res.status(404).json({ error: 'Not found' });
 
-  const { googleId, coverUrl, categories, pageCount, publishedDate, description } = req.body;
+    const { googleId, coverUrl, categories, pageCount, publishedDate, description } = req.body;
 
-  await pool.query(
-    `UPDATE books SET
-       google_id      = COALESCE($1, google_id),
-       cover_url      = COALESCE($2, cover_url),
-       categories     = COALESCE($3, categories),
-       page_count     = COALESCE($4, page_count),
-       published_date = COALESCE($5, published_date),
-       description    = COALESCE($6, description)
-     WHERE id = $7`,
-    [googleId ?? null, coverUrl ?? null, categories ?? null,
-     pageCount ?? null, publishedDate ?? null, description ?? null, lb.book_id]
-  );
-
-  // If a googleId was attached and we previously had none, refetch full metadata
-  if (googleId) {
-    try {
-      const meta = await getBook(googleId);
+    // If a googleId is being attached, link it on the shared books record only
+    // (this is a structural link, not display data — does not leak display changes)
+    if (googleId) {
       await pool.query(
-        `UPDATE books SET
-           cover_url      = COALESCE($1, cover_url),
-           categories     = COALESCE($2, categories),
-           page_count     = COALESCE($3, page_count),
-           published_date = COALESCE($4, published_date),
-           description    = COALESCE($5, description),
-           authors        = CASE WHEN array_length(authors,1) IS NULL THEN $6 ELSE authors END
-         WHERE id = $7`,
-        [meta.coverUrl ?? null, meta.categories ?? null, meta.pageCount ?? null,
-         meta.publishedDate ?? null, meta.description ?? null, meta.authors ?? null, lb.book_id]
+        `UPDATE books SET google_id = $1 WHERE id = $2 AND google_id IS NULL`,
+        [googleId, lb.book_id]
       );
-    } catch { /* non-fatal */ }
-  }
+    }
 
-  const { rows: [full] } = await pool.query(
-    `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [req.params.id]
-  );
-  res.json(full);
+    // Write display metadata as per-user overrides on the library_books row.
+    // Only fields that were actually provided in the request are updated.
+    await pool.query(
+      `UPDATE library_books SET
+         cover_url_override      = CASE WHEN $1::boolean THEN $2 ELSE cover_url_override      END,
+         categories_override     = CASE WHEN $3::boolean THEN $4 ELSE categories_override     END,
+         page_count_override     = CASE WHEN $5::boolean THEN $6 ELSE page_count_override     END,
+         published_date_override = CASE WHEN $7::boolean THEN $8 ELSE published_date_override END,
+         description_override    = CASE WHEN $9::boolean THEN $10 ELSE description_override   END
+       WHERE id = $11`,
+      [
+        coverUrl      !== undefined, coverUrl      ?? null,
+        categories    !== undefined, categories    ?? null,
+        pageCount     !== undefined, pageCount     ?? null,
+        publishedDate !== undefined, publishedDate ?? null,
+        description   !== undefined, description   ?? null,
+        lb.id,
+      ]
+    );
+
+    // If a googleId was attached, also pull down Google Books metadata as the
+    // user's personal overrides (so they immediately see the enriched data)
+    if (googleId) {
+      try {
+        const meta = await getBook(googleId);
+        await pool.query(
+          `UPDATE library_books SET
+             cover_url_override      = COALESCE($1, cover_url_override),
+             categories_override     = COALESCE($2, categories_override),
+             page_count_override     = COALESCE($3, page_count_override),
+             published_date_override = COALESCE($4, published_date_override),
+             description_override    = COALESCE($5, description_override)
+           WHERE id = $6`,
+          [meta.coverUrl ?? null, meta.categories ?? null, meta.pageCount ?? null,
+           meta.publishedDate ?? null, meta.description ?? null, lb.id]
+        );
+        // Also update authors on the shared books record if currently blank
+        if (meta.authors?.length) {
+          await pool.query(
+            `UPDATE books SET authors = $1
+             WHERE id = $2 AND (array_length(authors,1) IS NULL OR array_length(authors,1) = 0)`,
+            [meta.authors, lb.book_id]
+          );
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    const { rows: [full] } = await pool.query(
+      `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [lb.id]
+    );
+    res.json(full);
   } catch (err) {
     next(err);
   }

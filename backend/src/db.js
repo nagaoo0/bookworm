@@ -162,6 +162,13 @@ export async function migrate() {
     ALTER TABLE library_books ADD COLUMN IF NOT EXISTS progress_page INT;
     ALTER TABLE library_books ADD COLUMN IF NOT EXISTS progress_pct  SMALLINT CHECK (progress_pct >= 0 AND progress_pct <= 100);
 
+    -- Per-user metadata overrides (so edits don't affect the shared books record)
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS cover_url_override      TEXT;
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS categories_override     TEXT[];
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS page_count_override     INT;
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS published_date_override TEXT;
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS description_override    TEXT;
+
     -- Profile enrichment
     ALTER TABLE users ADD COLUMN IF NOT EXISTS bio        TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;

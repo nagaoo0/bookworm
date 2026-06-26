@@ -52,8 +52,15 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
     renderLibraryPanel(container, book, newEntry, newShelves);
   };
 
-  const coverImg = book.cover_url
-    ? `<img src="${escHtml(book.cover_url)}" alt="${escHtml(book.title)}"
+  // Prefer the user's per-library-entry overrides over the shared book record
+  const effectiveCover       = libEntry?.cover_url       ?? book.cover_url;
+  const effectivePageCount   = libEntry?.page_count      ?? book.page_count;
+  const effectivePublished   = libEntry?.published_date  ?? book.published_date;
+  const effectiveDescription = libEntry?.description     ?? book.description;
+  const effectiveCategories  = libEntry?.categories      ?? book.categories;
+
+  const coverImg = effectiveCover
+    ? `<img src="${escHtml(effectiveCover)}" alt="${escHtml(book.title)}"
             class="w-full object-cover rounded-xl shadow-2xl" />`
     : `<div class="w-full aspect-[2/3] bg-stone-800 rounded-xl flex items-center justify-center">
          <span class="text-stone-600 text-4xl">📖</span>
@@ -98,12 +105,12 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
           </div>
 
           <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-stone-400">
-            ${book.published_date ? `<span class="flex items-center gap-1.5">
+            ${effectivePublished ? `<span class="flex items-center gap-1.5">
               <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-              ${escHtml(book.published_date)}</span>` : ''}
-            ${book.page_count ? `<span class="flex items-center gap-1.5">
+              ${escHtml(effectivePublished)}</span>` : ''}
+            ${effectivePageCount ? `<span class="flex items-center gap-1.5">
               <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-              ${book.page_count} pages</span>` : ''}
+              ${effectivePageCount} pages</span>` : ''}
             ${book.publisher ? `<span class="flex items-center gap-1.5">
               <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
               ${escHtml(book.publisher)}</span>` : ''}
@@ -111,18 +118,18 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
 
           ${stars ? `<p class="text-amber-400">${stars} <span class="text-stone-500 text-sm ml-1">${sessions.filter(s => s.rating).length} rating${sessions.filter(s => s.rating).length !== 1 ? 's' : ''}</span></p>` : ''}
 
-          ${(book.categories ?? []).length ? `
+          ${(effectiveCategories ?? []).length ? `
           <div class="flex flex-wrap gap-2">
-            ${book.categories.map(c => `<span class="text-xs bg-stone-800 px-2 py-1 rounded-full text-stone-400">${escHtml(c)}</span>`).join('')}
+            ${effectiveCategories.map(c => `<span class="text-xs bg-stone-800 px-2 py-1 rounded-full text-stone-400">${escHtml(c)}</span>`).join('')}
           </div>` : ''}
 
-          ${book.description ? `
+          ${effectiveDescription ? `
           <details class="group">
             <summary class="text-sm text-amber-400 hover:text-amber-300 cursor-pointer list-none flex items-center gap-1.5">
               <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
               Description
             </summary>
-            <p class="mt-2 text-sm text-stone-300 leading-relaxed">${escHtml(book.description)}</p>
+            <p class="mt-2 text-sm text-stone-300 leading-relaxed">${escHtml(effectiveDescription)}</p>
           </details>` : ''}
 
           <!-- Library panel (status, shelves, progress, notes, cover, meta) -->
