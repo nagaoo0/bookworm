@@ -238,6 +238,12 @@ function renderResults(container, results) {
           ${shelves.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('')}
         </select>` : '';
       addArea.innerHTML = `
+        <select class="status-select w-full bg-stone-800 border border-stone-700 rounded text-[11px] px-1.5 py-1
+                       focus:outline-none focus:border-amber-500">
+          <option value="to_read">To Read</option>
+          <option value="reading">Reading</option>
+          <option value="done">Done</option>
+        </select>
         ${shelfSelect}
         <button class="add-btn w-full text-[11px] px-2 py-1 rounded bg-stone-700
                        hover:bg-amber-500 hover:text-stone-950 transition-colors font-medium">
@@ -246,8 +252,9 @@ function renderResults(container, results) {
     }
 
     addArea.querySelector('.add-btn').addEventListener('click', async e => {
-      e.stopPropagation(); // don't bubble to card click handler
+      e.stopPropagation();
       const shelfId = Number(addArea.querySelector('.shelf-select')?.value) || undefined;
+      const status  = addArea.querySelector('.status-select')?.value || 'to_read';
       const btn = addArea.querySelector('.add-btn');
       btn.disabled = true;
       btn.textContent = '…';
@@ -262,6 +269,7 @@ function renderResults(container, results) {
           description:   book.description,
           categories:    book.categories,
           shelfId:       shelfId || undefined,
+          status,
         });
         btn.textContent = '✓ Added';
         btn.classList.replace('bg-stone-700', 'bg-green-800');
