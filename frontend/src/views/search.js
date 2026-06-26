@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { loadLibrary } from './home.js';
+import { loadPrefs } from '../prefs.js';
 
 const LANGUAGES = [
   ['', 'Any language'],
@@ -25,6 +26,7 @@ let debounceTimer;
 
 export function renderSearch(container) {
   const { searchResults, searchQuery } = getState();
+  const { searchLanguage: prefLang } = loadPrefs();
 
   container.innerHTML = `
     <div class="max-w-2xl mx-auto mb-6 space-y-3 fade-in">
@@ -63,7 +65,7 @@ export function renderSearch(container) {
               <select id="adv-language"
                 class="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all duration-150"
                 style="background:rgba(12,10,9,0.8);border:1px solid rgba(68,64,60,0.8);color:var(--color-text)">
-                ${LANGUAGES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+                ${LANGUAGES.map(([v, l]) => `<option value="${v}"${prefLang === v ? ' selected' : ''}>${l}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -105,7 +107,8 @@ export function renderSearch(container) {
     const q = e.target.value.trim();
     setState({ searchQuery: q });
     if (!q) { renderResults(container, []); return; }
-    debounceTimer = setTimeout(() => runSearch({ q }, container), 400);
+    const { searchLanguage } = loadPrefs();
+    debounceTimer = setTimeout(() => runSearch({ q, language: searchLanguage || undefined }, container), 400);
   });
 
   const advPanel = container.querySelector('#advanced-form');
@@ -121,13 +124,15 @@ export function renderSearch(container) {
   });
 
   container.querySelector('#adv-search-btn').addEventListener('click', () => {
+    const { searchLanguage } = loadPrefs();
+    const advLang = container.querySelector('#adv-language')?.value;
     const params = {
       title:     container.querySelector('#adv-title')?.value.trim()    || undefined,
       author:    container.querySelector('#adv-author')?.value.trim()   || undefined,
       subject:   container.querySelector('#adv-subject')?.value.trim()  || undefined,
       publisher: container.querySelector('#adv-publisher')?.value.trim()|| undefined,
       isbn:      container.querySelector('#adv-isbn')?.value.trim()     || undefined,
-      language:  container.querySelector('#adv-language')?.value        || undefined,
+      language:  advLang || searchLanguage || undefined,
     };
     const hasAny = Object.entries(params).some(([k, v]) => k !== 'language' && v);
     if (!hasAny) return;

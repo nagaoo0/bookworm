@@ -1,5 +1,5 @@
 const KEY = 'bw_prefs';
-const DEFAULTS = { theme: 'dark', cardSize: 'medium', accent: 'amber' };
+const DEFAULTS = { theme: 'dark', cardSize: 'medium', accent: 'amber', searchLanguage: '' };
 
 export function loadPrefs() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; }

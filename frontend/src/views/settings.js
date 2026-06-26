@@ -4,6 +4,14 @@ import { loadPrefs, savePrefs, ACCENT_COLORS } from '../prefs.js';
 import { showToast } from '../components/toast.js';
 import { avatarHTML } from '../components/avatar.js';
 
+const SEARCH_LANGUAGES = [
+  ['', 'Any language'],
+  ['en', 'English'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'],
+  ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['ru', 'Russian'],
+  ['zh', 'Chinese'], ['ja', 'Japanese'], ['ko', 'Korean'], ['ar', 'Arabic'],
+  ['pl', 'Polish'], ['sv', 'Swedish'], ['cs', 'Czech'],
+];
+
 export async function renderSettings(container) {
   const { user } = getState();
   if (!user) return;
@@ -217,7 +225,7 @@ function attachGoalHandlers(container, goal, year) {
 }
 
 function renderAppearanceSection() {
-  const { theme, cardSize, accent } = loadPrefs();
+  const { theme, cardSize, accent, searchLanguage } = loadPrefs();
 
   const activeStyle = 'border-color:var(--color-accent);color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 10%,transparent)';
   const idleClass = 'border-stone-600 text-stone-400 hover:border-stone-400';
@@ -272,6 +280,16 @@ function renderAppearanceSection() {
           ${Object.keys(ACCENT_COLORS).map(accentSwatch).join('')}
         </div>
       </div>
+
+      <div class="space-y-2">
+        <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Search language</p>
+        <p class="text-xs text-stone-500">Default language filter applied to all book searches. You can still override it per-search in the advanced form.</p>
+        <select id="search-language-select"
+          class="rounded-lg px-3 py-2 text-sm outline-none transition-all duration-150"
+          style="background:rgba(12,10,9,0.8);border:1px solid rgba(68,64,60,0.8);color:var(--color-text)">
+          ${SEARCH_LANGUAGES.map(([v, l]) => `<option value="${v}"${searchLanguage === v ? ' selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </div>
     </section>`;
 }
 
@@ -294,6 +312,11 @@ function attachAppearanceHandlers(container) {
       api.updateMe({ accent: btn.dataset.accent }).catch(() => {});
       refresh();
     });
+  });
+
+  container.querySelector('#search-language-select')?.addEventListener('change', e => {
+    savePrefs({ searchLanguage: e.target.value });
+    showToast(e.target.value ? `Search language set to ${e.target.options[e.target.selectedIndex].text}.` : 'Search language set to any.');
   });
 }
 
