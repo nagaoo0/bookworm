@@ -12,6 +12,7 @@ import statsRouter from './routes/stats.js';
 import shelvesRouter from './routes/shelves.js';
 import invitesRouter from './routes/invites.js';
 import profilesRouter from './routes/profiles.js';
+import profileShelfRouter from './routes/profileShelf.js';
 import importExportRouter from './routes/importExport.js';
 import followsRouter from './routes/follows.js';
 import notificationsRouter from './routes/notifications.js';
@@ -55,6 +56,7 @@ const authLimiter = rateLimit({
 
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/profiles', profilesRouter);
+app.use('/api/profile-shelf', profileShelfRouter);
 
 // Feed — public, but supports ?filter=following (requires session cookie if provided)
 app.get('/api/feed', async (req, res, next) => {

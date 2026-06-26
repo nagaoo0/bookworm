@@ -38,6 +38,8 @@ export const api = {
   getProfile: (username) => request(`/profiles/${username}`),
   getProfileFollowers: (username) => request(`/profiles/${encodeURIComponent(username)}/followers`),
   getProfileFollowing: (username) => request(`/profiles/${encodeURIComponent(username)}/following`),
+  getProfileShelf: (username) => request(`/profiles/${encodeURIComponent(username)}/shelf`),
+  setShelfSlot: (slot, bookId) => request(`/profile-shelf/${encodeURIComponent(slot)}`, { method: 'PUT', body: { bookId: bookId ?? null } }),
 
   search: (q) => request(`/search?${typeof q === 'string' && !q.includes('=') ? `q=${encodeURIComponent(q)}` : q}`),
 

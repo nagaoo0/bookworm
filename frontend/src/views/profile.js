@@ -98,18 +98,21 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="stats" aria-selected="false">Stats</button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="followers" aria-selected="false">Followers <span class="ml-1 text-xs text-stone-500">${followerCount ?? 0}</span></button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="following" aria-selected="false">Following <span class="ml-1 text-xs text-stone-500">${followingCount ?? 0}</span></button>
+        <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="bookshelf" aria-selected="false">My Book Grid</button>
       </div>
 
       <div id="tab-shelves"   class="tab-panel"></div>
       <div id="tab-status"    class="tab-panel hidden"></div>
       <div id="tab-feed"      class="tab-panel hidden"></div>
       <div id="tab-stats"     class="tab-panel hidden"></div>
-      <div id="tab-followers" class="tab-panel hidden"></div>
-      <div id="tab-following" class="tab-panel hidden"></div>
+      <div id="tab-followers"  class="tab-panel hidden"></div>
+      <div id="tab-following"  class="tab-panel hidden"></div>
+      <div id="tab-bookshelf"  class="tab-panel hidden"></div>
     </div>`;
 
   let statsRendered = false;
   const followListLoaded = { followers: false, following: false };
+  let bookshelfLoaded = false;
 
   function refreshTabs(active) {
     lastTab.set(username, active);
@@ -145,6 +148,18 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
         barCanvasId: 'profile-monthly-chart',
         pieCanvasId: 'profile-pie-chart',
         yearSelectId: 'profile-year-select',
+      });
+    }
+
+    if (active === 'bookshelf' && !bookshelfLoaded) {
+      bookshelfLoaded = true;
+      const panelEl = container.querySelector('#tab-bookshelf');
+      panelEl.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
+      api.getProfileShelf(username).then(slots => {
+        panelEl.innerHTML = renderBookShelfGrid(slots, isOwnProfile);
+        if (isOwnProfile) attachBookShelfHandlers(panelEl, username, slots);
+      }).catch(err => {
+        panelEl.innerHTML = `<p class="text-red-400 text-center py-10">${escHtml(err.message)}</p>`;
       });
     }
 
@@ -354,6 +369,190 @@ function attachFeedLikeHandlers(tabEl, feed) {
       }
     });
   });
+}
+
+const SHELF_SLOTS = [
+  { key: 'favorite',            label: 'Favorite' },
+  { key: 'best-plot',           label: 'Best Plot / Story' },
+  { key: 'favorite-series',     label: 'Favorite Series' },
+  { key: 'biggest-impact',      label: 'Biggest Personal Impact' },
+  { key: 'best-prose',          label: 'Best Prose' },
+  { key: 'best-nonfiction',     label: 'Best Non-fiction' },
+  { key: 'underrated',          label: 'Underrated by the masses' },
+  { key: 'overrated',           label: 'Overrated by the masses' },
+  { key: 'aged-well',           label: 'Has Aged Well' },
+  { key: 'overlooked',          label: 'Criminally Overlooked' },
+  { key: 'favorite-protagonist',label: 'Favorite Protagonist' },
+  { key: 'favorite-antagonist', label: 'Favorite Antagonist' },
+  { key: 'changed-taste',       label: 'Changed my taste in Literature' },
+  { key: 'favorite-cover',      label: 'Favorite Cover' },
+  { key: 'want-to-talk',        label: 'I Want to Talk About This One' },
+];
+
+function renderBookShelfGrid(slots, isOwnProfile) {
+  const slotMap = {};
+  for (const s of slots) slotMap[s.slot_key] = s;
+
+  const cells = SHELF_SLOTS.map(({ key, label }) => {
+    const entry = slotMap[key];
+    const inner = entry
+      ? `<img src="${escHtml(entry.cover_url ?? '')}" alt="${escHtml(entry.title)}"
+              class="absolute inset-0 w-full h-full object-cover" />`
+      : `<span class="text-stone-500 text-xs text-center px-2 select-none">
+           ${isOwnProfile ? 'Click to add' : ''}
+         </span>`;
+    const cursor = isOwnProfile ? 'cursor-pointer group' : '';
+    const overlay = isOwnProfile ? `
+      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-150 flex items-center justify-center opacity-0 group-hover:opacity-100">
+        <span class="text-white text-xs font-semibold">${entry ? 'Change' : 'Add'}</span>
+      </div>` : '';
+    return `
+      <div class="shelf-cell flex flex-col" data-slot="${escHtml(key)}">
+        <div class="relative ${cursor} bg-stone-800 overflow-hidden flex items-center justify-center"
+             style="aspect-ratio:2/3" data-slot="${escHtml(key)}">
+          ${inner}${overlay}
+        </div>
+        <div class="py-1.5 px-1 text-center" style="background:rgba(15,12,10,0.85)">
+          <p class="text-[10px] font-semibold leading-tight text-stone-300">${escHtml(label)}</p>
+        </div>
+      </div>`;
+  }).join('');
+
+  const hint = isOwnProfile
+    ? `<p class="text-xs text-stone-500 mb-4">Click any slot to pick a book from your library.</p>`
+    : '';
+
+  return `
+    <div>
+      ${hint}
+      <div class="grid gap-px" style="grid-template-columns:repeat(5,1fr);background:rgba(68,64,60,0.35);border:1px solid rgba(68,64,60,0.35);border-radius:0.75rem;overflow:hidden">
+        ${cells}
+      </div>
+    </div>`;
+}
+
+function attachBookShelfHandlers(panelEl, username, initialSlots) {
+  const slotMap = {};
+  for (const s of initialSlots) slotMap[s.slot_key] = s;
+
+  // Target only the inner cover divs (they have aspect-ratio style), not the outer wrappers
+  panelEl.querySelectorAll('div[data-slot][style*="aspect-ratio"]').forEach(el => {
+    el.addEventListener('click', () => openSlotPicker(el, el.dataset.slot, slotMap, panelEl));
+  });
+}
+
+function openSlotPicker(triggerEl, slotKey, slotMap, panelEl) {
+  document.getElementById('shelf-picker')?.remove();
+
+  const { library } = getState();
+  const slotLabel = SHELF_SLOTS.find(s => s.key === slotKey)?.label ?? slotKey;
+  const current = slotMap[slotKey];
+
+  const picker = document.createElement('div');
+  picker.id = 'shelf-picker';
+  picker.className = 'fixed inset-0 z-50 flex items-center justify-center p-4';
+  picker.innerHTML = `
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="shelf-picker-backdrop"></div>
+    <div class="relative w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+         style="background:color-mix(in srgb,var(--color-surface) 97%,transparent);border:1px solid var(--color-border)">
+      <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid var(--color-border)">
+        <div>
+          <p class="font-semibold text-sm text-stone-100">Pick a book</p>
+          <p class="text-xs text-stone-400 mt-0.5">${escHtml(slotLabel)}</p>
+        </div>
+        <button id="shelf-picker-close" class="text-stone-500 hover:text-stone-200 transition-colors text-lg leading-none">✕</button>
+      </div>
+      ${current ? `
+      <div class="px-5 pt-3 pb-0">
+        <button id="shelf-clear-btn" class="text-xs text-red-400 hover:text-red-300 transition-colors">✕ Remove current book</button>
+      </div>` : ''}
+      <div class="px-4 pt-3 pb-2">
+        <input id="shelf-search" type="text" placeholder="Filter by title or author…"
+          class="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
+          style="background:rgba(12,10,9,0.8);border:1px solid rgba(68,64,60,0.8);color:var(--color-text)" />
+      </div>
+      <div id="shelf-book-list" class="overflow-y-auto px-3 pb-4" style="max-height:340px"></div>
+    </div>`;
+  document.body.appendChild(picker);
+
+  const listEl = picker.querySelector('#shelf-book-list');
+  const searchEl = picker.querySelector('#shelf-search');
+
+  const books = (library ?? []).filter(b => b.status === 'done' || b.status === 'reading' || b.status === 'to_read');
+
+  function renderList(q) {
+    const filtered = q
+      ? books.filter(b => b.title.toLowerCase().includes(q) || (b.authors ?? []).some(a => a.toLowerCase().includes(q)))
+      : books;
+    if (!filtered.length) {
+      listEl.innerHTML = `<p class="text-stone-500 text-xs italic text-center py-4">No books found.</p>`;
+      return;
+    }
+    listEl.innerHTML = filtered.map(b => {
+      const cover = b.cover_url
+        ? `<img src="${escHtml(b.cover_url)}" class="w-9 h-12 object-cover rounded flex-shrink-0" />`
+        : `<div class="w-9 h-12 bg-stone-700 rounded flex-shrink-0"></div>`;
+      const isCurrent = current && String(current.book_id) === String(b.book_id);
+      return `
+        <div class="shelf-pick-book flex items-center gap-3 px-2 py-2 rounded-lg cursor-pointer transition-colors
+                    ${isCurrent ? 'bg-amber-500/10 ring-1 ring-amber-500/30' : 'hover:bg-stone-800/60'}"
+             data-book-id="${b.book_id}" data-cover="${escHtml(b.cover_url ?? '')}" data-title="${escHtml(b.title)}">
+          ${cover}
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-stone-100 line-clamp-1">${escHtml(b.title)}</p>
+            <p class="text-xs text-stone-500 line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
+          </div>
+          ${isCurrent ? '<span class="text-amber-400 text-xs flex-shrink-0">✓</span>' : ''}
+        </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.shelf-pick-book').forEach(row => {
+      row.addEventListener('click', () => pickBook(row.dataset.bookId, row.dataset.cover, row.dataset.title));
+    });
+  }
+
+  renderList('');
+  searchEl.focus();
+  searchEl.addEventListener('input', e => renderList(e.target.value.toLowerCase().trim()));
+
+  async function pickBook(bookId, coverUrl, title) {
+    picker.remove();
+    slotMap[slotKey] = { slot_key: slotKey, book_id: bookId, cover_url: coverUrl, title };
+    updateSlotCell(panelEl, slotKey, { cover_url: coverUrl, title });
+    try {
+      await api.setShelfSlot(slotKey, Number(bookId));
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  picker.querySelector('#shelf-picker-close')?.addEventListener('click', () => picker.remove());
+  picker.querySelector('#shelf-picker-backdrop')?.addEventListener('click', () => picker.remove());
+  picker.querySelector('#shelf-clear-btn')?.addEventListener('click', async () => {
+    picker.remove();
+    delete slotMap[slotKey];
+    updateSlotCell(panelEl, slotKey, null);
+    try {
+      await api.setShelfSlot(slotKey, null);
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+}
+
+function updateSlotCell(panelEl, slotKey, entry) {
+  const cell = panelEl.querySelector(`div[data-slot="${CSS.escape(slotKey)}"][style*="aspect-ratio"]`);
+  if (!cell) return;
+  const overlay = `
+    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-150 flex items-center justify-center opacity-0 group-hover:opacity-100">
+      <span class="text-white text-xs font-semibold">${entry ? 'Change' : 'Add'}</span>
+    </div>`;
+  if (entry) {
+    cell.innerHTML = `<img src="${escHtml(entry.cover_url ?? '')}" alt="${escHtml(entry.title)}"
+          class="absolute inset-0 w-full h-full object-cover" />${overlay}`;
+  } else {
+    cell.innerHTML = `<span class="text-stone-500 text-xs text-center px-2 select-none">Click to add</span>${overlay}`;
+  }
 }
 
 function renderFollowList(users, type, isOwnProfile) {

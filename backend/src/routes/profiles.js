@@ -1,8 +1,22 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { computeStats } from './stats.js';
+import { getProfileShelf } from './profileShelf.js';
 
 const router = Router();
+
+// GET /api/profiles/:username/shelf — public
+router.get('/:username/shelf', async (req, res, next) => {
+  try {
+    const { rows: [user] } = await pool.query(
+      `SELECT id FROM users WHERE username = $1`, [req.params.username]
+    );
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+    res.json(await getProfileShelf(user.id));
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /api/profiles/:username/followers
 router.get('/:username/followers', async (req, res, next) => {

@@ -218,6 +218,14 @@ export async function migrate() {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
+    -- Profile book shelf: 15 fixed labeled slots per user
+    CREATE TABLE IF NOT EXISTS profile_shelf (
+      user_id  INT  NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      slot_key TEXT NOT NULL,
+      book_id  INT  NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      PRIMARY KEY (user_id, slot_key)
+    );
+
     CREATE TABLE IF NOT EXISTS group_members (
       group_id   INT NOT NULL REFERENCES reading_groups(id) ON DELETE CASCADE,
       user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
