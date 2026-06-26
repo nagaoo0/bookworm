@@ -58,7 +58,8 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
       ${isFollowing ? '✓ Following' : '+ Follow'}
     </button>` : '';
 
-  const wrappedLink = `<a href="#u/${escHtml(username)}/wrapped" class="text-xs text-stone-500 hover:text-amber-400 transition-colors flex items-center gap-1">✨ Year in Review</a>`;
+  const wrappedLink   = `<a href="#u/${escHtml(username)}/wrapped" class="text-xs text-stone-500 hover:text-amber-400 transition-colors">✨ Year in Review</a>`;
+  const gridLink      = `<a href="#u/${escHtml(username)}/grid"    class="text-xs text-stone-500 hover:text-amber-400 transition-colors">📚 Book Grid</a>`;
 
   container.innerHTML = `
     <div class="fade-in">
@@ -79,39 +80,39 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
             <p class="text-stone-400 text-xs mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span>${library.length} book${library.length !== 1 ? 's' : ''}</span>
               <span class="text-stone-600">·</span>
-              <button class="profile-tab-link hover:text-amber-400 transition-colors" data-tab="followers">${followerCount ?? 0} follower${(followerCount ?? 0) !== 1 ? 's' : ''}</button>
+              <button id="followers-pill" class="hover:text-amber-400 transition-colors">${followerCount ?? 0} follower${(followerCount ?? 0) !== 1 ? 's' : ''}</button>
               <span class="text-stone-600">·</span>
-              <button class="profile-tab-link hover:text-amber-400 transition-colors" data-tab="following">${followingCount ?? 0} following</button>
+              <button id="following-pill" class="hover:text-amber-400 transition-colors">${followingCount ?? 0} following</button>
               <span class="text-stone-600">·</span>
               ${wrappedLink}
+              <span class="text-stone-600">·</span>
+              ${gridLink}
             </p>
           </div>
           ${followBtnHtml}
         </div>
       </div>
 
+      <!-- Follower / following inline panels (shown when pills are clicked) -->
+      <div id="follow-inline" class="hidden mb-4"></div>
+
       <!-- Tabs -->
       <div role="tablist" class="flex gap-0 mb-6 border-b border-stone-800 overflow-x-auto shelf-bar">
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="shelves" aria-selected="true">Shelves</button>
+        <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="bookshelf" aria-selected="false">My Book Grid</button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="status" aria-selected="false">Reading Piles</button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="feed" aria-selected="false">History</button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="stats" aria-selected="false">Stats</button>
-        <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="followers" aria-selected="false">Followers <span class="ml-1 text-xs text-stone-500">${followerCount ?? 0}</span></button>
-        <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="following" aria-selected="false">Following <span class="ml-1 text-xs text-stone-500">${followingCount ?? 0}</span></button>
-        <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="bookshelf" aria-selected="false">My Book Grid</button>
       </div>
 
-      <div id="tab-shelves"   class="tab-panel"></div>
-      <div id="tab-status"    class="tab-panel hidden"></div>
-      <div id="tab-feed"      class="tab-panel hidden"></div>
-      <div id="tab-stats"     class="tab-panel hidden"></div>
-      <div id="tab-followers"  class="tab-panel hidden"></div>
-      <div id="tab-following"  class="tab-panel hidden"></div>
-      <div id="tab-bookshelf"  class="tab-panel hidden"></div>
+      <div id="tab-shelves"  class="tab-panel"></div>
+      <div id="tab-bookshelf" class="tab-panel hidden"></div>
+      <div id="tab-status"   class="tab-panel hidden"></div>
+      <div id="tab-feed"     class="tab-panel hidden"></div>
+      <div id="tab-stats"    class="tab-panel hidden"></div>
     </div>`;
 
   let statsRendered = false;
-  const followListLoaded = { followers: false, following: false };
   let bookshelfLoaded = false;
 
   function refreshTabs(active) {
@@ -163,26 +164,14 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
       });
     }
 
-    if ((active === 'followers' || active === 'following') && !followListLoaded[active]) {
-      followListLoaded[active] = true;
-      const panelEl = container.querySelector(`#tab-${active}`);
-      panelEl.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
-      const fetch = active === 'followers'
-        ? api.getProfileFollowers(username)
-        : api.getProfileFollowing(username);
-      fetch.then(users => {
-        panelEl.innerHTML = renderFollowList(users, active, isOwnProfile);
-        attachFollowListHandlers(panelEl);
-      }).catch(err => {
-        panelEl.innerHTML = `<p class="text-red-400 text-center py-10">${escHtml(err.message)}</p>`;
-      });
-    }
   }
 
   // Apply profile owner's accent color to this view
   if (accent) applyProfileAccent(container, accent);
 
-  refreshTabs(lastTab.get(username) ?? 'shelves');
+  const savedTab = lastTab.get(username) ?? 'shelves';
+  const validTab = container.querySelector(`#tab-${savedTab}`) ? savedTab : 'shelves';
+  refreshTabs(validTab);
 
   // Pre-render shelves content
   container.querySelector('#tab-shelves').innerHTML = renderShelvesTab(shelves, library, myBookIds, isOwnProfile);
@@ -197,6 +186,59 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
   container.querySelectorAll('.profile-tab-link').forEach(btn => {
     btn.addEventListener('click', () => refreshTabs(btn.dataset.tab));
   });
+
+  // Followers / following inline panels
+  const followInlineEl = container.querySelector('#follow-inline');
+  const followInlineCache = {};
+
+  function showFollowInline(type) {
+    if (followInlineEl.dataset.open === type) {
+      followInlineEl.classList.add('hidden');
+      followInlineEl.dataset.open = '';
+      return;
+    }
+    followInlineEl.dataset.open = type;
+    followInlineEl.classList.remove('hidden');
+
+    if (followInlineCache[type]) {
+      followInlineEl.innerHTML = followInlineCache[type];
+      attachFollowListHandlers(followInlineEl);
+      followInlineEl.querySelector('.follow-inline-close')?.addEventListener('click', () => {
+        followInlineEl.classList.add('hidden');
+        followInlineEl.dataset.open = '';
+      });
+      return;
+    }
+
+    followInlineEl.innerHTML = `<div class="flex justify-center py-6"><div class="spinner"></div></div>`;
+    const fetcher = type === 'followers'
+      ? api.getProfileFollowers(username)
+      : api.getProfileFollowing(username);
+    fetcher.then(users => {
+      const html = `
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-stone-300 capitalize">${type}</h3>
+          <button class="follow-inline-close text-stone-500 hover:text-stone-300 text-lg leading-none">✕</button>
+        </div>
+        ${renderFollowList(users, type, isOwnProfile)}`;
+      followInlineCache[type] = html;
+      if (followInlineEl.dataset.open === type) {
+        followInlineEl.innerHTML = html;
+        attachFollowListHandlers(followInlineEl);
+        followInlineEl.querySelector('.follow-inline-close')?.addEventListener('click', () => {
+          followInlineEl.classList.add('hidden');
+          followInlineEl.dataset.open = '';
+        });
+      }
+    }).catch(err => {
+      if (followInlineEl.dataset.open === type) {
+        followInlineEl.innerHTML = `<p class="text-red-400 text-sm py-4">${escHtml(err.message)}</p>`;
+      }
+    });
+  }
+
+  container.querySelector('#followers-pill')?.addEventListener('click', () => showFollowInline('followers'));
+  container.querySelector('#following-pill')?.addEventListener('click', () => showFollowInline('following'));
 
   // Follow / unfollow
   const followBtn = container.querySelector('#follow-btn');
@@ -619,6 +661,40 @@ function attachFollowListHandlers(panelEl) {
       }
     });
   });
+}
+
+export async function renderBookGrid(container, username) {
+  container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
+  try {
+    const [profile, slots] = await Promise.all([
+      api.getProfile(username),
+      api.getProfileShelf(username),
+    ]);
+    const { user } = getState();
+    const isOwnProfile = user?.username === username;
+    const accent = profile.accent;
+    if (accent && ACCENT_COLORS[accent]) {
+      const a = ACCENT_COLORS[accent];
+      container.style.setProperty('--color-accent', a.main);
+      container.style.setProperty('--color-accent-hover', a.hover);
+      container.style.setProperty('--color-amber-500', a.main);
+      container.style.setProperty('--color-amber-400', a.hover);
+    }
+    container.innerHTML = `
+      <div class="max-w-3xl mx-auto fade-in">
+        <div class="flex items-center gap-3 mb-6">
+          <a href="#u/${escHtml(username)}" class="text-xs text-stone-500 hover:text-amber-400 transition-colors">← ${escHtml(username)}</a>
+          <span class="text-stone-700">·</span>
+          <h1 class="font-serif text-xl font-semibold">Book Grid</h1>
+        </div>
+        <div id="grid-panel"></div>
+      </div>`;
+    const panelEl = container.querySelector('#grid-panel');
+    panelEl.innerHTML = renderBookShelfGrid(slots, isOwnProfile);
+    if (isOwnProfile) attachBookShelfHandlers(panelEl, username, slots);
+  } catch (err) {
+    container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
+  }
 }
 
 function escHtml(str) {

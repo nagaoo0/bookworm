@@ -8,7 +8,7 @@ import { renderSearch } from './views/search.js';
 import { renderStats } from './views/stats.js';
 import { renderAuth } from './views/auth.js';
 import { renderSettings } from './views/settings.js';
-import { renderProfile } from './views/profile.js';
+import { renderProfile, renderBookGrid } from './views/profile.js';
 import { renderUsers } from './views/users.js';
 import { renderBook } from './views/book.js';
 import { renderAdmin } from './views/admin.js';
@@ -358,13 +358,18 @@ async function navigate(route) {
     const path = route.slice(2);
     if (path.endsWith('/wrapped')) {
       const username = path.slice(0, -8);
-      if (getState().user) {
-        await renderWrapped(mainEl, username);
-      } else {
+      if (!getState().user) {
         headerEl.classList.add('hidden');
         pubHeader.classList.remove('hidden');
-        await renderWrapped(mainEl, username);
       }
+      await renderWrapped(mainEl, username);
+    } else if (path.endsWith('/grid')) {
+      const username = path.slice(0, -5);
+      if (!getState().user) {
+        headerEl.classList.add('hidden');
+        pubHeader.classList.remove('hidden');
+      }
+      await renderBookGrid(mainEl, username);
     } else if (getState().user) {
       await renderProfile(mainEl, path);
     } else {
@@ -388,6 +393,10 @@ window.addEventListener('hashchange', () => {
       headerEl.classList.add('hidden');
       pubHeader.classList.remove('hidden');
       renderWrapped(mainEl, path.slice(0, -8));
+    } else if (path.endsWith('/grid')) {
+      headerEl.classList.add('hidden');
+      pubHeader.classList.remove('hidden');
+      renderBookGrid(mainEl, path.slice(0, -5));
     } else {
       showPublicProfile(path);
     }
@@ -414,6 +423,9 @@ window.addEventListener('hashchange', () => {
       if (path.endsWith('/wrapped')) {
         pubHeader.classList.remove('hidden');
         renderWrapped(mainEl, path.slice(0, -8));
+      } else if (path.endsWith('/grid')) {
+        pubHeader.classList.remove('hidden');
+        renderBookGrid(mainEl, path.slice(0, -5));
       } else {
         showPublicProfile(path);
       }
