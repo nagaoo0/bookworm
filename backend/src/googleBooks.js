@@ -58,7 +58,7 @@ export async function searchBooks(queryObj, maxResults = 20) {
 }
 
 export async function getBook(googleId) {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ country: 'US' });
   if (process.env.GOOGLE_BOOKS_API_KEY) params.set('key', process.env.GOOGLE_BOOKS_API_KEY);
 
   const res = await fetchWithTimeout(`${BASE}/${googleId}?${params}`);

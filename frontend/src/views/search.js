@@ -126,7 +126,9 @@ export function renderSearch(container) {
   container.querySelector('#adv-search-btn').addEventListener('click', () => {
     const { searchLanguage } = loadPrefs();
     const advLang = container.querySelector('#adv-language')?.value;
+    const mainQ   = container.querySelector('#search-input')?.value.trim();
     const params = {
+      q:         mainQ || undefined,
       title:     container.querySelector('#adv-title')?.value.trim()    || undefined,
       author:    container.querySelector('#adv-author')?.value.trim()   || undefined,
       subject:   container.querySelector('#adv-subject')?.value.trim()  || undefined,
