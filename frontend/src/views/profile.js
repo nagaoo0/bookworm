@@ -40,7 +40,7 @@ function applyProfileAccent(container, accent) {
   container.style.setProperty('--color-amber-400', a.hover);
 }
 
-function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, shelves, library, statusBooks, feed, stats }, isFollowing) {
+function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, shelves, library, statusBooks, feed, stats, followerCount, followingCount }, isFollowing) {
   const { user, library: myLibrary } = getState();
   const myBookIds = new Set((myLibrary ?? []).map(b => String(b.book_id)));
   const isOwnProfile = user?.username === username;
@@ -76,7 +76,15 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
           <div class="flex-1 min-w-0">
             <h1 class="font-serif text-2xl sm:text-3xl font-bold text-white leading-tight">${escHtml(username)}</h1>
             ${bio ? `<p class="text-stone-300 text-sm mt-1 leading-snug line-clamp-3">${escHtml(bio)}</p>` : ''}
-            <p class="text-stone-400 text-xs mt-1">${library.length} book${library.length !== 1 ? 's' : ''} in library · ${wrappedLink}</p>
+            <p class="text-stone-400 text-xs mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span>${library.length} book${library.length !== 1 ? 's' : ''}</span>
+              <span class="text-stone-600">·</span>
+              <button class="profile-tab-link hover:text-amber-400 transition-colors" data-tab="followers">${followerCount ?? 0} follower${(followerCount ?? 0) !== 1 ? 's' : ''}</button>
+              <span class="text-stone-600">·</span>
+              <button class="profile-tab-link hover:text-amber-400 transition-colors" data-tab="following">${followingCount ?? 0} following</button>
+              <span class="text-stone-600">·</span>
+              ${wrappedLink}
+            </p>
           </div>
           ${followBtnHtml}
         </div>
@@ -88,15 +96,20 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="status" aria-selected="false">Reading Piles</button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="feed" aria-selected="false">History</button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="stats" aria-selected="false">Stats</button>
+        <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="followers" aria-selected="false">Followers <span class="ml-1 text-xs text-stone-500">${followerCount ?? 0}</span></button>
+        <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="following" aria-selected="false">Following <span class="ml-1 text-xs text-stone-500">${followingCount ?? 0}</span></button>
       </div>
 
-      <div id="tab-shelves" class="tab-panel"></div>
-      <div id="tab-status"  class="tab-panel hidden"></div>
-      <div id="tab-feed"    class="tab-panel hidden"></div>
-      <div id="tab-stats"   class="tab-panel hidden"></div>
+      <div id="tab-shelves"   class="tab-panel"></div>
+      <div id="tab-status"    class="tab-panel hidden"></div>
+      <div id="tab-feed"      class="tab-panel hidden"></div>
+      <div id="tab-stats"     class="tab-panel hidden"></div>
+      <div id="tab-followers" class="tab-panel hidden"></div>
+      <div id="tab-following" class="tab-panel hidden"></div>
     </div>`;
 
   let statsRendered = false;
+  const followListLoaded = { followers: false, following: false };
 
   function refreshTabs(active) {
     lastTab.set(username, active);
@@ -106,7 +119,6 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
         isActive ? 'text-amber-400' : 'text-stone-400 hover:text-stone-200'
       }`;
       btn.setAttribute('aria-selected', String(isActive));
-      // Animated underline
       btn.querySelector('.tab-active-indicator')?.remove();
       if (isActive) {
         const bar = document.createElement('span');
@@ -135,6 +147,21 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
         yearSelectId: 'profile-year-select',
       });
     }
+
+    if ((active === 'followers' || active === 'following') && !followListLoaded[active]) {
+      followListLoaded[active] = true;
+      const panelEl = container.querySelector(`#tab-${active}`);
+      panelEl.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
+      const fetch = active === 'followers'
+        ? api.getProfileFollowers(username)
+        : api.getProfileFollowing(username);
+      fetch.then(users => {
+        panelEl.innerHTML = renderFollowList(users, active, isOwnProfile);
+        attachFollowListHandlers(panelEl);
+      }).catch(err => {
+        panelEl.innerHTML = `<p class="text-red-400 text-center py-10">${escHtml(err.message)}</p>`;
+      });
+    }
   }
 
   // Apply profile owner's accent color to this view
@@ -149,6 +176,10 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
   attachFeedLikeHandlers(container.querySelector('#tab-feed'), feed);
 
   container.querySelectorAll('.profile-tab').forEach(btn => {
+    btn.addEventListener('click', () => refreshTabs(btn.dataset.tab));
+  });
+
+  container.querySelectorAll('.profile-tab-link').forEach(btn => {
     btn.addEventListener('click', () => refreshTabs(btn.dataset.tab));
   });
 
@@ -320,6 +351,72 @@ function attachFeedLikeHandlers(tabEl, feed) {
         showToast(err.message, 'error');
       } finally {
         btn.disabled = false;
+      }
+    });
+  });
+}
+
+function renderFollowList(users, type, isOwnProfile) {
+  if (!users.length) {
+    const empty = type === 'followers' ? 'No followers yet.' : 'Not following anyone yet.';
+    return `<div class="text-center py-16 text-stone-500 italic">${empty}</div>`;
+  }
+
+  const { user: me } = getState();
+
+  return `
+    <div class="space-y-2 max-w-lg">
+      ${users.map(u => {
+        const hue = [...u.username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+        const initial = u.username[0].toUpperCase();
+        const avatar = u.avatar_url
+          ? `<img src="${escHtml(u.avatar_url)}" alt="" class="w-10 h-10 rounded-full object-cover flex-shrink-0" />`
+          : `<div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-sm"
+                  style="background:linear-gradient(135deg,hsl(${hue},60%,40%),hsl(${(hue+60)%360},50%,30%))">${initial}</div>`;
+
+        const isMe = me?.username === u.username;
+        const followBtn = (!isMe && me) ? `
+          <button class="follow-list-btn text-xs px-3 py-1.5 rounded-full font-semibold transition-all duration-150
+                         bg-stone-700 hover:bg-amber-500 hover:text-stone-950 text-stone-300"
+                  data-username="${escHtml(u.username)}">
+            Follow
+          </button>` : '';
+
+        return `
+          <div class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors hover:bg-stone-800/40"
+               style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)">
+            <a href="#u/${escHtml(u.username)}" class="flex-shrink-0">${avatar}</a>
+            <div class="flex-1 min-w-0">
+              <a href="#u/${escHtml(u.username)}" class="font-semibold text-stone-100 hover:text-amber-400 transition-colors text-sm">
+                ${escHtml(u.username)}
+              </a>
+              <p class="text-xs text-stone-500">${u.book_count} book${u.book_count !== 1 ? 's' : ''}</p>
+            </div>
+            ${followBtn}
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function attachFollowListHandlers(panelEl) {
+  const { user: me } = getState();
+  if (!me) return;
+
+  panelEl.querySelectorAll('.follow-list-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const target = btn.dataset.username;
+      btn.disabled = true;
+      btn.style.opacity = '0.6';
+      try {
+        await api.follow(target);
+        btn.textContent = '✓ Following';
+        btn.className = 'follow-list-btn text-xs px-3 py-1.5 rounded-full font-semibold transition-all duration-150 bg-stone-800 text-stone-400 ring-1 ring-stone-600 cursor-default';
+        btn.disabled = true;
+        btn.style.opacity = '';
+      } catch (err) {
+        btn.disabled = false;
+        btn.style.opacity = '';
+        import('../components/toast.js').then(({ showToast }) => showToast(err.message, 'error'));
       }
     });
   });

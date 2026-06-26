@@ -36,6 +36,8 @@ export const api = {
   deleteInvite: (code) => request(`/invites/${code}`, { method: 'DELETE' }),
 
   getProfile: (username) => request(`/profiles/${username}`),
+  getProfileFollowers: (username) => request(`/profiles/${encodeURIComponent(username)}/followers`),
+  getProfileFollowing: (username) => request(`/profiles/${encodeURIComponent(username)}/following`),
 
   search: (q) => request(`/search?${typeof q === 'string' && !q.includes('=') ? `q=${encodeURIComponent(q)}` : q}`),
 

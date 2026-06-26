@@ -4,6 +4,56 @@ import { computeStats } from './stats.js';
 
 const router = Router();
 
+// GET /api/profiles/:username/followers
+router.get('/:username/followers', async (req, res, next) => {
+  try {
+    const { rows: [target] } = await pool.query(
+      `SELECT id FROM users WHERE username = $1`, [req.params.username]
+    );
+    if (!target) return res.status(404).json({ error: 'Profile not found' });
+
+    const { rows } = await pool.query(
+      `SELECT u.username, u.avatar_url, u.accent,
+              COUNT(DISTINCT lb.id)::INT AS book_count
+       FROM follows f
+       JOIN users u ON u.id = f.follower_id
+       LEFT JOIN library_books lb ON lb.user_id = u.id
+       WHERE f.following_id = $1
+       GROUP BY u.username, u.avatar_url, u.accent
+       ORDER BY u.username`,
+      [target.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/profiles/:username/following
+router.get('/:username/following', async (req, res, next) => {
+  try {
+    const { rows: [target] } = await pool.query(
+      `SELECT id FROM users WHERE username = $1`, [req.params.username]
+    );
+    if (!target) return res.status(404).json({ error: 'Profile not found' });
+
+    const { rows } = await pool.query(
+      `SELECT u.username, u.avatar_url, u.accent,
+              COUNT(DISTINCT lb.id)::INT AS book_count
+       FROM follows f
+       JOIN users u ON u.id = f.following_id
+       LEFT JOIN library_books lb ON lb.user_id = u.id
+       WHERE f.follower_id = $1
+       GROUP BY u.username, u.avatar_url, u.accent
+       ORDER BY u.username`,
+      [target.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/profiles/:username — public, no auth required
 router.get('/:username', async (req, res, next) => {
   try {
@@ -25,7 +75,7 @@ router.get('/:username', async (req, res, next) => {
       viewerId = s?.id ?? null;
     }
 
-    const [shelves, library, sessions] = await Promise.all([
+    const [shelves, library, sessions, counts] = await Promise.all([
       pool.query(
         `SELECT * FROM shelves WHERE user_id = $1 ORDER BY sort_order, created_at`,
         [user.id]
@@ -71,6 +121,12 @@ router.get('/:username', async (req, res, next) => {
              LIMIT 50`,
             [user.id]
           ),
+      pool.query(
+        `SELECT
+           (SELECT COUNT(*) FROM follows WHERE following_id = $1)::INT AS followers,
+           (SELECT COUNT(*) FROM follows WHERE follower_id  = $1)::INT AS following`,
+        [user.id]
+      ),
     ]);
 
     // Build status groups — notes intentionally excluded from public profile
@@ -92,6 +148,8 @@ router.get('/:username', async (req, res, next) => {
       statusBooks,
       feed: sessions.rows,
       stats,
+      followerCount:  counts.rows[0].followers,
+      followingCount: counts.rows[0].following,
     });
   } catch (err) {
     next(err);
