@@ -108,7 +108,8 @@ export function renderSearch(container) {
     setState({ searchQuery: q });
     if (!q) { renderResults(container, []); return; }
     const { searchLanguage } = loadPrefs();
-    debounceTimer = setTimeout(() => runSearch({ q, language: searchLanguage || undefined }, container), 400);
+    const advLang = container.querySelector('#adv-language')?.value;
+    debounceTimer = setTimeout(() => runSearch({ q, language: advLang || searchLanguage || undefined }, container), 400);
   });
 
   const advPanel = container.querySelector('#advanced-form');
@@ -124,6 +125,7 @@ export function renderSearch(container) {
   });
 
   container.querySelector('#adv-search-btn').addEventListener('click', () => {
+    clearTimeout(debounceTimer);
     const { searchLanguage } = loadPrefs();
     const advLang = container.querySelector('#adv-language')?.value;
     const mainQ   = container.querySelector('#search-input')?.value.trim();
