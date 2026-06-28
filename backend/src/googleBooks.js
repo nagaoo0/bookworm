@@ -45,10 +45,9 @@ export async function searchBooks(queryObj, maxResults = 20) {
   if (!q) throw new Error('At least one search field is required');
 
   const params = new URLSearchParams({ q, maxResults, printType: 'books' });
-  const params = new URLSearchParams({ q, maxResults, printType: 'books' });
   if (process.env.GOOGLE_BOOKS_API_KEY) params.set('key', process.env.GOOGLE_BOOKS_API_KEY);
-  // Ensure English results by setting hl=en and prioritizing US country scope
-  params.set('hl', 'en'); 
+  if (queryObj.language) params.set('langRestrict', queryObj.language);
+  // Pin results to US locale to avoid server-IP-based language bias
   params.set('country', 'US');
 
   const res = await fetchWithTimeout(`${BASE}?${params}`);
