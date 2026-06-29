@@ -110,6 +110,40 @@ document.getElementById('app').innerHTML = `
     </header>
 
     <main id="main-content" class="flex-1 max-w-7xl mx-auto w-full px-4 py-6"></main>
+
+    <!-- Mobile bottom navigation (shown only when logged in, hidden on sm+) -->
+    <nav id="bottom-nav" style="display:none">
+      <a href="#home" data-route="home" class="bot-nav-item" aria-label="Library">
+        <svg class="bot-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+        </svg>
+        <span class="bot-nav-label">Library</span>
+      </a>
+      <a href="#search" data-route="search" class="bot-nav-item" aria-label="Search">
+        <svg class="bot-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        <span class="bot-nav-label">Search</span>
+      </a>
+      <a href="#stats" data-route="stats" class="bot-nav-item" aria-label="Stats">
+        <svg class="bot-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        <span class="bot-nav-label">Stats</span>
+      </a>
+      <a href="#users" data-route="users" class="bot-nav-item" aria-label="Readers">
+        <svg class="bot-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+        </svg>
+        <span class="bot-nav-label">Readers</span>
+      </a>
+      <a id="bottom-nav-profile" href="#" data-route="profile" class="bot-nav-item" aria-label="Profile">
+        <svg class="bot-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+        </svg>
+        <span class="bot-nav-label">Profile</span>
+      </a>
+    </nav>
   </div>`;
 
 const mainEl    = document.getElementById('main-content');
@@ -180,8 +214,12 @@ function showApp(user) {
   const profileHref = `#u/${user.username}`;
   const profLink = document.getElementById('my-profile-link');
   const profLinkMob = document.getElementById('my-profile-link-mob');
+  const profLinkBot = document.getElementById('bottom-nav-profile');
   if (profLink)    { profLink.href    = profileHref; profLink.classList.remove('hidden'); }
   if (profLinkMob) { profLinkMob.href = profileHref; profLinkMob.classList.remove('hidden'); }
+  if (profLinkBot) { profLinkBot.href = profileHref; }
+
+  document.getElementById('bottom-nav').style.display = 'flex';
 
   if (user.isAdmin) {
     document.getElementById('admin-nav-link')?.classList.remove('hidden');
@@ -276,6 +314,7 @@ function escHtml(str) {
 function showAuth() {
   headerEl.classList.add('hidden');
   pubHeader.classList.add('hidden');
+  document.getElementById('bottom-nav').style.display = 'none';
   // Ensure admin-only nav links are hidden when logged out
   document.getElementById('admin-nav-link')?.classList.add('hidden');
   document.getElementById('admin-nav-link-mob')?.classList.add('hidden');
@@ -333,6 +372,15 @@ async function navigate(route) {
       (active
         ? ' bg-amber-500/15 text-amber-400 rounded-xl'
         : ' nav-link-mob-inactive');
+  });
+
+  const user = getState().user;
+  document.querySelectorAll('.bot-nav-item').forEach(a => {
+    const itemRoute = a.dataset.route;
+    const active = itemRoute === route ||
+      (itemRoute === 'profile' && user && route === `u/${user.username}`);
+    a.classList.toggle('bot-nav-item-active', active);
+    a.classList.toggle('bot-nav-item-inactive', !active);
   });
 
   mainEl.classList.remove('fade-in');
