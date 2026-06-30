@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { escHtml } from '../utils.js';
+import { openLogReadModal } from '../components/logReadModal.js';
 
 // Persists collapse/sort state across re-renders
 const sectionState = {
@@ -68,41 +69,8 @@ export function renderHome(container) {
   const prev = getState().selectedShelfId;
   const selectedShelfId = prev;
 
-  // Currently Reading carousel (above all controls)
-  const readingBooks = library.filter(b => b.status === 'reading');
-  const carouselHtml = readingBooks.length ? `
-    <div>
-      <div class="flex items-center gap-2 mb-3">
-        <span class="w-2 h-2 rounded-full bg-amber-400" style="box-shadow:0 0 6px rgba(245,158,11,0.7)"></span>
-        <h2 class="font-serif text-sm font-semibold text-muted uppercase tracking-wider">Currently Reading</h2>
-        <span class="text-xs text-muted">${readingBooks.length}</span>
-      </div>
-      <div class="reading-carousel">
-        ${readingBooks.map(b => {
-          const pct = b.progress_pct ?? 0;
-          const cover = b.cover_url
-            ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full object-cover rounded-lg shadow-md" style="aspect-ratio:2/3" loading="lazy" />`
-            : `<div class="w-full rounded-lg bg-surface-2 flex items-center justify-center p-3 font-serif text-muted text-xs text-center" style="aspect-ratio:2/3">${escHtml(b.title)}</div>`;
-          return `
-            <div class="reading-carousel-card" data-book-id="${b.book_id}">
-              <div class="relative">
-                ${cover}
-                ${pct > 0 ? `<div class="absolute bottom-0 left-0 right-0 h-1 bg-black/30 rounded-b-lg overflow-hidden">
-                  <div class="h-full bg-amber-400 rounded-b-lg transition-all" style="width:${pct}%"></div>
-                </div>` : ''}
-              </div>
-              <div>
-                <p class="text-xs font-semibold leading-tight line-clamp-2 text-text">${escHtml(b.title)}</p>
-                ${pct > 0 ? `<p class="text-[10px] text-amber-400 mt-0.5">${pct}%</p>` : ''}
-              </div>
-            </div>`;
-        }).join('')}
-      </div>
-    </div>` : '';
-
   container.innerHTML = `
     <div class="flex flex-col gap-6">
-      ${carouselHtml}
 
       <!-- Now Playing banner (ABS real-time) -->
       <div id="now-playing-banner" class="hidden items-center gap-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl px-4 py-3">
@@ -508,13 +476,14 @@ function attachCardHandlers(container, shelves, library, bulk = {}) {
   container.querySelectorAll('.finish-reading-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
-      const card  = btn.closest('.book-card');
-      const libId = card.dataset.libId;
+      const card   = btn.closest('.book-card');
+      const libId  = card.dataset.libId;
       const bookId = card.dataset.bookId;
       if (!libId) return;
       await api.setStatus(libId, 'done');
       await loadLibrary();
-      if (bookId) location.hash = `#book/${bookId}`;
+      const entry = (getState().library ?? []).find(b => String(b.book_id) === String(bookId));
+      openLogReadModal({ id: bookId, title: entry?.title ?? '' }, null);
     });
   });
 
@@ -622,8 +591,12 @@ function showContextMenu(x, y, card, shelves, library) {
   menu.querySelectorAll('.ctx-status').forEach(btn => {
     btn.addEventListener('click', async () => {
       menu.remove();
-      await api.setStatus(libId, btn.dataset.status);
+      const newStatus = btn.dataset.status;
+      await api.setStatus(libId, newStatus);
       loadLibrary();
+      if (newStatus === 'done') {
+        openLogReadModal({ id: libEntry.book_id, title: libEntry.title }, null);
+      }
     });
   });
 

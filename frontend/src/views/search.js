@@ -4,6 +4,7 @@ import { bookCardHTML } from '../components/bookCard.js';
 import { loadLibrary } from './home.js';
 import { loadPrefs } from '../prefs.js';
 import { escHtml } from '../utils.js';
+import { openLogReadModal } from '../components/logReadModal.js';
 
 const LANGUAGES = [
   ['', 'Any language'],
@@ -312,7 +313,7 @@ function renderResults(container, results) {
       btn.disabled = true;
       btn.textContent = '…';
       try {
-        await api.addToLibrary({
+        const result = await api.addToLibrary({
           googleId:      book.googleId,
           title:         book.title,
           authors:       book.authors,
@@ -327,6 +328,9 @@ function renderResults(container, results) {
         btn.textContent = '✓ Added';
         btn.classList.replace('bg-surface-2', 'bg-green-800');
         loadLibrary();
+        if (status === 'done') {
+          openLogReadModal({ id: result.book_id, title: book.title }, null);
+        }
       } catch (err) {
         btn.textContent = '✗ Error';
         btn.disabled = false;
