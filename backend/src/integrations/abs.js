@@ -70,7 +70,7 @@ export function mapItemToBook(item) {
     _absItem: item,
     extra: {
       narrator,
-      duration_minutes: (media.duration ?? meta.duration) ? Math.round((media.duration ?? meta.duration) / 60) : null,
+      duration_minutes: (() => { const d = media.duration ?? meta.duration ?? null; return d != null ? Math.round(d / 60) : null; })(),
       series: meta.series ?? null,
       explicit: meta.explicit ?? false,
       publisher: meta.publisher ?? null,
