@@ -23,7 +23,9 @@ import challengesRouter from './routes/challenges.js';
 import groupsRouter from './routes/groups.js';
 import adminRouter from './routes/admin.js';
 import likesRouter from './routes/likes.js';
+import integrationsRouter from './routes/integrations.js';
 import { getBook } from './googleBooks.js';
+import { bootAllSyncs } from './integrations/syncEngine.js';
 
 const app = express();
 
@@ -202,6 +204,7 @@ app.use('/api/books/:bookId', booksRouter);
 app.use('/api/challenges', challengesRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/integrations', integrationsRouter);
 
 // Global error handler — catches any thrown/rejected error in route handlers
 app.use((err, _req, res, _next) => {
@@ -215,5 +218,8 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT ?? 3000;
 
 migrate()
-  .then(() => app.listen(PORT, () => console.log(`API listening on :${PORT}`)))
+  .then(() => {
+    app.listen(PORT, () => console.log(`API listening on :${PORT}`));
+    bootAllSyncs().catch(err => console.warn('bootAllSyncs error:', err.message));
+  })
   .catch(err => { console.error('Startup failed:', err); process.exit(1); });

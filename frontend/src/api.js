@@ -140,4 +140,14 @@ export const api = {
   adminResetPassword: (id, newPassword) => request(`/admin/users/${id}/reset-password`, { method: 'POST', body: { newPassword } }),
   adminSetAdmin: (id, isAdmin) => request(`/admin/users/${id}`, { method: 'PATCH', body: { isAdmin } }),
   adminRevokeSessions: (id) => request(`/admin/users/${id}/revoke-sessions`, { method: 'POST' }),
+
+  // Integrations
+  getIntegrations: () => request('/integrations'),
+  getBookAvailability: (bookId) => request(`/integrations/book/${bookId}/availability`),
+  saveIntegration: (service, config) => request(`/integrations/${service}`, { method: 'PUT', body: config }),
+  disconnectIntegration: (service) => request(`/integrations/${service}`, { method: 'DELETE' }),
+  syncIntegration: (service) => request(`/integrations/${service}/sync`, { method: 'POST' }),
+  getIntegrationStatus: (service) => request(`/integrations/${service}/status`),
+  getAudibleAuthUrl: (marketplace) => request(`/integrations/audible/auth-url?marketplace=${marketplace}`),
+  getNowPlaying: () => request('/integrations/abs/now-playing'),
 };

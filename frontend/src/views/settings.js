@@ -22,15 +22,17 @@ export async function renderSettings(container) {
   const currentYear = new Date().getFullYear();
   let invites = [];
   let goal = null;
-  const [, goalResult] = await Promise.all([
+  let integrations = [];
+  await Promise.all([
     user.isAdmin ? api.getInvites().then(r => { invites = r; }).catch(() => {}) : Promise.resolve(),
     api.getGoal(currentYear).then(r => { goal = r; }).catch(() => {}),
+    api.getIntegrations().then(r => { integrations = r; }).catch(() => {}),
   ]);
 
-  render(container, user, invites, goal, currentYear);
+  render(container, user, invites, goal, currentYear, integrations);
 }
 
-function render(container, user, invites, goal, currentYear) {
+function render(container, user, invites, goal, currentYear, integrations = []) {
   const profileUrl = `${location.origin}${location.pathname}#u/${user.username}`;
 
   container.innerHTML = `
@@ -111,6 +113,9 @@ function render(container, user, invites, goal, currentYear) {
       <!-- Appearance -->
       ${renderAppearanceSection()}
 
+      <!-- Integrations -->
+      ${renderIntegrationsSection(integrations)}
+
       <!-- Import / Export -->
       ${renderImportExportSection()}
 
@@ -159,6 +164,9 @@ function render(container, user, invites, goal, currentYear) {
 
   // Appearance
   attachAppearanceHandlers(container);
+
+  // Integrations
+  attachIntegrationsHandlers(container);
 
   // Import / Export
   attachImportExportHandlers(container);
@@ -403,6 +411,328 @@ function attachImportExportHandlers(container) {
       importBtn.textContent = 'Import';
       msg.classList.remove('hidden');
       fileInput.value = '';
+    }
+  });
+}
+
+// ── Integrations ──────────────────────────────────────────────────────────────
+
+const AUDIBLE_MARKETPLACES = [
+  ['us','United States'], ['uk','United Kingdom'], ['de','Germany'],
+  ['fr','France'], ['ca','Canada'], ['au','Australia'], ['jp','Japan'],
+  ['in','India'], ['es','Spain'], ['it','Italy'], ['br','Brazil'],
+];
+
+function renderIntegrationsSection(integrations = []) {
+  const byService = Object.fromEntries(integrations.map(i => [i.service, i]));
+  const abs = byService.audiobookshelf;
+  const aud = byService.audible;
+  const cal = byService.calibre;
+
+  const fmtDate = d => d ? new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+
+  const statusBadge = connected => connected
+    ? `<span class="text-xs text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded-full ring-1 ring-green-400/20">Connected</span>`
+    : `<span class="text-xs text-muted bg-surface-2 px-1.5 py-0.5 rounded-full">Not connected</span>`;
+
+  return `
+    <section class="card-section space-y-5">
+      <h2 class="font-semibold text-text">Integrations</h2>
+      <p class="text-xs text-muted">Connect external services to sync your audiobook and ebook libraries automatically.</p>
+
+      <!-- Audiobookshelf -->
+      <details class="group" ${abs ? 'open' : ''}>
+        <summary class="flex items-center justify-between cursor-pointer list-none select-none">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🎧</span>
+            <span class="font-medium text-sm">Audiobookshelf</span>
+            ${statusBadge(!!abs)}
+          </div>
+          <svg class="w-4 h-4 text-muted transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+        </summary>
+        <div class="mt-4 space-y-3 pl-1">
+          <p class="text-xs text-muted">Self-hosted audiobook server. Requires your server URL and an API token from your ABS account settings.</p>
+          <div>
+            <label class="text-xs text-muted block mb-1">Server URL</label>
+            <input id="abs-url" type="url" placeholder="http://192.168.1.100:13378"
+              value="${escHtml(abs?.server_url ?? '')}"
+              class="field-input w-full" />
+          </div>
+          <div>
+            <label class="text-xs text-muted block mb-1">API Token</label>
+            <input id="abs-token" type="password" placeholder="Your ABS API token"
+              value="${abs ? '••••••••' : ''}"
+              class="field-input w-full" />
+          </div>
+          <div class="flex items-center gap-2 text-xs text-muted">
+            <input type="checkbox" id="abs-auto-sessions" class="rounded"
+              ${abs ? '' : 'checked'} />
+            <label for="abs-auto-sessions">Auto-create reading session when I finish a book in ABS</label>
+          </div>
+          ${abs ? `<p class="text-xs text-muted">Last synced: ${fmtDate(abs.last_synced_at)}</p>` : ''}
+          <div class="flex gap-2 flex-wrap">
+            <button id="abs-save-btn"
+              class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg text-xs transition-all">
+              ${abs ? 'Update' : 'Connect'}
+            </button>
+            ${abs ? `
+            <button id="abs-sync-btn"
+              class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-xs font-medium transition-all">
+              Sync now
+            </button>
+            <button id="abs-disconnect-btn"
+              class="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs transition-colors">
+              Disconnect
+            </button>` : ''}
+          </div>
+          <p id="abs-msg" class="text-xs hidden"></p>
+        </div>
+      </details>
+
+      <hr class="border-border/40" />
+
+      <!-- Audible -->
+      <details class="group" ${aud ? 'open' : ''}>
+        <summary class="flex items-center justify-between cursor-pointer list-none select-none">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">📖</span>
+            <span class="font-medium text-sm">Audible</span>
+            ${statusBadge(!!aud)}
+          </div>
+          <svg class="w-4 h-4 text-muted transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+        </summary>
+        <div class="mt-4 space-y-3 pl-1">
+          <p class="text-xs text-muted">Import your Audible library and wishlist. Uses Amazon's login to authorize access.</p>
+          <div>
+            <label class="text-xs text-muted block mb-1">Marketplace</label>
+            <select id="audible-marketplace" class="field-input rounded-lg py-2">
+              ${AUDIBLE_MARKETPLACES.map(([v, l]) => `<option value="${v}"${aud?.marketplace === v || (!aud && v === 'us') ? ' selected' : ''}>${l}</option>`).join('')}
+            </select>
+          </div>
+          <div class="flex items-center gap-2 text-xs text-muted">
+            <input type="checkbox" id="audible-wishlist" class="rounded" checked />
+            <label for="audible-wishlist">Import wishlist as "Want to Read"</label>
+          </div>
+          ${aud ? `<p class="text-xs text-muted">Last synced: ${fmtDate(aud.last_synced_at)}</p>` : ''}
+          <div class="flex gap-2 flex-wrap">
+            <button id="audible-connect-btn"
+              class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg text-xs transition-all">
+              ${aud ? 'Re-authorize' : 'Connect Audible'}
+            </button>
+            ${aud ? `
+            <button id="audible-sync-btn"
+              class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-xs font-medium transition-all">
+              Sync now
+            </button>
+            <button id="audible-disconnect-btn"
+              class="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs transition-colors">
+              Disconnect
+            </button>` : ''}
+          </div>
+          <p id="audible-msg" class="text-xs hidden"></p>
+        </div>
+      </details>
+
+      <hr class="border-border/40" />
+
+      <!-- Calibre -->
+      <details class="group" ${cal ? 'open' : ''}>
+        <summary class="flex items-center justify-between cursor-pointer list-none select-none">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">📚</span>
+            <span class="font-medium text-sm">Calibre Content Server</span>
+            ${statusBadge(!!cal)}
+          </div>
+          <svg class="w-4 h-4 text-muted transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+        </summary>
+        <div class="mt-4 space-y-3 pl-1">
+          <p class="text-xs text-muted">Requires Calibre Content Server running (Preferences → Sharing over the net). Default port 8080.</p>
+          <div>
+            <label class="text-xs text-muted block mb-1">Server URL</label>
+            <input id="calibre-url" type="url" placeholder="http://localhost:8080"
+              value="${escHtml(cal?.server_url ?? '')}"
+              class="field-input w-full" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-xs text-muted block mb-1">Username (optional)</label>
+              <input id="calibre-username" type="text" placeholder="admin"
+                value="${cal ? '••' : ''}"
+                class="field-input w-full" />
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1">Password (optional)</label>
+              <input id="calibre-password" type="password" placeholder="••••••"
+                class="field-input w-full" />
+            </div>
+          </div>
+          ${cal ? `<p class="text-xs text-muted">Last synced: ${fmtDate(cal.last_synced_at)}</p>` : ''}
+          <div class="flex gap-2 flex-wrap">
+            <button id="calibre-save-btn"
+              class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg text-xs transition-all">
+              ${cal ? 'Update' : 'Connect'}
+            </button>
+            ${cal ? `
+            <button id="calibre-sync-btn"
+              class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-xs font-medium transition-all">
+              Sync now
+            </button>
+            <button id="calibre-disconnect-btn"
+              class="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs transition-colors">
+              Disconnect
+            </button>` : ''}
+          </div>
+          <p id="calibre-msg" class="text-xs hidden"></p>
+        </div>
+      </details>
+    </section>`;
+}
+
+function showIntMsg(container, id, msg, isError = false) {
+  const el = container.querySelector(`#${id}`);
+  if (!el) return;
+  el.className = `text-xs ${isError ? 'text-red-400' : 'text-green-400'}`;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function attachIntegrationsHandlers(container) {
+  // ── Audiobookshelf ──
+  container.querySelector('#abs-save-btn')?.addEventListener('click', async () => {
+    const url = container.querySelector('#abs-url')?.value.trim();
+    const rawToken = container.querySelector('#abs-token')?.value;
+    const autoSessions = container.querySelector('#abs-auto-sessions')?.checked;
+    if (!url || !rawToken || rawToken === '••••••••') {
+      showIntMsg(container, 'abs-msg', 'Server URL and API token are required.', true);
+      return;
+    }
+    try {
+      await api.saveIntegration('audiobookshelf', {
+        serverUrl: url,
+        token: rawToken,
+        auto_sessions: String(autoSessions),
+      });
+      showIntMsg(container, 'abs-msg', 'Connected! Initial sync starting in the background.');
+      api.syncIntegration('audiobookshelf').catch(() => {});
+    } catch (err) {
+      showIntMsg(container, 'abs-msg', err.message, true);
+    }
+  });
+
+  container.querySelector('#abs-sync-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = 'Syncing…';
+    try {
+      await api.syncIntegration('audiobookshelf');
+      showIntMsg(container, 'abs-msg', 'Sync complete.');
+    } catch (err) {
+      showIntMsg(container, 'abs-msg', err.message, true);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Sync now';
+    }
+  });
+
+  container.querySelector('#abs-disconnect-btn')?.addEventListener('click', async () => {
+    if (!confirm('Disconnect Audiobookshelf? Availability data will be removed.')) return;
+    try {
+      await api.disconnectIntegration('audiobookshelf');
+      showToast('Audiobookshelf disconnected.');
+      location.reload();
+    } catch (err) {
+      showIntMsg(container, 'abs-msg', err.message, true);
+    }
+  });
+
+  // ── Audible ──
+  container.querySelector('#audible-connect-btn')?.addEventListener('click', async () => {
+    const marketplace = container.querySelector('#audible-marketplace')?.value ?? 'us';
+    try {
+      const { url } = await api.getAudibleAuthUrl(marketplace);
+      const popup = window.open(url, 'audible_auth', 'width=500,height=700');
+      // Poll for redirect back (callback closes popup or navigates to /#settings)
+      const poll = setInterval(() => {
+        try {
+          if (popup.closed) {
+            clearInterval(poll);
+            showIntMsg(container, 'audible-msg', 'Authorization complete. Syncing library…');
+            api.syncIntegration('audible').then(() => {
+              showIntMsg(container, 'audible-msg', 'Audible library synced.');
+            }).catch(err => showIntMsg(container, 'audible-msg', err.message, true));
+          }
+        } catch { /* cross-origin, keep polling */ }
+      }, 500);
+    } catch (err) {
+      showIntMsg(container, 'audible-msg', err.message, true);
+    }
+  });
+
+  container.querySelector('#audible-sync-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = 'Syncing…';
+    try {
+      await api.syncIntegration('audible');
+      showIntMsg(container, 'audible-msg', 'Sync complete.');
+    } catch (err) {
+      showIntMsg(container, 'audible-msg', err.message, true);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Sync now';
+    }
+  });
+
+  container.querySelector('#audible-disconnect-btn')?.addEventListener('click', async () => {
+    if (!confirm('Disconnect Audible? Availability data will be removed.')) return;
+    try {
+      await api.disconnectIntegration('audible');
+      showToast('Audible disconnected.');
+      location.reload();
+    } catch (err) {
+      showIntMsg(container, 'audible-msg', err.message, true);
+    }
+  });
+
+  // ── Calibre ──
+  container.querySelector('#calibre-save-btn')?.addEventListener('click', async () => {
+    const url = container.querySelector('#calibre-url')?.value.trim();
+    const username = container.querySelector('#calibre-username')?.value.trim();
+    const password = container.querySelector('#calibre-password')?.value;
+    if (!url) {
+      showIntMsg(container, 'calibre-msg', 'Server URL is required.', true);
+      return;
+    }
+    try {
+      await api.saveIntegration('calibre', {
+        serverUrl: url,
+        ...(username && username !== '••' ? { username } : {}),
+        ...(password ? { password } : {}),
+      });
+      showIntMsg(container, 'calibre-msg', 'Connected! Initial sync starting in the background.');
+      api.syncIntegration('calibre').catch(() => {});
+    } catch (err) {
+      showIntMsg(container, 'calibre-msg', err.message, true);
+    }
+  });
+
+  container.querySelector('#calibre-sync-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = 'Syncing…';
+    try {
+      await api.syncIntegration('calibre');
+      showIntMsg(container, 'calibre-msg', 'Sync complete.');
+    } catch (err) {
+      showIntMsg(container, 'calibre-msg', err.message, true);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Sync now';
+    }
+  });
+
+  container.querySelector('#calibre-disconnect-btn')?.addEventListener('click', async () => {
+    if (!confirm('Disconnect Calibre? Availability data will be removed.')) return;
+    try {
+      await api.disconnectIntegration('calibre');
+      showToast('Calibre disconnected.');
+      location.reload();
+    } catch (err) {
+      showIntMsg(container, 'calibre-msg', err.message, true);
     }
   });
 }

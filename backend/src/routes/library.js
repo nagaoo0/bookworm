@@ -16,7 +16,16 @@ const LIBRARY_SELECT = `
          COALESCE(lb.page_count_override,     b.page_count)     AS page_count,
          COALESCE(lb.published_date_override, b.published_date) AS published_date,
          COALESCE(lb.description_override,    b.description)    AS description,
-         COALESCE(lb.categories_override,     b.categories)     AS categories
+         COALESCE(lb.categories_override,     b.categories)     AS categories,
+         (SELECT COALESCE(json_agg(json_build_object(
+                   'service',     ba.service,
+                   'external_id', ba.external_id,
+                   'formats',     ba.formats,
+                   'extra',       ba.extra
+                 )), '[]'::json)
+          FROM book_availability ba
+          WHERE ba.book_id = b.id AND ba.user_id = lb.user_id
+         ) AS availability
   FROM library_books lb
   JOIN books b ON b.id = lb.book_id
   LEFT JOIN shelf_memberships sm ON sm.library_book_id = lb.id`;

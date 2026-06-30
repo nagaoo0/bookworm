@@ -21,20 +21,21 @@ export async function renderBook(container, bookId) {
       history.replaceState(null, '', `#book/${resolvedId}`);
     }
 
-    const [book, sessions, comments, recs, social] = await Promise.all([
+    const [book, sessions, comments, recs, social, availability] = await Promise.all([
       api.getBookDetail(resolvedId),
       user ? api.getSessions(resolvedId).catch(() => []) : Promise.resolve([]),
       api.getComments(resolvedId),
       api.getRecommendations(resolvedId).catch(() => []),
       user ? api.getBookSocial(resolvedId).catch(() => []) : Promise.resolve([]),
+      user ? api.getBookAvailability(resolvedId).catch(() => []) : Promise.resolve([]),
     ]);
-    mount(container, book, sessions, comments, library ?? [], shelves ?? [], recs, social);
+    mount(container, book, sessions, comments, library ?? [], shelves ?? [], recs, social, availability);
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
   }
 }
 
-function mount(container, book, sessions, comments, library, shelves, recs = [], social = []) {
+function mount(container, book, sessions, comments, library, shelves, recs = [], social = [], availability = []) {
   const { user } = getState();
   const libEntry = library.find(b => String(b.book_id) === String(book.id));
 
@@ -212,6 +213,9 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
           }).join('')}
         </div>
       </section>` : ''}
+
+      <!-- Where to find this book -->
+      ${renderAvailabilitySection(availability)}
 
       <!-- Comments -->
       <section class="mt-10">
@@ -600,6 +604,65 @@ function attachSessionDeleteHandlers(container, bookId, reload) {
       });
     });
   });
+}
+
+// ── Availability ───────────────────────────────────────────────────────────────
+
+function renderAvailabilitySection(availability = []) {
+  if (!availability.length) return '';
+
+  const items = availability.map(a => {
+    if (a.service === 'audiobookshelf') {
+      const absUrl = a.server_url ? `${a.server_url}/item/${a.external_id}` : null;
+      return `
+        <div class="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
+          <span class="text-2xl">🎧</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-text">Audiobookshelf</p>
+            <p class="text-xs text-muted">Audiobook available${a.extra?.narrator ? ' · Narrated by ' + escHtml(a.extra.narrator) : ''}${a.extra?.duration_minutes ? ' · ' + Math.round(a.extra.duration_minutes / 60) + ' hrs' : ''}</p>
+          </div>
+          ${absUrl ? `<a href="${escHtml(absUrl)}" target="_blank" rel="noopener"
+               class="text-xs px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-colors flex-shrink-0">
+               Open in ABS →
+             </a>` : ''}
+        </div>`;
+    }
+    if (a.service === 'audible') {
+      const isWishlist = a.extra?.is_wishlist;
+      const asin = a.extra?.asin;
+      return `
+        <div class="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
+          <span class="text-2xl">📖</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-text">Audible</p>
+            <p class="text-xs text-muted">${isWishlist ? 'On your wishlist' : 'In your library'}${a.extra?.narrator ? ' · Narrated by ' + escHtml(a.extra.narrator) : ''}${a.extra?.duration_minutes ? ' · ' + Math.round(a.extra.duration_minutes / 60) + ' hrs' : ''}</p>
+          </div>
+          ${asin ? `<a href="https://www.audible.com/pd/${escHtml(asin)}" target="_blank" rel="noopener"
+               class="text-xs px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 rounded-lg transition-colors flex-shrink-0">
+               Open →
+             </a>` : ''}
+        </div>`;
+    }
+    if (a.service === 'calibre') {
+      const formats = (a.formats ?? []).map(f => f.toUpperCase()).join(', ');
+      return `
+        <div class="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
+          <span class="text-2xl">📚</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-text">Calibre Library</p>
+            <p class="text-xs text-muted">In your ebook collection${formats ? ' · ' + formats : ''}${a.extra?.series ? ' · Series: ' + escHtml(a.extra.series) : ''}</p>
+          </div>
+        </div>`;
+    }
+    return '';
+  }).filter(Boolean).join('');
+
+  if (!items) return '';
+  return `
+    <section class="mt-10">
+      <h2 class="font-serif text-xl font-semibold mb-4">Where to find this book</h2>
+      <div class="space-y-3">${items}</div>
+    </section>`;
 }
 
 // ── Comments ───────────────────────────────────────────────────────────────────

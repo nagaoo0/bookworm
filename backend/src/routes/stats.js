@@ -5,7 +5,7 @@ const router = Router();
 
 // Shared stats computation — accepts a user id, works for both /stats and profile stats
 export async function computeStats(uid) {
-  const [totals, perYear, avgRating, currentlyReading, monthly, categoriesPerYear, dailySessions, pagesPerYear, authorsPerYear] = await Promise.all([
+  const [totals, perYear, avgRating, currentlyReading, monthly, categoriesPerYear, dailySessions, pagesPerYear, authorsPerYear, sourceBreakdown] = await Promise.all([
     pool.query(
       `SELECT COUNT(DISTINCT book_id) AS total_books, COUNT(*) AS total_sessions
        FROM reading_sessions WHERE user_id = $1 AND finished_at IS NOT NULL`,
@@ -78,6 +78,13 @@ export async function computeStats(uid) {
        GROUP BY year, author`,
       [uid]
     ),
+    // Sessions by source (for listening stats)
+    pool.query(
+      `SELECT COALESCE(source, 'bookworm') AS source, COUNT(*) AS count
+       FROM reading_sessions WHERE user_id = $1 AND finished_at IS NOT NULL
+       GROUP BY source`,
+      [uid]
+    ),
   ]);
 
   const yearMap = {};
@@ -118,6 +125,9 @@ export async function computeStats(uid) {
     if (top) favoriteAuthorByYear[year] = top[0];
   }
 
+  const sessionsBySource = {};
+  for (const row of sourceBreakdown.rows) sessionsBySource[row.source] = Number(row.count);
+
   return {
     totalBooks: Number(totals.rows[0].total_books),
     totalSessions: Number(totals.rows[0].total_sessions),
@@ -129,6 +139,7 @@ export async function computeStats(uid) {
     dailySessions: dailyMap,
     pagesByYear,
     favoriteAuthorByYear,
+    sessionsBySource,
   };
 }
 

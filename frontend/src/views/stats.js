@@ -7,17 +7,18 @@ export async function renderStats(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
     const currentYear = new Date().getFullYear();
-    const [s, goal] = await Promise.all([
+    const [s, goal, absStatus] = await Promise.all([
       api.getStats(),
       api.getGoal(currentYear).catch(() => null),
+      api.getIntegrationStatus('audiobookshelf').catch(() => null),
     ]);
-    render(container, s, {}, goal);
+    render(container, s, {}, goal, absStatus);
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${err.message}</p>`;
   }
 }
 
-export function render(container, s, opts = {}, goal = null) {
+export function render(container, s, opts = {}, goal = null, absStatus = null) {
   const years = Object.keys(s.perYear).map(Number).sort((a, b) => b - a);
   const currentYear = years[0] ?? new Date().getFullYear();
 
@@ -53,6 +54,9 @@ export function render(container, s, opts = {}, goal = null) {
         ${statCard('Reading Now', s.currentlyReading)}
         ${statCard('Avg Rating', s.avgRating ? s.avgRating.toFixed(1) + ' ★' : '—')}
       </div>
+
+      <!-- Listening Activity (Audiobookshelf) -->
+      ${absStatus?.connected ? renderListeningCard(s) : ''}
 
       <!-- Year selector -->
       ${years.length ? `
@@ -329,4 +333,38 @@ function drawHeatmap(dailySessions, containerId) {
       ).join('')}
       <span class="text-xs text-muted">More</span>
     </div>`;
+}
+
+// ── Listening Activity (ABS) ──────────────────────────────────────────────────
+
+function renderListeningCard(s) {
+  // Count sessions sourced from ABS
+  const absSessions = (s.sessionsBySource ?? {})['audiobookshelf'] ?? 0;
+
+  // Estimate hours from ABS-sourced sessions using average audiobook duration heuristic
+  // (exact hours would need a dedicated stats endpoint; this is a best-effort display)
+  const absHoursEstimate = (s.totalHoursListened ?? null);
+
+  return `
+    <section class="bg-surface rounded-xl p-5 ring-1 ring-border/20">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="text-xl">🎧</span>
+        <h2 class="font-serif text-lg font-semibold">Listening Activity</h2>
+        <span class="text-xs text-muted bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/20 px-1.5 py-0.5 rounded-full ml-auto">Audiobookshelf</span>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20">
+          <div class="font-serif text-3xl font-bold text-blue-400">${absSessions}</div>
+          <div class="text-xs text-muted mt-1 uppercase tracking-wider">Audiobooks Finished</div>
+        </div>
+        ${absHoursEstimate !== null ? `
+        <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20">
+          <div class="font-serif text-3xl font-bold text-blue-400">${Math.round(absHoursEstimate)}</div>
+          <div class="text-xs text-muted mt-1 uppercase tracking-wider">Hours Listened</div>
+        </div>` : `
+        <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20 flex items-center justify-center">
+          <p class="text-xs text-muted">Sync more books to see listening hours</p>
+        </div>`}
+      </div>
+    </section>`;
 }

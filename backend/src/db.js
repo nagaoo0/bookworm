@@ -233,6 +233,33 @@ export async function migrate() {
       joined_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
       PRIMARY KEY (group_id, user_id)
     );
+
+    -- External service integrations (credentials per user)
+    CREATE TABLE IF NOT EXISTS integrations (
+      id             SERIAL PRIMARY KEY,
+      user_id        INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      service        TEXT NOT NULL CHECK (service IN ('audiobookshelf','audible','calibre')),
+      config         JSONB NOT NULL DEFAULT '{}',
+      last_synced_at TIMESTAMPTZ,
+      UNIQUE(user_id, service)
+    );
+
+    -- Cross-service book availability index
+    CREATE TABLE IF NOT EXISTS book_availability (
+      id          SERIAL PRIMARY KEY,
+      user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      book_id     INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      service     TEXT NOT NULL CHECK (service IN ('audiobookshelf','audible','calibre')),
+      external_id TEXT,
+      formats     TEXT[],
+      extra       JSONB NOT NULL DEFAULT '{}',
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(user_id, book_id, service)
+    );
+
+    -- Track which service created a reading session
+    ALTER TABLE reading_sessions ADD COLUMN IF NOT EXISTS source TEXT
+      CHECK (source IN ('bookworm','audiobookshelf','audible','calibre'));
   `);
   console.log('Database schema ready.');
 }

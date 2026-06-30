@@ -70,6 +70,20 @@ export function renderHome(container) {
 
   container.innerHTML = `
     <div class="flex flex-col gap-6">
+      <!-- Now Playing banner (ABS real-time) -->
+      <div id="now-playing-banner" class="hidden items-center gap-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl px-4 py-3">
+        <div id="now-playing-cover" class="w-10 h-14 rounded-md overflow-hidden bg-surface-2 flex-shrink-0"></div>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs text-blue-300 font-medium uppercase tracking-wider mb-0.5">Now Listening</p>
+          <p id="now-playing-title" class="text-sm font-semibold text-text truncate"></p>
+          <div class="mt-1.5 w-full bg-blue-500/20 rounded-full h-1">
+            <div id="now-playing-bar" class="h-1 bg-blue-400 rounded-full transition-all duration-500" style="width:0%"></div>
+          </div>
+          <p id="now-playing-pct" class="text-xs text-muted mt-1"></p>
+        </div>
+        <a id="now-playing-link" href="#" class="text-xs text-blue-300 hover:text-blue-200 transition-colors flex-shrink-0">Open →</a>
+      </div>
+
       <!-- Library search + select toggle -->
       <div class="flex gap-2 items-center">
         <div class="relative flex-1">
@@ -124,6 +138,9 @@ export function renderHome(container) {
   attachShelfBar(container, shelves, library);
   attachCardHandlers(container, shelves, library);
   attachShelfManagerHandlers(container, shelves);
+
+  // Now Playing: fetch current ABS session and subscribe to SSE for live updates
+  initNowPlaying(container);
 
   const searchInput = container.querySelector('#library-search');
   searchInput?.addEventListener('input', e => {
@@ -783,5 +800,84 @@ function showInlineDeleteConfirm(btn) {
   });
 
   confirm.querySelector('.confirm-no').addEventListener('click', loadLibrary);
+}
+
+// ── Now Playing (Audiobookshelf real-time) ────────────────────────────────────
+
+let _sseSource = null;
+
+function updateNowPlayingBanner(container, data) {
+  const banner = container.querySelector('#now-playing-banner');
+  if (!banner) return;
+
+  if (!data) {
+    banner.classList.add('hidden');
+    banner.classList.remove('flex');
+    return;
+  }
+
+  banner.classList.remove('hidden');
+  banner.classList.add('flex');
+
+  const title = container.querySelector('#now-playing-title');
+  const bar   = container.querySelector('#now-playing-bar');
+  const pct   = container.querySelector('#now-playing-pct');
+  const cover = container.querySelector('#now-playing-cover');
+  const link  = container.querySelector('#now-playing-link');
+
+  if (title) title.textContent = data.title ?? 'Unknown';
+  const progress = data.progressPercent ?? 0;
+  if (bar) bar.style.width = `${progress}%`;
+  if (pct) pct.textContent = `${progress}% complete`;
+  if (cover) {
+    const imgUrl = data.coverPath && data.serverUrl
+      ? `${data.serverUrl}/api/items/${data.absItemId}/cover`
+      : null;
+    cover.innerHTML = imgUrl
+      ? `<img src="${imgUrl}" class="w-full h-full object-cover" />`
+      : '<div class="w-full h-full bg-border/40"></div>';
+  }
+  if (link && data.bookId) link.href = `#book/${data.bookId}`;
+}
+
+async function initNowPlaying(container) {
+  const { user } = getState();
+  if (!user) return;
+
+  // Initial fetch
+  try {
+    const data = await api.getNowPlaying();
+    updateNowPlayingBanner(container, data);
+  } catch { /* not connected, ignore */ }
+
+  // Subscribe to SSE for real-time progress
+  if (_sseSource) { _sseSource.close(); _sseSource = null; }
+
+  try {
+    const es = new EventSource('/api/integrations/sse', { withCredentials: true });
+    _sseSource = es;
+
+    es.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'progress' && msg.data) {
+          const d = msg.data;
+          updateNowPlayingBanner(container, {
+            absItemId:       d.libraryItemId,
+            bookId:          null, // resolved on next full fetch
+            title:           d.mediaMetadata?.title ?? null,
+            progressPercent: d.progress ? Math.round(d.progress * 100) : null,
+            serverUrl:       null,
+          });
+        }
+      } catch { /* malformed event */ }
+    };
+
+    es.onerror = () => {
+      // SSE closed (user navigated away) — close gracefully
+      es.close();
+      if (_sseSource === es) _sseSource = null;
+    };
+  } catch { /* SSE not available */ }
 }
 
