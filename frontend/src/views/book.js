@@ -239,10 +239,6 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
             </a>`;
           }).join('')}
         </div>
-        <!-- Desktop: grid -->
-        <div class="hidden sm:grid grid-cols-4 lg:grid-cols-6 gap-4">
-          ${recs.map(b => recCard(b)).join('')}
-        </div>
       </section>` : ''}
 
       <!-- Comments -->
