@@ -566,6 +566,12 @@ function renderIntegrationsSection(integrations = []) {
                 class="field-input w-full" />
             </div>
           </div>
+          <div>
+            <label class="text-xs text-muted block mb-1">Library ID <span class="text-muted">(auto-detected; override if sync fails)</span></label>
+            <input id="calibre-library-id" type="text" placeholder="e.g. Calibre_Library"
+              value=""
+              class="field-input w-full" />
+          </div>
           ${cal ? `<p class="text-xs text-muted">Last synced: ${fmtDate(cal.last_synced_at)}</p>` : ''}
           <div class="flex gap-2 flex-wrap">
             <button id="calibre-save-btn"
@@ -699,11 +705,13 @@ function attachIntegrationsHandlers(container) {
       showIntMsg(container, 'calibre-msg', 'Server URL is required.', true);
       return;
     }
+    const libraryId = container.querySelector('#calibre-library-id')?.value.trim();
     try {
       await api.saveIntegration('calibre', {
         serverUrl: url,
         ...(username && username !== '••' ? { username } : {}),
         ...(password ? { password } : {}),
+        ...(libraryId ? { libraryId } : {}),
       });
       showIntMsg(container, 'calibre-msg', 'Connected! Initial sync starting in the background.');
       api.syncIntegration('calibre').catch(() => {});

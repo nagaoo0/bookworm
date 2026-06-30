@@ -45,7 +45,11 @@ router.put('/:service', async (req, res, next) => {
 
     // Validate connectivity before saving
     if (service === 'audiobookshelf') await absClient.testConnection(config);
-    if (service === 'calibre') await calibreClient.testConnection(config);
+    if (service === 'calibre') {
+      // testConnection returns { ok, libraryId } — persist the discovered libraryId
+      const result = await calibreClient.testConnection(config);
+      if (result?.libraryId && !config.libraryId) config.libraryId = result.libraryId;
+    }
     // audible is validated via the OAuth callback flow, not here
 
     await pool.query(
