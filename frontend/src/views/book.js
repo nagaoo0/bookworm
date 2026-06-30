@@ -5,7 +5,27 @@ import { showToast } from '../components/toast.js';
 import { loadLibrary } from './home.js';
 import { escHtml } from '../utils.js';
 
+function recCard(b) {
+  const cover = b.cover_url
+    ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
+    : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2">
+         <span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span>
+       </div>`;
+  const authors = Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? '');
+  return `
+    <a href="#book/${b.id}" class="group flex flex-col">
+      <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-surface-2 shadow
+                  ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
+        ${cover}
+      </div>
+      <p class="mt-2 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
+      ${authors ? `<p class="text-[11px] text-muted mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
+    </a>`;
+}
+
 export async function renderBook(container, bookId) {
+  // Clean up any leftover sticky CTA from a previous book view
+  document.getElementById('sticky-book-cta')?.remove();
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
 
   try {
@@ -63,7 +83,8 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
 
   const coverImg = effectiveCover
     ? `<img src="${escHtml(effectiveCover)}" alt="${escHtml(book.title)}"
-            class="w-full object-cover rounded-xl shadow-2xl" />`
+            id="book-cover-img"
+            class="w-full object-cover rounded-xl shadow-2xl cursor-zoom-in" />`
     : `<div class="w-full aspect-[2/3] bg-border/40 rounded-xl flex items-center justify-center">
          <span class="text-muted text-4xl">📖</span>
        </div>`;
@@ -197,24 +218,20 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
       ${recs.length ? `
       <section class="mt-10">
         <h2 class="font-serif text-xl font-semibold mb-4">Readers also have</h2>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          ${recs.map(b => {
-            const cover = b.cover_url
-              ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
-              : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2">
-                   <span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span>
-                 </div>`;
-            const authors = Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? '');
-            return `
-              <a href="#book/${b.id}" class="group flex flex-col">
-                <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-surface-2 shadow
-                            ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
-                  ${cover}
-                </div>
-                <p class="mt-2 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
-                ${authors ? `<p class="text-[11px] text-muted mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
-              </a>`;
-          }).join('')}
+        <!-- On mobile: horizontal scroll; on sm+: 4-col grid -->
+        <div class="hidden sm:grid grid-cols-4 gap-4" id="recs-grid">
+          ${recs.map(b => recCard(b)).join('')}
+        </div>
+        <div class="flex gap-3 overflow-x-auto sm:hidden reading-carousel pb-1" id="recs-scroll">
+          ${recs.map(b => `
+            <a href="#book/${b.id}" class="group flex flex-col flex-shrink-0" style="width:7rem">
+              <div class="relative w-full rounded overflow-hidden bg-surface-2 shadow ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all" style="aspect-ratio:2/3">
+                ${b.cover_url
+                  ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
+                  : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2"><span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span></div>`}
+              </div>
+              <p class="mt-1.5 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
+            </a>`).join('')}
         </div>
       </section>` : ''}
 
@@ -237,6 +254,33 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
         <p id="comment-err" class="text-xs text-red-400 mt-1 hidden"></p>` : ''}
       </section>
     </div>`;
+
+  // Cover zoom lightbox
+  container.querySelector('#book-cover-img')?.addEventListener('click', () => {
+    const src = container.querySelector('#book-cover-img')?.src;
+    if (!src) return;
+    const lb = document.createElement('div');
+    lb.id = 'cover-lightbox';
+    lb.innerHTML = `<img src="${escHtml(src)}" alt="${escHtml(book.title)}" />`;
+    lb.addEventListener('click', () => lb.remove());
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') lb.remove(); }, { once: true });
+    document.body.appendChild(lb);
+  });
+
+  // Sticky "Log a read" CTA on mobile (only when in library)
+  if (libEntry) {
+    document.getElementById('sticky-book-cta')?.remove();
+    const cta = document.createElement('button');
+    cta.id = 'sticky-book-cta';
+    cta.className = 'w-full bg-surface border border-border rounded-2xl py-3 font-semibold text-sm shadow-xl';
+    cta.style.cssText = 'backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)';
+    cta.textContent = '✏️  Log a read';
+    cta.addEventListener('click', () => {
+      const det = container.querySelector('#log-read-details');
+      if (det) { det.open = true; det.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    });
+    document.body.appendChild(cta);
+  }
 
   // Back button
   container.querySelector('#back-btn')?.addEventListener('click', () => history.back());
