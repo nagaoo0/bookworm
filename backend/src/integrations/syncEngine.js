@@ -56,6 +56,23 @@ export async function upsertBook(bookData) {
 }
 
 // ---------------------------------------------------------------------------
+// Resolve a book by checking existing availability mapping first.
+// This keeps merges stable: after merging A→B, the next sync sees the
+// book_availability row pointing to B and reuses it instead of recreating A.
+// ---------------------------------------------------------------------------
+
+async function resolveBookId(userId, service, externalId, bookData) {
+  if (externalId) {
+    const r = await pool.query(
+      'SELECT book_id FROM book_availability WHERE user_id=$1 AND service=$2 AND external_id=$3',
+      [userId, service, externalId]
+    );
+    if (r.rows.length) return { id: r.rows[0].book_id, isNew: false };
+  }
+  return upsertBook(bookData);
+}
+
+// ---------------------------------------------------------------------------
 // Enrich a newly created book with Google Books metadata (non-blocking).
 // Uses COALESCE so it never overwrites data that already exists.
 // ---------------------------------------------------------------------------
@@ -170,7 +187,7 @@ async function syncABS(userId, config) {
       const mapped = abs.mapItemToBook(item);
       mapped.cover_url = abs.getCoverUrl(config, item);
 
-      const { id: bookId, isNew } = await upsertBook(mapped);
+      const { id: bookId, isNew } = await resolveBookId(userId, 'audiobookshelf', item.id, mapped);
       if (isNew) enrichBook(bookId, mapped).catch(() => {});
 
       const progress = progressMap[item.id];
@@ -202,7 +219,7 @@ async function syncAudible(userId, config) {
 
   for (const item of [...library, ...wishlist]) {
     const mapped = audible.mapItemToBook(item);
-    const { id: bookId, isNew } = await upsertBook(mapped);
+    const { id: bookId, isNew } = await resolveBookId(userId, 'audible', mapped.extra.asin, mapped);
     if (isNew) enrichBook(bookId, mapped).catch(() => {});
     await upsertLibraryBook(userId, bookId, 'to_read');
     await upsertAvailability(userId, bookId, 'audible', mapped.extra.asin, [], mapped.extra);
@@ -215,7 +232,7 @@ async function syncCalibre(userId, config) {
     const mapped = calibre.mapBookToBookworm(entry);
     mapped.cover_url = calibre.getCoverUrl(config, entry); // pass entry, not ID
 
-    const { id: bookId, isNew } = await upsertBook(mapped);
+    const { id: bookId, isNew } = await resolveBookId(userId, 'calibre', String(mapped._calibreId), mapped);
     if (isNew) enrichBook(bookId, mapped).catch(() => {});
 
     await upsertLibraryBook(userId, bookId, 'to_read');

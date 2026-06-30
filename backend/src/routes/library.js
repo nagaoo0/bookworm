@@ -396,27 +396,48 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 // ── GET /api/library/duplicates ───────────────────────────────────────────────
-// Find books in the user's library that appear to be duplicates (same normalized
-// title + first author). Returns pairs with the lower-id book listed as "keep".
+// Find books in the user's library that appear to be duplicates.
+// Uses pg_trgm similarity so "The Hobbit" / "Hobbit" / "Foundation: Book 1"
+// all surface correctly. Returns pairs with a similarity score 0–1.
 router.get('/duplicates', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT
-         b1.id          AS keep_id,    b1.title   AS keep_title,
-         b1.authors     AS keep_authors, b1.cover_url AS keep_cover,
-         b1.google_id   AS keep_google_id,
-         b2.id          AS remove_id,  b2.title   AS remove_title,
-         b2.authors     AS remove_authors, b2.cover_url AS remove_cover,
-         b2.google_id   AS remove_google_id
+         b1.id       AS keep_id,    b1.title   AS keep_title,
+         b1.authors  AS keep_authors, b1.cover_url AS keep_cover,
+         b1.google_id AS keep_google_id,
+         b2.id       AS remove_id,  b2.title   AS remove_title,
+         b2.authors  AS remove_authors, b2.cover_url AS remove_cover,
+         b2.google_id AS remove_google_id,
+         ROUND(GREATEST(
+           similarity(lower(b1.title), lower(b2.title)),
+           word_similarity(lower(b1.title), lower(b2.title)),
+           word_similarity(lower(b2.title), lower(b1.title))
+         )::NUMERIC, 2) AS score
        FROM books b1
        JOIN books b2 ON b1.id < b2.id
        JOIN library_books lb1 ON lb1.book_id = b1.id AND lb1.user_id = $1
        JOIN library_books lb2 ON lb2.book_id = b2.id AND lb2.user_id = $1
-       WHERE lower(regexp_replace(b1.title,'[^a-zA-Z0-9]','','g'))
-           = lower(regexp_replace(b2.title,'[^a-zA-Z0-9]','','g'))
-         AND lower(regexp_replace(COALESCE(b1.authors[1],''),'[^a-zA-Z0-9]','','g'))
-           = lower(regexp_replace(COALESCE(b2.authors[1],''),'[^a-zA-Z0-9]','','g'))
-       ORDER BY b1.id
+       WHERE
+         -- Definite duplicate: same ISBN-13
+         (b1.isbn13 IS NOT NULL AND b1.isbn13 = b2.isbn13)
+         OR (
+           -- Fuzzy title match (handles subtitles, "The " prefix, etc.)
+           GREATEST(
+             similarity(lower(b1.title), lower(b2.title)),
+             word_similarity(lower(b1.title), lower(b2.title)),
+             word_similarity(lower(b2.title), lower(b1.title))
+           ) > 0.55
+           AND (
+             -- Author also fuzzy-matches, or one book has no author
+             b1.authors[1] IS NULL OR b2.authors[1] IS NULL
+             OR similarity(
+               lower(COALESCE(b1.authors[1],'')),
+               lower(COALESCE(b2.authors[1],''))
+             ) > 0.4
+           )
+         )
+       ORDER BY score DESC, b1.id
        LIMIT 100`,
       [req.user.id]
     );

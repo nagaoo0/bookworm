@@ -26,6 +26,9 @@ async function waitForDb(retries = 15, delayMs = 2000) {
 export async function migrate() {
   await waitForDb();
   await pool.query(`
+    -- Enable trigram extension for fuzzy duplicate detection
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
     -- Global book metadata cache
     CREATE TABLE IF NOT EXISTS books (
       id             SERIAL PRIMARY KEY,

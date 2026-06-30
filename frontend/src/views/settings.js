@@ -433,8 +433,13 @@ function renderDupePair(pair, index) {
     ? `<img src="${escHtml(url)}" alt="" class="w-10 h-14 object-cover rounded flex-shrink-0">`
     : `<div class="w-10 h-14 bg-surface-2 rounded flex-shrink-0 flex items-center justify-center text-lg">📖</div>`;
 
+  const score = pair.score != null ? Math.round(pair.score * 100) : null;
+  const scoreLabel = score == null ? '' : score >= 90 ? 'Exact' : score >= 70 ? 'Very likely' : 'Possible';
+  const scoreColor = score == null ? '' : score >= 90 ? 'text-green-400' : score >= 70 ? 'text-amber-400' : 'text-muted';
+
   return `
     <div class="rounded-lg border border-border/60 p-3 space-y-2" data-dupe-index="${index}">
+      ${score != null ? `<p class="text-xs ${scoreColor}"><span class="font-semibold">${scoreLabel}</span> · ${score}% match</p>` : ''}
       <div class="grid grid-cols-2 gap-3">
         <!-- Keep option -->
         <div class="space-y-1">
