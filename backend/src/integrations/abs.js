@@ -33,7 +33,7 @@ export async function fetchLibraries(config) {
 }
 
 export async function fetchLibraryItems(config, libraryId) {
-  const data = await absGet(config, `/api/libraries/${libraryId}/items?limit=5000&minified=1`);
+  const data = await absGet(config, `/api/libraries/${libraryId}/items?limit=5000`);
   return data.results ?? [];
 }
 
@@ -70,7 +70,7 @@ export function mapItemToBook(item) {
     _absItem: item,
     extra: {
       narrator,
-      duration_minutes: meta.duration ? Math.round(meta.duration / 60) : null,
+      duration_minutes: (media.duration ?? meta.duration) ? Math.round((media.duration ?? meta.duration) / 60) : null,
       series: meta.series ?? null,
       explicit: meta.explicit ?? false,
       publisher: meta.publisher ?? null,

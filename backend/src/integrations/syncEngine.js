@@ -119,7 +119,11 @@ async function upsertLibraryBook(userId, bookId, status = 'to_read') {
   await pool.query(
     `INSERT INTO library_books (user_id, book_id, status)
      VALUES ($1, $2, $3)
-     ON CONFLICT (user_id, book_id) DO NOTHING`,
+     ON CONFLICT (user_id, book_id) DO UPDATE SET status = CASE
+       WHEN EXCLUDED.status = 'done'                                     THEN 'done'
+       WHEN EXCLUDED.status = 'reading' AND library_books.status = 'to_read' THEN 'reading'
+       ELSE library_books.status
+     END`,
     [userId, bookId, status]
   );
 }

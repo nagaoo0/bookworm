@@ -85,9 +85,9 @@ export async function computeStats(uid) {
        GROUP BY source`,
       [uid]
     ),
-    // Total listening minutes: sum duration_minutes stored in ABS availability records
-    // for books the user has finished (library_books.status = 'done').
-    // FILTER must follow the aggregate call, not be nested inside it.
+    // Total listening minutes: sum duration_minutes for ABS books that have a
+    // finished reading session. Avoids relying on library_books.status which
+    // may lag behind ABS progress for books already in the library.
     pool.query(
       `SELECT COALESCE(
          SUM((ba.extra->>'duration_minutes')::NUMERIC)
@@ -96,8 +96,14 @@ export async function computeStats(uid) {
          0
        )::INT AS abs_minutes
        FROM book_availability ba
-       JOIN library_books lb ON lb.book_id = ba.book_id AND lb.user_id = ba.user_id
-       WHERE ba.user_id = $1 AND ba.service = 'audiobookshelf' AND lb.status = 'done'`,
+       WHERE ba.user_id = $1 AND ba.service = 'audiobookshelf'
+         AND EXISTS (
+           SELECT 1 FROM reading_sessions rs
+           WHERE rs.user_id = $1
+             AND rs.book_id = ba.book_id
+             AND rs.source = 'audiobookshelf'
+             AND rs.finished_at IS NOT NULL
+         )`,
       [uid]
     ),
   ]);
