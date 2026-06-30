@@ -118,6 +118,13 @@ document.getElementById('app').innerHTML = `
 
     <main id="main-content" class="flex-1 max-w-7xl mx-auto w-full px-4 py-6"></main>
 
+    <!-- Mobile FAB: quick add book (visible only when logged in, hidden on sm+) -->
+    <button id="mobile-fab" style="display:none" aria-label="Add a book" onclick="location.hash='#search'">
+      <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+      </svg>
+    </button>
+
     <!-- Mobile bottom navigation (shown only when logged in, hidden on sm+) -->
     <nav id="bottom-nav" style="display:none">
       <a href="#home" data-route="home" class="bot-nav-item" aria-label="Library">
@@ -254,6 +261,7 @@ function showApp(user) {
   if (profLinkBot) { profLinkBot.href = profileHref; }
 
   document.getElementById('bottom-nav').style.display = 'flex';
+  document.getElementById('mobile-fab').style.display = 'flex';
 
   if (user.isAdmin) {
     document.getElementById('admin-nav-link')?.classList.remove('hidden');
@@ -345,6 +353,7 @@ function showAuth() {
   headerEl.classList.add('hidden');
   pubHeader.classList.add('hidden');
   document.getElementById('bottom-nav').style.display = 'none';
+  document.getElementById('mobile-fab').style.display = 'none';
   // Ensure admin-only nav links are hidden when logged out
   document.getElementById('admin-nav-link')?.classList.add('hidden');
   document.getElementById('admin-nav-link-mob')?.classList.add('hidden');

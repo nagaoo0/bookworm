@@ -24,6 +24,30 @@ function shelfSelectHTML(shelves, name = '_shelfId') {
 
 let debounceTimer;
 
+const RECENT_KEY = 'bw_recent_searches';
+const MAX_RECENT = 8;
+
+function loadRecentSearches() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'); } catch { return []; }
+}
+function saveRecentSearch(q) {
+  if (!q || q.length < 2) return;
+  const list = loadRecentSearches().filter(s => s !== q);
+  list.unshift(q);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT)));
+}
+
+function renderSkeletonResults() {
+  return `<div class="book-grid">
+    ${Array.from({ length: 8 }, () => `
+      <div class="flex flex-col gap-2">
+        <div class="skeleton aspect-[2/3] w-full rounded-lg"></div>
+        <div class="skeleton h-3 w-3/4 rounded"></div>
+        <div class="skeleton h-2 w-1/2 rounded"></div>
+      </div>`).join('')}
+  </div>`;
+}
+
 export function renderSearch(container) {
   const { searchResults, searchQuery } = getState();
   const { searchLanguage: prefLang } = loadPrefs();
@@ -40,7 +64,8 @@ export function renderSearch(container) {
         </span>
         <input id="search-input" type="text" value="${escHtml(searchQuery)}"
           placeholder="Search by title, author, anything…"
-          class="glass-input w-full rounded-xl pl-10 pr-4 py-3 text-base" />
+          class="glass-input w-full rounded-xl pl-10 pr-4 py-3 text-base" autocomplete="off" />
+        <div id="recent-searches-dropdown" class="recent-searches-dropdown hidden"></div>
       </div>
 
       <!-- Advanced toggle -->
@@ -88,14 +113,49 @@ export function renderSearch(container) {
     <div id="search-results"></div>`;
 
   const input = container.querySelector('#search-input');
+  const recentDropdown = container.querySelector('#recent-searches-dropdown');
   input.focus();
+
+  function showRecentDropdown() {
+    const recent = loadRecentSearches();
+    if (!recent.length) { recentDropdown.classList.add('hidden'); return; }
+    recentDropdown.innerHTML = recent.map(q => `
+      <button class="recent-search-item" data-q="${escHtml(q)}">
+        <svg class="w-3.5 h-3.5 text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        ${escHtml(q)}
+      </button>`).join('');
+    recentDropdown.classList.remove('hidden');
+    recentDropdown.querySelectorAll('.recent-search-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        input.value = btn.dataset.q;
+        recentDropdown.classList.add('hidden');
+        setState({ searchQuery: btn.dataset.q });
+        const { searchLanguage } = loadPrefs();
+        runSearch({ q: btn.dataset.q, language: searchLanguage || undefined }, container);
+      });
+    });
+  }
+
+  input.addEventListener('focus', () => { if (!input.value.trim()) showRecentDropdown(); });
+  input.addEventListener('blur', () => setTimeout(() => recentDropdown.classList.add('hidden'), 150));
+
   input.addEventListener('input', e => {
     clearTimeout(debounceTimer);
     const q = e.target.value.trim();
     setState({ searchQuery: q });
-    if (!q) { renderResults(container, []); return; }
+    if (!q) {
+      renderResults(container, []);
+      showRecentDropdown();
+      return;
+    }
+    recentDropdown.classList.add('hidden');
     const { searchLanguage } = loadPrefs();
     const advLang = container.querySelector('#adv-language')?.value;
+    // Show skeleton immediately
+    const resultsEl = container.querySelector('#search-results');
+    if (resultsEl) resultsEl.innerHTML = renderSkeletonResults();
     debounceTimer = setTimeout(() => runSearch({ q, language: advLang || searchLanguage || undefined }, container), 400);
   });
 
@@ -156,7 +216,10 @@ function advField(id, label, placeholder) {
 
 async function runSearch(params, container) {
   const resultsEl = container.querySelector('#search-results');
-  resultsEl.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
+  if (resultsEl && !resultsEl.innerHTML.includes('skeleton')) {
+    resultsEl.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
+  }
+  if (params.q) saveRecentSearch(params.q);
   try {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);
