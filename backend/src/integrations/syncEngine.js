@@ -185,8 +185,10 @@ async function syncABS(userId, config) {
         server_url: config.serverUrl,
       });
 
-      if (progress?.isFinished && progress.finishedAt) {
-        await syncFinishedSession(userId, bookId, 'audiobookshelf', new Date(progress.finishedAt));
+      if (progress?.isFinished) {
+        // finishedAt may be 0 (epoch) for historically-marked items — fall back to now()
+        const finishedAt = progress.finishedAt ? new Date(progress.finishedAt) : new Date();
+        await syncFinishedSession(userId, bookId, 'audiobookshelf', finishedAt);
       }
     }
   }

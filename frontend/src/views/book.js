@@ -413,29 +413,64 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
         </div>
       </div>
 
-      <!-- Cover URL + Metadata -->
-      <details class="group">
+      <!-- Book details & cover (editable) -->
+      <details class="group" id="edit-details-panel">
         <summary class="text-xs text-muted hover:text-amber-400 cursor-pointer list-none flex items-center gap-1 transition-colors">
-          <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Book details &amp; cover
+          <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Edit details &amp; cover
         </summary>
-        <div class="mt-3 space-y-3">
-          <!-- Cover URL -->
-          <div>
-            <label class="text-xs text-muted block mb-1">Cover image URL</label>
-            <div class="flex gap-2">
-              <input id="cover-url-input" type="url" placeholder="https://…"
-                class="field-input flex-1 text-xs" />
-              <button id="save-cover-btn"
-                class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
-                Set cover
-              </button>
+        <div class="mt-3 space-y-4">
+
+          <!-- Editable fields -->
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-muted block mb-1">Title</label>
+              <input id="edit-title" type="text" value="${escHtml(book.title)}"
+                class="field-input w-full text-xs" />
             </div>
-            <p id="cover-msg" class="text-xs mt-1 hidden"></p>
+            <div>
+              <label class="text-xs text-muted block mb-1">Authors <span class="text-muted">(comma-separated)</span></label>
+              <input id="edit-authors" type="text" value="${escHtml((book.authors ?? []).join(', '))}"
+                class="field-input w-full text-xs" />
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1">Cover image URL</label>
+              <input id="cover-url-input" type="url" placeholder="https://…"
+                value="${escHtml(effectiveCover ?? '')}"
+                class="field-input w-full text-xs" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-muted block mb-1">Page count</label>
+                <input id="edit-page-count" type="number" min="1"
+                  value="${effectivePageCount ?? ''}"
+                  class="field-input w-full text-xs" />
+              </div>
+              <div>
+                <label class="text-xs text-muted block mb-1">Published date</label>
+                <input id="edit-published" type="text" placeholder="e.g. 2021-03-15"
+                  value="${escHtml(effectivePublished ?? '')}"
+                  class="field-input w-full text-xs" />
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1">Description</label>
+              <textarea id="edit-description" rows="3" placeholder="Book description…"
+                class="field-input w-full text-xs resize-none">${escHtml(effectiveDescription ?? '')}</textarea>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="save-details-btn"
+                class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-xs transition-colors">
+                Save details
+              </button>
+              <p id="details-msg" class="text-xs hidden"></p>
+            </div>
           </div>
 
-          <!-- Metadata search -->
+          <hr class="border-border/40" />
+
+          <!-- Metadata search (Google Books) -->
           <div>
-            <label class="text-xs text-muted block mb-1">Find metadata (Google Books)</label>
+            <label class="text-xs text-muted block mb-1">Import metadata from Google Books</label>
             <div class="flex gap-2">
               <input id="meta-search-input" type="text" value="${escHtml(book.title)}" placeholder="Search title or ISBN…"
                 class="field-input flex-1 text-xs" />
@@ -445,6 +480,24 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
               </button>
             </div>
             <div id="meta-results" class="space-y-2 max-h-48 overflow-y-auto mt-2"></div>
+          </div>
+
+          <hr class="border-border/40" />
+
+          <!-- Manual merge -->
+          <div>
+            <label class="text-xs text-muted block mb-1">Merge into another book in your library</label>
+            <p class="text-xs text-muted mb-2">This entry will be absorbed into the selected book — shelves, sessions, and availability data are transferred.</p>
+            <div class="flex gap-2">
+              <input id="merge-search-input" type="text" placeholder="Search by title…"
+                class="field-input flex-1 text-xs" />
+              <button id="merge-search-btn"
+                class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
+                Search
+              </button>
+            </div>
+            <div id="merge-results" class="space-y-2 max-h-56 overflow-y-auto mt-2"></div>
+            <p id="merge-msg" class="text-xs mt-2 hidden"></p>
           </div>
         </div>
       </details>
@@ -500,24 +553,47 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
     loadLibrary();
   });
 
-  // Cover URL
-  container.querySelector('#save-cover-btn')?.addEventListener('click', async () => {
-    const coverUrl = container.querySelector('#cover-url-input')?.value.trim();
-    const msg = container.querySelector('#cover-msg');
-    if (!coverUrl) return;
+  // Save all editable details (title, authors, cover, page count, published date, description)
+  container.querySelector('#save-details-btn')?.addEventListener('click', async () => {
+    const msg = container.querySelector('#details-msg');
+    const title       = container.querySelector('#edit-title')?.value.trim();
+    const authorsRaw  = container.querySelector('#edit-authors')?.value ?? '';
+    const coverUrl    = container.querySelector('#cover-url-input')?.value.trim() || null;
+    const pageCount   = parseInt(container.querySelector('#edit-page-count')?.value, 10) || null;
+    const publishedDate = container.querySelector('#edit-published')?.value.trim() || null;
+    const description = container.querySelector('#edit-description')?.value.trim() || null;
+
+    if (!title) {
+      if (msg) { msg.className = 'text-xs text-red-400'; msg.textContent = 'Title cannot be empty.'; msg.classList.remove('hidden'); }
+      return;
+    }
+
     try {
-      await api.updateMetadata(libEntry.id, { coverUrl });
+      await api.updateMetadata(libEntry.id, {
+        title,
+        authors: authorsRaw.split(',').map(a => a.trim()).filter(Boolean),
+        coverUrl,
+        pageCount,
+        publishedDate,
+        description,
+      });
       await loadLibrary();
-      const wrap = container.querySelector('#cover-img-wrap');
-      if (wrap) wrap.innerHTML = `<img src="${escHtml(coverUrl)}" alt="" class="w-full object-cover rounded-xl shadow-2xl" />`;
-      if (msg) { msg.className = 'text-xs mt-1 text-green-400'; msg.textContent = 'Cover updated.'; msg.classList.remove('hidden'); }
+      // Refresh cover in the header
+      if (coverUrl) {
+        const wrap = container.querySelector('#cover-img-wrap');
+        if (wrap) wrap.innerHTML = `<img src="${escHtml(coverUrl)}" alt="" class="w-full object-cover rounded-xl shadow-2xl" />`;
+      }
+      // Refresh title + author display
+      const h1 = container.querySelector('h1.font-serif');
+      if (h1 && title) h1.textContent = title;
+      if (msg) { msg.className = 'text-xs text-green-400'; msg.textContent = 'Saved.'; msg.classList.remove('hidden'); }
     } catch (err) {
-      if (msg) { msg.className = 'text-xs mt-1 text-red-400'; msg.textContent = err.message; msg.classList.remove('hidden'); }
+      if (msg) { msg.className = 'text-xs text-red-400'; msg.textContent = err.message; msg.classList.remove('hidden'); }
     }
     if (msg) setTimeout(() => msg.classList.add('hidden'), 2500);
   });
 
-  // Metadata search
+  // Metadata search (Google Books)
   const metaSearchBtn = container.querySelector('#meta-search-btn');
   const metaSearchInput = container.querySelector('#meta-search-input');
   metaSearchBtn?.addEventListener('click', () => {
@@ -526,6 +602,17 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
   });
   metaSearchInput?.addEventListener('keydown', e => {
     if (e.key === 'Enter') metaSearchBtn?.click();
+  });
+
+  // Merge search
+  const mergeSearchBtn = container.querySelector('#merge-search-btn');
+  const mergeSearchInput = container.querySelector('#merge-search-input');
+  mergeSearchBtn?.addEventListener('click', () => {
+    const q = mergeSearchInput?.value.trim();
+    if (q) runMergeSearch(container, q, book, softReload);
+  });
+  mergeSearchInput?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') mergeSearchBtn?.click();
   });
 }
 
@@ -663,6 +750,78 @@ function renderAvailabilitySection(availability = []) {
       <h2 class="font-serif text-xl font-semibold mb-4">Where to find this book</h2>
       <div class="space-y-3">${items}</div>
     </section>`;
+}
+
+// ── Merge search ──────────────────────────────────────────────────────────────
+
+function runMergeSearch(container, q, currentBook, softReload) {
+  const el = container.querySelector('#merge-results');
+  const msg = container.querySelector('#merge-msg');
+  if (!el) return;
+
+  // Search the already-loaded library in memory
+  const library = getState().library ?? [];
+  const lq = q.toLowerCase();
+  const matches = library.filter(b =>
+    String(b.book_id) !== String(currentBook.id) &&
+    (b.title.toLowerCase().includes(lq) ||
+     (b.authors ?? []).some(a => a.toLowerCase().includes(lq)))
+  ).slice(0, 10);
+
+  if (!matches.length) {
+    el.innerHTML = `<p class="text-muted text-xs italic">No books found matching "${escHtml(q)}".</p>`;
+    return;
+  }
+
+  el.innerHTML = matches.map(b => {
+    const cover = b.cover_url
+      ? `<img src="${escHtml(b.cover_url)}" class="w-8 h-11 object-cover rounded flex-shrink-0" />`
+      : `<div class="w-8 h-11 bg-border/40 rounded flex-shrink-0 flex items-center justify-center text-xs">📖</div>`;
+    return `
+      <div class="flex gap-2 items-center bg-surface-2 rounded-lg px-3 py-2">
+        ${cover}
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-medium line-clamp-1">${escHtml(b.title)}</p>
+          <p class="text-[10px] text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
+        </div>
+        <button class="merge-into-btn text-[10px] px-2 py-1 bg-red-500/20 text-red-300 rounded hover:bg-red-500/40 transition-colors flex-shrink-0"
+                data-keep-id="${b.book_id}" data-keep-title="${escHtml(b.title)}">
+          Merge into →
+        </button>
+      </div>`;
+  }).join('');
+
+  el.querySelectorAll('.merge-into-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const keepId = btn.dataset.keepId;
+      const keepTitle = btn.dataset.keepTitle;
+
+      // Replace button with confirm row
+      const row = btn.closest('.flex');
+      btn.outerHTML = `
+        <span class="flex items-center gap-1 flex-shrink-0">
+          <span class="text-[10px] text-muted">Keep "${escHtml(keepTitle)}"?</span>
+          <button class="merge-confirm-yes text-[10px] px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded font-medium">Yes, merge</button>
+          <button class="merge-confirm-no text-[10px] px-1.5 py-0.5 text-muted hover:text-text">Cancel</button>
+        </span>`;
+
+      row.querySelector('.merge-confirm-no')?.addEventListener('click', () => {
+        // Re-run to restore list
+        runMergeSearch(container, q, currentBook, softReload);
+      });
+
+      row.querySelector('.merge-confirm-yes')?.addEventListener('click', async (e) => {
+        e.currentTarget.textContent = '…'; e.currentTarget.disabled = true;
+        try {
+          await api.mergeBooks(Number(keepId), Number(currentBook.id));
+          // Navigate to the book we kept
+          location.hash = `#book/${keepId}`;
+        } catch (err) {
+          if (msg) { msg.className = 'text-xs text-red-400'; msg.textContent = err.message; msg.classList.remove('hidden'); }
+        }
+      });
+    });
+  });
 }
 
 // ── Comments ───────────────────────────────────────────────────────────────────

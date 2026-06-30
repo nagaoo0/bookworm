@@ -338,12 +338,9 @@ function drawHeatmap(dailySessions, containerId) {
 // ── Listening Activity (ABS) ──────────────────────────────────────────────────
 
 function renderListeningCard(s) {
-  // Count sessions sourced from ABS
   const absSessions = (s.sessionsBySource ?? {})['audiobookshelf'] ?? 0;
-
-  // Estimate hours from ABS-sourced sessions using average audiobook duration heuristic
-  // (exact hours would need a dedicated stats endpoint; this is a best-effort display)
-  const absHoursEstimate = (s.totalHoursListened ?? null);
+  // absListeningMinutes = sum of duration_minutes for finished ABS books (from book_availability)
+  const absHours = s.absListeningMinutes != null ? Math.round(s.absListeningMinutes / 60) : null;
 
   return `
     <section class="bg-surface rounded-xl p-5 ring-1 ring-border/20">
@@ -357,13 +354,13 @@ function renderListeningCard(s) {
           <div class="font-serif text-3xl font-bold text-blue-400">${absSessions}</div>
           <div class="text-xs text-muted mt-1 uppercase tracking-wider">Audiobooks Finished</div>
         </div>
-        ${absHoursEstimate !== null ? `
+        ${absHours !== null ? `
         <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20">
-          <div class="font-serif text-3xl font-bold text-blue-400">${Math.round(absHoursEstimate)}</div>
-          <div class="text-xs text-muted mt-1 uppercase tracking-wider">Hours Listened</div>
+          <div class="font-serif text-3xl font-bold text-blue-400">${absHours}</div>
+          <div class="text-xs text-muted mt-1 uppercase tracking-wider">Hours of Audio</div>
         </div>` : `
         <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20 flex items-center justify-center">
-          <p class="text-xs text-muted">Sync more books to see listening hours</p>
+          <p class="text-xs text-muted">Sync your library to see hours</p>
         </div>`}
       </div>
     </section>`;

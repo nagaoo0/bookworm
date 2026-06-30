@@ -218,7 +218,31 @@ router.patch('/:id/metadata', async (req, res, next) => {
     );
     if (!lb) return res.status(404).json({ error: 'Not found' });
 
-    const { googleId, coverUrl, categories, pageCount, publishedDate, description } = req.body;
+    const { googleId, coverUrl, categories, pageCount, publishedDate, description, title, authors } = req.body;
+
+    // Title and authors are written to the shared books record (no per-user override columns)
+    if (title !== undefined || authors !== undefined) {
+      const setParts = [];
+      const vals = [];
+      if (title !== undefined && title.trim()) {
+        setParts.push(`title = $${vals.length + 1}`);
+        vals.push(title.trim());
+      }
+      if (authors !== undefined) {
+        const arr = Array.isArray(authors)
+          ? authors
+          : authors.split(',').map(a => a.trim()).filter(Boolean);
+        setParts.push(`authors = $${vals.length + 1}`);
+        vals.push(arr);
+      }
+      if (setParts.length) {
+        vals.push(lb.book_id);
+        await pool.query(
+          `UPDATE books SET ${setParts.join(', ')} WHERE id = $${vals.length}`,
+          vals
+        );
+      }
+    }
 
     // If a googleId is being attached, link it on the shared books record only
     // (this is a structural link, not display data — does not leak display changes)

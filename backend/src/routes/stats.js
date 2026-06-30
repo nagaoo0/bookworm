@@ -5,7 +5,7 @@ const router = Router();
 
 // Shared stats computation — accepts a user id, works for both /stats and profile stats
 export async function computeStats(uid) {
-  const [totals, perYear, avgRating, currentlyReading, monthly, categoriesPerYear, dailySessions, pagesPerYear, authorsPerYear, sourceBreakdown] = await Promise.all([
+  const [totals, perYear, avgRating, currentlyReading, monthly, categoriesPerYear, dailySessions, pagesPerYear, authorsPerYear, sourceBreakdown, absMinutes] = await Promise.all([
     pool.query(
       `SELECT COUNT(DISTINCT book_id) AS total_books, COUNT(*) AS total_sessions
        FROM reading_sessions WHERE user_id = $1 AND finished_at IS NOT NULL`,
@@ -85,6 +85,20 @@ export async function computeStats(uid) {
        GROUP BY source`,
       [uid]
     ),
+    // Total listening minutes: sum duration_minutes stored in ABS availability records
+    // for books the user has finished (library_books.status = 'done')
+    pool.query(
+      `SELECT COALESCE(
+         SUM((ba.extra->>'duration_minutes')::NUMERIC FILTER (
+           WHERE ba.extra->>'duration_minutes' IS NOT NULL
+             AND (ba.extra->>'duration_minutes')::NUMERIC > 0
+         )), 0
+       )::INT AS abs_minutes
+       FROM book_availability ba
+       JOIN library_books lb ON lb.book_id = ba.book_id AND lb.user_id = ba.user_id
+       WHERE ba.user_id = $1 AND ba.service = 'audiobookshelf' AND lb.status = 'done'`,
+      [uid]
+    ),
   ]);
 
   const yearMap = {};
@@ -128,6 +142,8 @@ export async function computeStats(uid) {
   const sessionsBySource = {};
   for (const row of sourceBreakdown.rows) sessionsBySource[row.source] = Number(row.count);
 
+  const absListeningMinutes = Number(absMinutes.rows[0]?.abs_minutes ?? 0);
+
   return {
     totalBooks: Number(totals.rows[0].total_books),
     totalSessions: Number(totals.rows[0].total_sessions),
@@ -140,6 +156,7 @@ export async function computeStats(uid) {
     pagesByYear,
     favoriteAuthorByYear,
     sessionsBySource,
+    absListeningMinutes: absListeningMinutes > 0 ? absListeningMinutes : null,
   };
 }
 

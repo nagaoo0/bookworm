@@ -228,15 +228,20 @@ router.get('/abs/now-playing', async (req, res, next) => {
       [req.user.id, session.libraryItemId]
     );
 
+    // ABS ListeningSession has currentTime + duration but not always a 'progress' field
+    const currentTime = session.currentTime ?? 0;
+    const duration = session.duration ?? 0;
+    const rawProgress = session.progress ?? (duration > 0 ? currentTime / duration : 0);
+
     res.json({
       absItemId: session.libraryItemId,
       bookId: avail?.book_id ?? null,
       title: session.mediaMetadata?.title ?? null,
       author: session.mediaMetadata?.authorName ?? null,
       coverPath: session.coverPath ?? null,
-      progressPercent: session.progress ? Math.round(session.progress * 100) : null,
-      currentTime: session.currentTime ?? null,
-      duration: session.duration ?? null,
+      progressPercent: Math.round(rawProgress * 100),
+      currentTime,
+      duration,
       serverUrl: row.config.serverUrl,
     });
   } catch (err) { next(err); }

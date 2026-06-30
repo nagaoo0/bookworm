@@ -862,11 +862,14 @@ async function initNowPlaying(container) {
         const msg = JSON.parse(e.data);
         if (msg.type === 'progress' && msg.data) {
           const d = msg.data;
+          const rawPct = d.progress != null
+            ? d.progress
+            : (d.duration > 0 ? d.currentTime / d.duration : null);
           updateNowPlayingBanner(container, {
             absItemId:       d.libraryItemId,
             bookId:          null, // resolved on next full fetch
             title:           d.mediaMetadata?.title ?? null,
-            progressPercent: d.progress ? Math.round(d.progress * 100) : null,
+            progressPercent: rawPct != null ? Math.round(rawPct * 100) : null,
             serverUrl:       null,
           });
         }
