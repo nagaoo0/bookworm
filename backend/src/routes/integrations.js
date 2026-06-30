@@ -159,9 +159,13 @@ router.get('/audible/auth-url', (req, res) => {
 
 router.get('/audible/callback', async (req, res, next) => {
   try {
-    // Amazon encodes the auth code as openid.oa2.authorization_code
-    const code = req.query['openid.oa2.authorization_code'];
-    if (!code) return res.status(400).send('Missing authorization code');
+    // Express parses dots as nested objects; parse the raw query string instead
+    const rawQuery = new URLSearchParams(req.url.split('?')[1] ?? '');
+    const code = rawQuery.get('openid.oa2.authorization_code');
+    if (!code) {
+      const err = rawQuery.get('openid.error') ?? 'no authorization code returned';
+      return res.status(400).send(`Audible authorization failed: ${err}`);
+    }
 
     // We need user identity — check session cookie directly
     const token = req.cookies?.bw_session;

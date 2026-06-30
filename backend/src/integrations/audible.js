@@ -34,23 +34,24 @@ export function generatePKCE() {
 
 export function buildAuthUrl(marketplace, redirectUri, pkce) {
   const { tld } = getMarket(marketplace);
-  const params = new URLSearchParams({
-    openid_ns: 'http://specs.openid.net/auth/2.0',
-    openid_identity: 'http://specs.openid.net/auth/2.0/identifier_select',
-    openid_claimed_id: 'http://specs.openid.net/auth/2.0/identifier_select',
-    openid_mode: 'checkid_setup',
-    openid_return_to: redirectUri,
-    openid_assoc_handle: `amzn_audible_ios_${marketplace}`,
-    openid_ns_pape: 'http://specs.openid.net/extensions/pape/1.0',
-    openid_pape_max_auth_age: '0',
-    openid_ns_oa2: 'http://www.amazon.com/ap/ext/oauth/2',
-    openid_oa2_application_name: 'audible',
-    openid_oa2_client_id: 'device:6a52316c62706d53427a5735505a76477a45375959566674327959465a6374424a53497069546d45234132435a4a5a474c4b324a4a564d',
-    openid_oa2_scope: 'device_auth_access',
-    openid_oa2_response_type: 'code',
-    openid_oa2_code_challenge_method: 'S256',
-    openid_oa2_code_challenge: pkce.challenge,
-  });
+  // Amazon OpenID Connect uses dot-notation parameter names, not underscores
+  const params = new URLSearchParams([
+    ['openid.ns',                    'http://specs.openid.net/auth/2.0'],
+    ['openid.identity',              'http://specs.openid.net/auth/2.0/identifier_select'],
+    ['openid.claimed_id',            'http://specs.openid.net/auth/2.0/identifier_select'],
+    ['openid.mode',                  'checkid_setup'],
+    ['openid.return_to',             redirectUri],
+    ['openid.assoc_handle',          `amzn_audible_ios_${marketplace}`],
+    ['openid.ns.pape',               'http://specs.openid.net/extensions/pape/1.0'],
+    ['openid.pape.max_auth_age',     '0'],
+    ['openid.ns.oa2',                'http://www.amazon.com/ap/ext/oauth/2'],
+    ['openid.oa2.application_name',  'audible'],
+    ['openid.oa2.client_id',         'device:6a52316c62706d53427a5735505a76477a45375959566674327959465a6374424a53497069546d45234132435a4a5a474c4b324a4a564d'],
+    ['openid.oa2.scope',             'device_auth_access'],
+    ['openid.oa2.response_type',     'code'],
+    ['openid.oa2.code_challenge_method', 'S256'],
+    ['openid.oa2.code_challenge',    pkce.challenge],
+  ]);
   return `https://www.amazon.${tld}/ap/signin?${params}`;
 }
 

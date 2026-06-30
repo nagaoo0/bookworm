@@ -54,6 +54,19 @@ export async function upsertBook(bookData) {
 }
 
 // ---------------------------------------------------------------------------
+// Add book to user's library (idempotent — does not overwrite existing status)
+// ---------------------------------------------------------------------------
+
+async function upsertLibraryBook(userId, bookId, status = 'to_read') {
+  await pool.query(
+    `INSERT INTO library_books (user_id, book_id, status)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, book_id) DO NOTHING`,
+    [userId, bookId, status]
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Upsert book_availability
 // ---------------------------------------------------------------------------
 
@@ -126,6 +139,11 @@ async function syncABS(userId, config) {
       const bookId = await upsertBook(mapped);
 
       const formats = ['m4b'];
+      const progress = progressMap[item.id];
+      const libStatus = progress?.isFinished ? 'done'
+        : (progress?.progress > 0 ? 'reading' : 'to_read');
+
+      await upsertLibraryBook(userId, bookId, libStatus);
       await upsertAvailability(userId, bookId, 'audiobookshelf', item.id, formats, {
         ...mapped.extra,
         abs_library_id: lib.id,
@@ -134,7 +152,6 @@ async function syncABS(userId, config) {
       });
 
       // Auto-session for finished books
-      const progress = progressMap[item.id];
       if (progress?.isFinished && progress.finishedAt) {
         await syncFinishedSession(userId, bookId, 'audiobookshelf', new Date(progress.finishedAt));
       }
@@ -151,6 +168,8 @@ async function syncAudible(userId, config) {
   for (const item of [...library, ...wishlist]) {
     const mapped = audible.mapItemToBook(item);
     const bookId = await upsertBook(mapped);
+    const libStatus = mapped.extra.is_wishlist ? 'to_read' : 'to_read';
+    await upsertLibraryBook(userId, bookId, libStatus);
     await upsertAvailability(userId, bookId, 'audible', mapped.extra.asin, [], mapped.extra);
   }
 }
@@ -161,6 +180,7 @@ async function syncCalibre(userId, config) {
     const mapped = calibre.mapBookToBookworm(item);
     mapped.cover_url = calibre.getCoverUrl(config, item._calibreId);
     const bookId = await upsertBook(mapped);
+    await upsertLibraryBook(userId, bookId, 'to_read');
     await upsertAvailability(
       userId, bookId, 'calibre', String(item._calibreId),
       mapped.extra.formats, mapped.extra

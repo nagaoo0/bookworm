@@ -1,6 +1,4 @@
-import { createRequire } from 'module';
-
-const _require = createRequire(import.meta.url);
+import { io as socketIO } from 'socket.io-client';
 
 // ---------------------------------------------------------------------------
 // Audiobookshelf REST + Socket.IO client
@@ -93,31 +91,25 @@ export function getCoverUrl(config, item) {
 let _io = null;
 
 export async function openEventStream(config, onEvent) {
-  try {
-    const { io } = _require('socket.io-client');
-    const socket = io(base(config), {
-      transports: ['websocket'],
-      auth: { token: config.token },
-      reconnection: true,
-      reconnectionDelay: 5000,
-    });
+  const socket = socketIO(base(config), {
+    transports: ['websocket'],
+    auth: { token: config.token },
+    reconnection: true,
+    reconnectionDelay: 5000,
+  });
 
-    socket.on('connect', () => {
-      console.log('[ABS] WebSocket connected');
-    });
+  socket.on('connect', () => {
+    console.log('[ABS] WebSocket connected');
+  });
 
-    socket.on('user_stream_progress', data => onEvent('progress', data));
-    socket.on('item_updated', data => onEvent('item_updated', data));
-    socket.on('disconnect', reason => {
-      console.log('[ABS] WebSocket disconnected:', reason);
-    });
+  socket.on('user_stream_progress', data => onEvent('progress', data));
+  socket.on('item_updated', data => onEvent('item_updated', data));
+  socket.on('disconnect', reason => {
+    console.log('[ABS] WebSocket disconnected:', reason);
+  });
 
-    _io = socket;
-    return socket;
-  } catch (err) {
-    console.warn('[ABS] socket.io-client not available, skipping real-time events:', err.message);
-    return null;
-  }
+  _io = socket;
+  return socket;
 }
 
 export function closeEventStream() {

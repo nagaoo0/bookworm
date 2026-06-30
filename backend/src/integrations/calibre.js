@@ -9,7 +9,11 @@ function base(config) {
 }
 
 function calibreHeaders(config) {
-  const h = { 'Content-Type': 'application/json' };
+  const h = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
+  };
   if (config.username && config.password) {
     const creds = Buffer.from(`${config.username}:${config.password}`).toString('base64');
     h.Authorization = `Basic ${creds}`;
@@ -23,14 +27,42 @@ async function calibreGet(config, path) {
   });
   if (res.status === 401) throw new Error('CALIBRE_AUTH_REQUIRED');
   if (!res.ok) throw new Error(`Calibre ${path} → ${res.status}`);
+
+  const contentType = res.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      `Calibre returned HTML instead of JSON at ${path}. ` +
+      `Check your server URL and ensure Content Server is running (Calibre → Preferences → Sharing over the net).`
+    );
+  }
   return res.json();
 }
 
 export async function testConnection(config) {
-  // Calibre Content Server exposes /cdb/cmd at root; a simple GET to / returns HTML
-  const res = await fetch(`${base(config)}/`, { headers: calibreHeaders(config) });
-  if (!res.ok && res.status !== 401) throw new Error(`Calibre unreachable: ${res.status}`);
-  if (res.status === 401) throw new Error('CALIBRE_AUTH_REQUIRED');
+  // Test reachability then verify the AJAX JSON API is accessible
+  const root = await fetch(`${base(config)}/`, {
+    headers: calibreHeaders(config),
+    signal: AbortSignal.timeout(8000),
+  }).catch(err => { throw new Error(`Cannot reach Calibre server: ${err.message}`); });
+
+  if (root.status === 401) throw new Error('CALIBRE_AUTH_REQUIRED');
+  if (!root.ok) throw new Error(`Calibre unreachable: ${root.status}`);
+
+  // Verify the AJAX search endpoint returns JSON (not HTML)
+  const search = await fetch(`${base(config)}/ajax/search?query=&num=1`, {
+    headers: calibreHeaders(config),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (search.status === 401) throw new Error('CALIBRE_AUTH_REQUIRED');
+
+  const ct = search.headers.get('content-type') ?? '';
+  if (!ct.includes('application/json')) {
+    throw new Error(
+      'Calibre Content Server is reachable but its AJAX API returned HTML. ' +
+      'Make sure you enable the Content Server in Calibre → Preferences → Sharing over the net, ' +
+      'and that the URL points to the Calibre server (default port 8080), not a web proxy.'
+    );
+  }
   return true;
 }
 
