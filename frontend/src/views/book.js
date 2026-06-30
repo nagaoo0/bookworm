@@ -14,7 +14,7 @@ function recCard(b) {
        </div>`;
   const authors = Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? '');
   return `
-    <a href="#book/${b.id}" class="group flex flex-col">
+    <a href="${b.id ? `#book/${b.id}` : `#book/g:${b.google_id}`}" class="group flex flex-col">
       <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-surface-2 shadow
                   ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
         ${cover}
