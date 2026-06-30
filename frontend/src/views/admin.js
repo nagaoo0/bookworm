@@ -24,13 +24,42 @@ export async function renderAdmin(container) {
 }
 
 function render(container, users) {
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const activeRecent = users.filter(u => u.last_active && new Date(u.last_active).getTime() > sevenDaysAgo).length;
+  const totalBooks = users.reduce((sum, u) => sum + (u.book_count || 0), 0);
+  const adminCount = users.filter(u => u.is_admin).length;
+
   container.innerHTML = `
     <div class="max-w-4xl mx-auto space-y-6">
       <h1 class="font-serif text-2xl font-semibold">Admin</h1>
 
+      <!-- System stats -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20">
+          <div class="font-serif text-3xl font-bold text-amber-400">${users.length}</div>
+          <div class="text-xs text-muted mt-1 uppercase tracking-wider">Total Users</div>
+        </div>
+        <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20">
+          <div class="font-serif text-3xl font-bold text-green-400">${activeRecent}</div>
+          <div class="text-xs text-muted mt-1 uppercase tracking-wider">Active (7d)</div>
+        </div>
+        <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20">
+          <div class="font-serif text-3xl font-bold text-amber-400">${totalBooks.toLocaleString()}</div>
+          <div class="text-xs text-muted mt-1 uppercase tracking-wider">Total Books</div>
+        </div>
+        <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20">
+          <div class="font-serif text-3xl font-bold text-amber-400">${adminCount}</div>
+          <div class="text-xs text-muted mt-1 uppercase tracking-wider">Admins</div>
+        </div>
+      </div>
+
       <section class="bg-surface rounded-xl ring-1 ring-border/40 overflow-hidden">
-        <div class="px-5 py-4 border-b border-border flex items-center justify-between">
-          <h2 class="font-semibold text-text">Users <span class="text-muted text-sm font-normal">(${users.length})</span></h2>
+        <div class="px-5 py-4 border-b border-border">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="font-semibold text-text">Users <span class="text-muted text-sm font-normal">(${users.length})</span></h2>
+          </div>
+          <input type="text" id="admin-user-search" placeholder="Filter by username…"
+            class="field-input w-full text-sm" autocomplete="off" />
         </div>
         <div id="admin-users-list" class="divide-y divide-border">
           ${users.map(u => renderUserRow(u)).join('')}
@@ -92,6 +121,14 @@ function renderUserRow(u) {
 }
 
 function attachHandlers(container, users) {
+  // User search filter
+  container.querySelector('#admin-user-search')?.addEventListener('input', e => {
+    const q = e.target.value.toLowerCase().trim();
+    container.querySelectorAll('#admin-users-list [data-user-id]').forEach(row => {
+      row.style.display = (!q || row.dataset.username.toLowerCase().includes(q)) ? '' : 'none';
+    });
+  });
+
   const modal = container.querySelector('#reset-pw-modal');
   const pwInput = container.querySelector('#reset-pw-input');
   const pwError = container.querySelector('#reset-pw-error');

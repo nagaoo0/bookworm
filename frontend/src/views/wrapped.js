@@ -57,7 +57,11 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
   // Books per month this year
   const monthlyThisYear = stats.monthly?.[year] ?? {};
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const maxMonth = Math.max(1, ...Object.values(monthlyThisYear));
+  const monthValues = Object.values(monthlyThisYear).filter(v => v > 0);
+  const maxMonth = monthValues.length ? Math.max(...monthValues) : 1;
+  const peakMonth = monthValues.length
+    ? monthNames[Object.entries(monthlyThisYear).sort((a, b) => b[1] - a[1])[0]?.[0] - 1]
+    : null;
 
   const shareUrl = `${location.origin}${location.pathname}#u/${encodeURIComponent(username)}/wrapped`;
 
@@ -96,14 +100,18 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
       <!-- Monthly bars -->
       ${Object.keys(monthlyThisYear).length ? `
       <div class="card-section mb-6">
-        <h2 class="font-semibold text-text mb-4 text-sm uppercase tracking-wider">Books per Month</h2>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-text text-sm uppercase tracking-wider">Books per Month</h2>
+          ${peakMonth ? `<span class="text-xs" style="color:${accentColor}">Peak: ${peakMonth}</span>` : ''}
+        </div>
         <div class="flex items-end gap-1.5 h-24">
           ${monthNames.map((m, i) => {
             const count = monthlyThisYear[i + 1] ?? 0;
             const h = count ? Math.max(6, Math.round((count / maxMonth) * 80)) : 4;
+            const isPeak = count === maxMonth && count > 0;
             return `<div class="flex-1 flex flex-col items-center gap-1">
-              <div class="w-full rounded-t transition-all duration-500" style="height:${h}px;background:${count ? accentColor : 'rgba(68,64,60,0.4)'}"></div>
-              <span class="text-[9px] text-muted">${m}</span>
+              <div class="w-full rounded-t transition-all duration-500" style="height:${h}px;background:${isPeak ? accentHover : (count ? accentColor : 'rgba(68,64,60,0.4)')}"></div>
+              <span class="text-[9px] ${isPeak ? 'font-semibold' : 'text-muted'}" style="${isPeak ? `color:${accentColor}` : ''}">${m}</span>
             </div>`;
           }).join('')}
         </div>
@@ -116,19 +124,32 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
           <span class="text-muted select-none">Link: </span>
           <a href="${escHtml(shareUrl)}" class="text-amber-400 hover:text-amber-300 transition-colors break-all">${escHtml(shareUrl)}</a>
         </div>
-        <button id="copy-wrapped-btn"
+        <button id="share-wrapped-btn"
           class="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 active:scale-[0.98]"
           style="background:${accentColor};color:#1c1917">
-          Copy link
+          Share
         </button>
       </div>
     </div>`;
 
-  container.querySelector('#copy-wrapped-btn')?.addEventListener('click', () => {
+  container.querySelector('#share-wrapped-btn')?.addEventListener('click', async () => {
+    const btn = container.querySelector('#share-wrapped-btn');
+    const shareData = {
+      title: `${username}'s ${year} Year in Review · Bookworm`,
+      url: shareUrl,
+    };
+    if (typeof navigator.share === 'function' && navigator.canShare?.(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+    // Clipboard fallback
     navigator.clipboard.writeText(shareUrl).then(() => {
-      const btn = container.querySelector('#copy-wrapped-btn');
-      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy link'; }, 1500); }
-    });
+      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Share'; }, 1500); }
+    }).catch(() => {});
   });
 }
 

@@ -5,12 +5,14 @@ import { avatarHTML } from '../components/avatar.js';
 import { escHtml } from '../utils.js';
 
 let feedFilter = 'all'; // 'all' | 'following'
+let feedFilterSetByUser = false;
 let activeTab = 'feed';
 
 export async function renderUsers(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
     const loggedIn = !!getState().user;
+    if (loggedIn && !feedFilterSetByUser) feedFilter = 'following';
     const [users, feed, challenges, groups] = await Promise.all([
       api.getUsers(),
       api.getFeed(feedFilter === 'following' ? 'following' : undefined).catch(() => []),
@@ -46,12 +48,23 @@ function render(container, users, feed, challenges, groups) {
       </div>
 
       <div id="tab-readers" class="tab-panel hidden">
-        ${renderReadersList(users)}
+        <div class="mb-4">
+          <input type="text" id="reader-search" placeholder="Search readers…"
+            class="field-input w-full" autocomplete="off" />
+        </div>
+        <div id="readers-list-wrap">${renderReadersList(users)}</div>
       </div>
 
       <div id="tab-challenges" class="tab-panel hidden"></div>
       <div id="tab-groups" class="tab-panel hidden"></div>
     </div>`;
+
+  // Reader search filter
+  container.querySelector('#reader-search')?.addEventListener('input', e => {
+    const q = e.target.value.toLowerCase().trim();
+    const filtered = q ? users.filter(u => u.username.toLowerCase().includes(q)) : users;
+    container.querySelector('#readers-list-wrap').innerHTML = renderReadersList(filtered);
+  });
 
   renderChallengesTab(container.querySelector('#tab-challenges'), challenges, container, users, feed, groups);
   renderGroupsTab(container.querySelector('#tab-groups'), groups, container, users, feed, challenges);
@@ -94,6 +107,7 @@ function render(container, users, feed, challenges, groups) {
   container.querySelectorAll('.feed-filter-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       feedFilter = btn.dataset.filter;
+      feedFilterSetByUser = true;
       const feedContent = container.querySelector('#feed-content');
       feedContent.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
       try {
@@ -146,7 +160,7 @@ function renderFeed(feed) {
       const liked = !!s.liked;
       const sid = s.session_id ?? s.id;
       const likeBtn = user ? `
-        <button class="like-btn flex items-center gap-1 text-xs transition-colors ${liked ? 'text-rose-400' : 'text-muted hover:text-rose-400'}"
+        <button class="like-btn flex items-center gap-1 text-xs transition-colors p-2 -m-2 touch-manipulation ${liked ? 'text-rose-400' : 'text-muted hover:text-rose-400'}"
                 data-session-id="${sid}" data-liked="${liked}" data-count="${likeCount}">
           ${liked ? '♥' : '♡'} <span class="like-count">${likeCount > 0 ? likeCount : ''}</span>
         </button>` : (likeCount > 0 ? `<span class="text-xs text-muted">♥ ${likeCount}</span>` : '');

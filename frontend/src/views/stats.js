@@ -27,6 +27,7 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
   const currentYear = years[0] ?? new Date().getFullYear();
 
   const hasCats = Object.keys(s.categoriesByYear ?? {}).length > 0;
+  const streak = computeStreak(s.dailySessions ?? {});
 
   // Reading goal progress bar for the current year (only shown on non-compact / full stats page)
   const goalSection = (!opts.compact && goal?.target) ? (() => {
@@ -37,10 +38,20 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
           <h2 class="font-serif text-lg font-semibold">${currentYear} Reading Goal</h2>
           <span class="text-sm text-muted">${goal.booksRead} / ${goal.target} books</span>
         </div>
-        <div class="w-full bg-surface-2 rounded-full h-3 overflow-hidden">
+        <div class="relative w-full bg-surface-2 rounded-full h-3 overflow-hidden">
           <div class="h-3 rounded-full transition-all" style="width:${pct}%;background:var(--color-accent,#f59e0b)"></div>
+          <div class="absolute inset-y-0 w-px" style="left:25%;background:rgba(255,255,255,0.2)"></div>
+          <div class="absolute inset-y-0 w-px" style="left:50%;background:rgba(255,255,255,0.2)"></div>
+          <div class="absolute inset-y-0 w-px" style="left:75%;background:rgba(255,255,255,0.2)"></div>
         </div>
-        <p class="text-xs text-muted mt-2">${pct}% complete${pct >= 100 ? ' 🎉' : ''}</p>
+        <div class="flex justify-between mt-1 px-0">
+          <span class="text-[10px] text-muted">0</span>
+          <span class="text-[10px] text-muted" style="margin-left:calc(25% - 1ch)">25%</span>
+          <span class="text-[10px] text-muted" style="margin-left:calc(25% - 1ch)">50%</span>
+          <span class="text-[10px] text-muted" style="margin-left:calc(25% - 1ch)">75%</span>
+          <span class="text-[10px] text-muted">${goal.target}</span>
+        </div>
+        <p class="text-xs text-muted mt-1">${pct}% complete${pct >= 100 ? ' 🎉' : ''}</p>
       </section>`;
   })() : '';
 
@@ -59,17 +70,26 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
         ${statCard('Avg Rating', s.avgRating ? s.avgRating.toFixed(1) + ' ★' : '—')}
       </div>
 
+      <!-- Reading streak -->
+      ${streak > 0 ? `
+      <div class="flex items-center gap-4 bg-surface-2 rounded-xl px-5 py-4 ring-1 ring-border/20">
+        <span class="text-3xl flex-shrink-0">🔥</span>
+        <div>
+          <span class="font-serif text-2xl font-bold text-amber-400">${streak}</span>
+          <span class="text-sm text-muted ml-1.5">${streak === 1 ? 'day streak' : 'days streak'}</span>
+          <p class="text-xs text-muted mt-0.5">Consecutive days with a finished book</p>
+        </div>
+      </div>` : ''}
+
       <!-- Listening Activity (Audiobookshelf) -->
       ${absStatus?.connected ? `<div id="${opts.listeningCardId ?? 'abs-listening-card'}">${renderListeningCard(s, currentYear)}</div>` : ''}
 
-      <!-- Year selector -->
+      <!-- Year selector (segmented pills) -->
       ${years.length ? `
-      <div class="flex items-center gap-3">
-        <label class="text-sm text-muted font-medium">Year</label>
-        <select id="${opts.yearSelectId ?? 'year-select'}"
-          class="field-input rounded-lg px-3 py-1.5 text-sm">
-          ${years.map(y => `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`).join('')}
-        </select>
+      <div class="flex flex-wrap gap-2 items-center">
+        ${years.map(y => `
+          <button class="year-pill${y === currentYear ? ' year-pill-active' : ''}" data-year="${y}">${y}</button>
+        `).join('')}
       </div>` : ''}
 
       <!-- Monthly bar chart -->
@@ -98,21 +118,43 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
 
     </div>`;
 
-  const barId  = opts.barCanvasId ?? 'monthly-chart';
-  const pieId  = opts.pieCanvasId ?? 'pie-chart';
-  const yearId = opts.yearSelectId ?? 'year-select';
+  const barId = opts.barCanvasId ?? 'monthly-chart';
+  const pieId = opts.pieCanvasId ?? 'pie-chart';
 
   drawMonthlyChart(s.monthly ?? {}, currentYear, barId);
   drawPieChart(s.categoriesByYear ?? {}, currentYear, pieId);
   drawHeatmap(s.dailySessions ?? {}, opts.heatmapId ?? 'reading-heatmap');
 
-  container.querySelector(`#${yearId}`)?.addEventListener('change', e => {
-    const y = Number(e.target.value);
-    drawMonthlyChart(s.monthly ?? {}, y, barId);
-    drawPieChart(s.categoriesByYear ?? {}, y, pieId);
-    const listeningCardWrapper = container.querySelector(`#${opts.listeningCardId ?? 'abs-listening-card'}`);
-    if (listeningCardWrapper) listeningCardWrapper.innerHTML = renderListeningCard(s, y);
+  container.querySelectorAll('.year-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const y = Number(btn.dataset.year);
+      container.querySelectorAll('.year-pill').forEach(p => p.classList.remove('year-pill-active'));
+      btn.classList.add('year-pill-active');
+      drawMonthlyChart(s.monthly ?? {}, y, barId);
+      drawPieChart(s.categoriesByYear ?? {}, y, pieId);
+      const listeningCardWrapper = container.querySelector(`#${opts.listeningCardId ?? 'abs-listening-card'}`);
+      if (listeningCardWrapper) listeningCardWrapper.innerHTML = renderListeningCard(s, y);
+    });
   });
+}
+
+function computeStreak(dailySessions) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayKey = today.toISOString().slice(0, 10);
+  const yesterdayKey = new Date(today.getTime() - 86400000).toISOString().slice(0, 10);
+  if (!dailySessions[todayKey] && !dailySessions[yesterdayKey]) return 0;
+  let cur = new Date(today);
+  if (!dailySessions[todayKey]) cur.setDate(cur.getDate() - 1);
+  let streak = 0;
+  while (true) {
+    const key = cur.toISOString().slice(0, 10);
+    if ((dailySessions[key] ?? 0) > 0) {
+      streak++;
+      cur.setDate(cur.getDate() - 1);
+    } else break;
+  }
+  return streak;
 }
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];

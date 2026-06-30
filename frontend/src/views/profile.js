@@ -65,7 +65,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
   container.innerHTML = `
     <div class="fade-in">
       <!-- Hero -->
-      <div class="relative rounded-2xl overflow-hidden m-4 p-6 sm:p-8"
+      <div class="relative rounded-2xl overflow-hidden m-1 p-2 sm:p-2"
            style="${bannerUrl
              ? `background:url(${escHtml(bannerUrl)}) center/cover no-repeat;border:1px solid rgba(255,255,255,0.06)`
              : `background:linear-gradient(135deg, hsl(${hue},30%,10%) 0%, hsl(${(hue+40)%360},25%,8%) 100%);border:1px solid rgba(255,255,255,0.06)`}">
@@ -88,6 +88,8 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
               ${wrappedLink}
               <span class="text-muted">·</span>
               ${gridLink}
+              <span class="text-muted">·</span>
+              <button id="copy-profile-link" class="text-xs text-muted hover:text-amber-400 transition-colors" title="Copy profile link">🔗 Copy link</button>
             </p>
           </div>
           ${followBtnHtml}
@@ -170,7 +172,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
   // Apply profile owner's accent color to this view
   if (accent) applyProfileAccent(container, accent);
 
-  const savedTab = lastTab.get(username) ?? 'shelves';
+  const savedTab = lastTab.get(username) ?? (isOwnProfile ? 'shelves' : 'feed');
   const validTab = container.querySelector(`#tab-${savedTab}`) ? savedTab : 'shelves';
   refreshTabs(validTab);
 
@@ -241,6 +243,15 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
   container.querySelector('#followers-pill')?.addEventListener('click', () => showFollowInline('followers'));
   container.querySelector('#following-pill')?.addEventListener('click', () => showFollowInline('following'));
 
+  // Copy profile link
+  container.querySelector('#copy-profile-link')?.addEventListener('click', () => {
+    const url = `${location.origin}${location.pathname}#u/${encodeURIComponent(username)}`;
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = container.querySelector('#copy-profile-link');
+      if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = '🔗 Copy link'; }, 1500); }
+    }).catch(() => {});
+  });
+
   // Follow / unfollow
   const followBtn = container.querySelector('#follow-btn');
   if (followBtn) {
@@ -276,6 +287,22 @@ function renderShelvesTab(shelves, library, myBookIds = new Set(), isOwnProfile 
   const byShelf = {};
   for (const s of shelves) byShelf[s.id] = (library ?? []).filter(b => (b.shelf_ids ?? []).includes(s.id));
 
+  const inCommonBooks = !isOwnProfile && myBookIds.size > 0
+    ? (library ?? []).filter(b => myBookIds.has(String(b.book_id)) && b.status !== 'reading')
+    : [];
+  const inCommonSection = inCommonBooks.length > 0 ? `
+    <section class="mb-10">
+      <div class="flex items-center gap-2.5 mb-3">
+        <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,0.5)"></span>
+        <h2 class="font-serif text-lg font-semibold">In Common</h2>
+        <span class="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded-full">${inCommonBooks.length}</span>
+      </div>
+      <p class="text-xs text-muted mb-4">Books you've both read</p>
+      <div class="book-grid stagger">
+        ${inCommonBooks.map(b => bookCardHTML(b, { readOnly: true })).join('')}
+      </div>
+    </section>` : '';
+
   const readingBooks = (library ?? []).filter(b => b.status === 'reading');
   for (const s of shelves) {
     byShelf[s.id] = byShelf[s.id].filter(b => b.status !== 'reading');
@@ -309,7 +336,7 @@ function renderShelvesTab(shelves, library, myBookIds = new Set(), isOwnProfile 
       </section>`;
   }).join('');
 
-  const combined = `${readingSection}${sections}`;
+  const combined = `${inCommonSection}${readingSection}${sections}`;
   return combined || `<div class="text-center py-16 text-muted italic">No books on shelves yet.</div>`;
 }
 

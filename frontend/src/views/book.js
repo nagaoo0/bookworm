@@ -66,12 +66,14 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
     attachSessionDeleteHandlers(container, book.id, reloadSessions);
   };
 
+  const openReadModal = () => openLogReadModal(book, reloadSessions);
+
   const softReload = async () => {
     await loadLibrary();
     const newLib = getState().library ?? [];
     const newShelves = getState().shelves ?? [];
     const newEntry = newLib.find(b => String(b.book_id) === String(book.id));
-    renderLibraryPanel(container, book, newEntry, newShelves);
+    renderLibraryPanel(container, book, newEntry, newShelves, openReadModal);
   };
 
   // Prefer the user's per-library-entry overrides over the shared book record
@@ -264,29 +266,11 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
     document.body.appendChild(lb);
   });
 
-  // Sticky "Log a read" CTA on mobile (only when in library)
-  if (libEntry) {
-    document.getElementById('sticky-book-cta')?.remove();
-    const cta = document.createElement('button');
-    cta.id = 'sticky-book-cta';
-    cta.className = 'w-full bg-surface border border-border rounded-2xl py-3 font-semibold text-sm shadow-xl';
-    cta.style.cssText = 'backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)';
-    cta.textContent = '✏️  Log a read';
-    cta.addEventListener('click', () => {
-      const det = container.querySelector('#log-read-details');
-      if (det) { det.open = true; det.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-    });
-    document.body.appendChild(cta);
-  }
-
   // Back button
   container.querySelector('#back-btn')?.addEventListener('click', () => history.back());
 
-  // Log a read button (scrolls to / opens the details)
-  container.querySelector('#log-read-btn')?.addEventListener('click', () => {
-    const det = container.querySelector('#log-read-details');
-    if (det) { det.open = true; det.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-  });
+  // Log a read button opens the modal
+  container.querySelector('#log-read-btn')?.addEventListener('click', () => openLogReadModal(book, reloadSessions));
 
   // Add to library
   container.querySelector('#add-to-library-btn')?.addEventListener('click', async () => {
@@ -349,7 +333,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
   });
 
   attachSessionDeleteHandlers(container, book.id, reloadSessions);
-  attachLibraryPanelHandlers(container, book, libEntry, shelves, softReload);
+  attachLibraryPanelHandlers(container, book, libEntry, shelves, softReload, openReadModal);
 
   // Comment form
   container.querySelector('#comment-form')?.addEventListener('submit', async e => {
@@ -374,14 +358,14 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
 
 // ── Library panel ──────────────────────────────────────────────────────────────
 
-function renderLibraryPanel(container, book, libEntry, shelves) {
+function renderLibraryPanel(container, book, libEntry, shelves, onMarkDone = null) {
   const panel = container.querySelector('#library-panel');
   if (!panel) return;
   panel.innerHTML = renderLibraryPanelHTML(book, libEntry, shelves);
   attachLibraryPanelHandlers(container, book, libEntry, shelves, async () => {
     await loadLibrary();
-    renderLibraryPanel(container, book, (getState().library ?? []).find(b => String(b.book_id) === String(book.id)), getState().shelves ?? []);
-  });
+    renderLibraryPanel(container, book, (getState().library ?? []).find(b => String(b.book_id) === String(book.id)), getState().shelves ?? [], onMarkDone);
+  }, onMarkDone);
 }
 
 function renderLibraryPanelHTML(book, libEntry, shelves) {
@@ -452,7 +436,7 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
 
       <!-- Notes -->
       <div>
-        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2">Notes</p>
+        <p class="text-xs text-muted tracking-wider font-medium mb-2">Private Notes : </p>
         <textarea id="book-notes" rows="3" placeholder="Quotes, context, anything to remember…"
           class="field-input w-full resize-none">${escHtml(libEntry.notes ?? '')}</textarea>
         <div class="flex items-center gap-2 mt-2">
@@ -552,14 +536,16 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
     </div>`;
 }
 
-function attachLibraryPanelHandlers(container, book, libEntry, shelves, softReload) {
+function attachLibraryPanelHandlers(container, book, libEntry, shelves, softReload, onMarkDone = null) {
   if (!libEntry) return;
 
   // Status buttons
   container.querySelectorAll('.lib-status-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await api.setStatus(libEntry.id, btn.dataset.status);
+      const newStatus = btn.dataset.status;
+      await api.setStatus(libEntry.id, newStatus);
       softReload();
+      if (newStatus === 'done' && onMarkDone) onMarkDone();
     });
   });
 
@@ -661,6 +647,98 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
   });
   mergeSearchInput?.addEventListener('keydown', e => {
     if (e.key === 'Enter') mergeSearchBtn?.click();
+  });
+}
+
+// ── Log a read modal ──────────────────────────────────────────────────────────
+
+function openLogReadModal(book, onSuccess) {
+  document.getElementById('log-read-modal')?.remove();
+  const today = new Date().toISOString().slice(0, 10);
+  const modal = document.createElement('div');
+  modal.id = 'log-read-modal';
+  modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="log-modal-backdrop"></div>
+    <div class="relative w-full max-w-md rounded-2xl shadow-2xl"
+         style="background:color-mix(in srgb,var(--color-surface) 97%,transparent);border:1px solid var(--color-border)">
+      <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid var(--color-border)">
+        <div>
+          <p class="font-semibold text-sm text-text">Log a read</p>
+          <p class="text-xs text-muted mt-0.5 line-clamp-1">${escHtml(book.title)}</p>
+        </div>
+        <button id="log-modal-close" class="text-muted hover:text-text transition-colors p-1 text-lg leading-none">✕</button>
+      </div>
+      <div class="px-5 py-5">
+        <form id="log-modal-form" class="space-y-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-muted block mb-1">Started</label>
+              <input type="date" name="startedAt" class="field-input w-full" />
+            </div>
+            <div>
+              <label class="text-xs text-muted block mb-1">Finished</label>
+              <input type="date" name="finishedAt" value="${today}" class="field-input w-full" />
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-muted block mb-1">Rating</label>
+            <div id="log-modal-stars" class="flex gap-1">${starRatingHTML(0, { interactive: true })}</div>
+          </div>
+          <div>
+            <label class="text-xs text-muted block mb-1">Review <span class="text-muted font-normal">(optional)</span></label>
+            <textarea name="review" rows="3" placeholder="Your thoughts…" maxlength="5000"
+              class="field-input w-full resize-none"></textarea>
+          </div>
+          <p id="log-modal-error" class="text-xs text-red-400 hidden"></p>
+          <div class="flex gap-2">
+            <button type="submit"
+              class="flex-1 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-xl py-2.5 text-sm transition-all">
+              Save
+            </button>
+            <button type="button" id="log-modal-skip"
+              class="px-5 py-2.5 text-muted hover:text-text text-sm transition-colors rounded-xl border border-border hover:border-muted">
+              Skip
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const closeModal = () => modal.remove();
+  const onKeyDown = e => { if (e.key === 'Escape') closeModal(); };
+  document.addEventListener('keydown', onKeyDown, { once: true });
+  modal.querySelector('#log-modal-backdrop')?.addEventListener('click', closeModal);
+  modal.querySelector('#log-modal-close')?.addEventListener('click', closeModal);
+  modal.querySelector('#log-modal-skip')?.addEventListener('click', closeModal);
+
+  let modalRating = 0;
+  const starsEl = modal.querySelector('#log-modal-stars');
+  if (starsEl) attachStarHandlers(starsEl, val => { modalRating = val; });
+
+  modal.querySelector('#log-modal-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const errEl = modal.querySelector('#log-modal-error');
+    const submitBtn = modal.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Saving…';
+    try {
+      await api.addSession(book.id, {
+        startedAt:  fd.get('startedAt')  || null,
+        finishedAt: fd.get('finishedAt') || null,
+        rating:     modalRating || null,
+        review:     fd.get('review')     || null,
+      });
+      document.removeEventListener('keydown', onKeyDown);
+      closeModal();
+      onSuccess?.();
+    } catch (err) {
+      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Save';
+    }
   });
 }
 
