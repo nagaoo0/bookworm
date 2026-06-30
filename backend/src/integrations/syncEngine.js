@@ -1,4 +1,5 @@
 import { pool } from '../db.js';
+import { searchBooks } from '../googleBooks.js';
 import * as abs from './abs.js';
 import * as audible from './audible.js';
 import * as calibre from './calibre.js';
@@ -14,6 +15,7 @@ export const sseClients = new Map();
 
 // ---------------------------------------------------------------------------
 // Book deduplication: find or create a row in books
+// Returns { id, isNew } — callers use isNew to decide whether to enrich.
 // ---------------------------------------------------------------------------
 
 function normalize(str) {
@@ -23,10 +25,10 @@ function normalize(str) {
 export async function upsertBook(bookData) {
   const { title, authors, isbn13, cover_url } = bookData;
 
-  // 1) Try ISBN match
+  // 1) Try ISBN-13 match
   if (isbn13) {
     const r = await pool.query('SELECT id FROM books WHERE isbn13 = $1', [isbn13]);
-    if (r.rows.length) return r.rows[0].id;
+    if (r.rows.length) return { id: r.rows[0].id, isNew: false };
   }
 
   // 2) Fuzzy match on normalized title + first author
@@ -40,21 +42,60 @@ export async function upsertBook(bookData) {
        LIMIT 1`,
       [normTitle, normAuthor]
     );
-    if (r.rows.length) return r.rows[0].id;
+    if (r.rows.length) return { id: r.rows[0].id, isNew: false };
   }
 
-  // 3) Create new book
+  // 3) Create new book row
   const r = await pool.query(
     `INSERT INTO books (title, authors, isbn13, cover_url)
      VALUES ($1, $2, $3, $4)
      RETURNING id`,
     [title, authors ?? [], isbn13 ?? null, cover_url ?? null]
   );
-  return r.rows[0].id;
+  return { id: r.rows[0].id, isNew: true };
 }
 
 // ---------------------------------------------------------------------------
-// Add book to user's library (idempotent — does not overwrite existing status)
+// Enrich a newly created book with Google Books metadata (non-blocking).
+// Uses COALESCE so it never overwrites data that already exists.
+// ---------------------------------------------------------------------------
+
+async function enrichBook(bookId, { title, authors, isbn13 }) {
+  try {
+    let results = [];
+    if (isbn13) {
+      results = await searchBooks({ isbn: isbn13 }, 1);
+    }
+    if (!results.length && title) {
+      results = await searchBooks({ title, author: authors?.[0] ?? '' }, 1);
+    }
+    if (!results.length) return;
+
+    const g = results[0];
+    await pool.query(
+      `UPDATE books SET
+         google_id      = COALESCE(google_id, $1),
+         cover_url      = COALESCE(NULLIF(cover_url, ''), $2),
+         description    = COALESCE(NULLIF(description, ''), $3),
+         page_count     = COALESCE(page_count, $4),
+         categories     = COALESCE(categories, $5),
+         isbn13         = COALESCE(isbn13, $6),
+         published_date = COALESCE(published_date, $7)
+       WHERE id = $8`,
+      [
+        g.googleId    ?? null, g.coverUrl     ?? null, g.description ?? null,
+        g.pageCount   ?? null, g.categories   ?? null, g.isbn13      ?? null,
+        g.publishedDate ?? null, bookId,
+      ]
+    );
+    console.log(`[sync] enriched book ${bookId} "${title}" via Google Books`);
+  } catch (err) {
+    console.warn(`[sync] enrichBook ${bookId} failed: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Add book to user's library — idempotent, never overwrites existing status
 // ---------------------------------------------------------------------------
 
 async function upsertLibraryBook(userId, bookId, status = 'to_read') {
@@ -76,8 +117,8 @@ async function upsertAvailability(userId, bookId, service, externalId, formats, 
      VALUES ($1, $2, $3, $4, $5, $6, now())
      ON CONFLICT (user_id, book_id, service)
      DO UPDATE SET external_id = EXCLUDED.external_id,
-                   formats = EXCLUDED.formats,
-                   extra = EXCLUDED.extra,
+                   formats     = EXCLUDED.formats,
+                   extra       = EXCLUDED.extra,
                    last_seen_at = now()`,
     [userId, bookId, service, externalId ?? null, formats ?? [], extra ?? {}]
   );
@@ -88,34 +129,26 @@ async function upsertAvailability(userId, bookId, service, externalId, formats, 
 // ---------------------------------------------------------------------------
 
 async function syncFinishedSession(userId, bookId, service, finishedAt) {
-  // Only if user has this book in their Bookworm library
   const lib = await pool.query(
     'SELECT id FROM library_books WHERE user_id=$1 AND book_id=$2',
     [userId, bookId]
   );
   if (!lib.rows.length) return;
 
-  // Don't duplicate
   const existing = await pool.query(
-    `SELECT id FROM reading_sessions
-     WHERE user_id=$1 AND book_id=$2 AND source=$3
-     LIMIT 1`,
+    `SELECT id FROM reading_sessions WHERE user_id=$1 AND book_id=$2 AND source=$3 LIMIT 1`,
     [userId, bookId, service]
   );
   if (existing.rows.length) return;
 
-  // Check user preference: auto_sessions toggle
   const pref = await pool.query(
-    `SELECT config->>'auto_sessions' AS auto_sessions
-     FROM integrations WHERE user_id=$1 AND service=$2`,
+    `SELECT config->>'auto_sessions' AS auto_sessions FROM integrations WHERE user_id=$1 AND service=$2`,
     [userId, service]
   );
-  const autoSessions = pref.rows[0]?.auto_sessions !== 'false';
-  if (!autoSessions) return;
+  if (pref.rows[0]?.auto_sessions === 'false') return;
 
   await pool.query(
-    `INSERT INTO reading_sessions (user_id, book_id, finished_at, source)
-     VALUES ($1, $2, $3, $4)`,
+    `INSERT INTO reading_sessions (user_id, book_id, finished_at, source) VALUES ($1, $2, $3, $4)`,
     [userId, bookId, finishedAt ?? new Date(), service]
   );
 }
@@ -136,22 +169,22 @@ async function syncABS(userId, config) {
     for (const item of items) {
       const mapped = abs.mapItemToBook(item);
       mapped.cover_url = abs.getCoverUrl(config, item);
-      const bookId = await upsertBook(mapped);
 
-      const formats = ['m4b'];
+      const { id: bookId, isNew } = await upsertBook(mapped);
+      if (isNew) enrichBook(bookId, mapped).catch(() => {});
+
       const progress = progressMap[item.id];
       const libStatus = progress?.isFinished ? 'done'
         : (progress?.progress > 0 ? 'reading' : 'to_read');
 
       await upsertLibraryBook(userId, bookId, libStatus);
-      await upsertAvailability(userId, bookId, 'audiobookshelf', item.id, formats, {
+      await upsertAvailability(userId, bookId, 'audiobookshelf', item.id, ['m4b'], {
         ...mapped.extra,
         abs_library_id: lib.id,
         abs_item_id: item.id,
         server_url: config.serverUrl,
       });
 
-      // Auto-session for finished books
       if (progress?.isFinished && progress.finishedAt) {
         await syncFinishedSession(userId, bookId, 'audiobookshelf', new Date(progress.finishedAt));
       }
@@ -167,22 +200,25 @@ async function syncAudible(userId, config) {
 
   for (const item of [...library, ...wishlist]) {
     const mapped = audible.mapItemToBook(item);
-    const bookId = await upsertBook(mapped);
-    const libStatus = mapped.extra.is_wishlist ? 'to_read' : 'to_read';
-    await upsertLibraryBook(userId, bookId, libStatus);
+    const { id: bookId, isNew } = await upsertBook(mapped);
+    if (isNew) enrichBook(bookId, mapped).catch(() => {});
+    await upsertLibraryBook(userId, bookId, 'to_read');
     await upsertAvailability(userId, bookId, 'audible', mapped.extra.asin, [], mapped.extra);
   }
 }
 
 async function syncCalibre(userId, config) {
-  const books = await calibre.fetchBooks(config);
-  for (const item of books) {
-    const mapped = calibre.mapBookToBookworm(item);
-    mapped.cover_url = calibre.getCoverUrl(config, item._calibreId);
-    const bookId = await upsertBook(mapped);
+  const entries = await calibre.fetchBooks(config);
+  for (const entry of entries) {
+    const mapped = calibre.mapBookToBookworm(entry);
+    mapped.cover_url = calibre.getCoverUrl(config, entry); // pass entry, not ID
+
+    const { id: bookId, isNew } = await upsertBook(mapped);
+    if (isNew) enrichBook(bookId, mapped).catch(() => {});
+
     await upsertLibraryBook(userId, bookId, 'to_read');
     await upsertAvailability(
-      userId, bookId, 'calibre', String(item._calibreId),
+      userId, bookId, 'calibre', String(mapped._calibreId),
       mapped.extra.formats, mapped.extra
     );
   }
@@ -229,7 +265,7 @@ const INTERVALS = {
 
 export function startContinuousSync(userId, service, intervalMs) {
   const key = `${userId}:${service}`;
-  if (_timers.has(key)) return; // already running
+  if (_timers.has(key)) return;
 
   const delay = intervalMs ?? INTERVALS[service] ?? 15 * 60 * 1000;
   const timer = setInterval(async () => {

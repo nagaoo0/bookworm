@@ -116,6 +116,9 @@ function render(container, user, invites, goal, currentYear, integrations = []) 
       <!-- Integrations -->
       ${renderIntegrationsSection(integrations)}
 
+      <!-- Library Management -->
+      ${renderLibraryManagementSection()}
+
       <!-- Import / Export -->
       ${renderImportExportSection()}
 
@@ -167,6 +170,9 @@ function render(container, user, invites, goal, currentYear, integrations = []) 
 
   // Integrations
   attachIntegrationsHandlers(container);
+
+  // Library Management
+  attachLibraryManagementHandlers(container);
 
   // Import / Export
   attachImportExportHandlers(container);
@@ -323,6 +329,188 @@ function attachAppearanceHandlers(container) {
   container.querySelector('#search-language-select')?.addEventListener('change', e => {
     savePrefs({ searchLanguage: e.target.value });
     showToast(e.target.value ? `Search language set to ${e.target.options[e.target.selectedIndex].text}.` : 'Search language set to any.');
+  });
+}
+
+// ── Library Management ────────────────────────────────────────────────────────
+
+function renderLibraryManagementSection() {
+  return `
+    <section class="card-section space-y-4">
+      <h2 class="font-semibold text-text">Library Management</h2>
+      <p class="text-xs text-muted">Tools to clean up your library after syncing from external services.</p>
+
+      <!-- Fetch missing covers -->
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="text-sm font-medium">Fetch missing covers</p>
+          <p class="text-xs text-muted mt-0.5">Search Google Books for cover art on books that have none.</p>
+        </div>
+        <button id="fetch-covers-btn"
+          class="shrink-0 px-3 py-1.5 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-xs font-medium transition-all">
+          Fetch covers
+        </button>
+      </div>
+      <p id="fetch-covers-msg" class="text-xs hidden"></p>
+
+      <hr class="border-border/40" />
+
+      <!-- Duplicate finder -->
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="text-sm font-medium">Find duplicate books</p>
+          <p class="text-xs text-muted mt-0.5">Detect books that were imported from multiple sources and merge them into one entry.</p>
+        </div>
+        <button id="find-dupes-btn"
+          class="shrink-0 px-3 py-1.5 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-xs font-medium transition-all">
+          Find duplicates
+        </button>
+      </div>
+      <p id="find-dupes-msg" class="text-xs hidden"></p>
+
+      <!-- Duplicates list (populated dynamically) -->
+      <div id="dupes-list" class="space-y-3 hidden"></div>
+    </section>`;
+}
+
+function attachLibraryManagementHandlers(container) {
+  // ── Fetch missing covers ──
+  container.querySelector('#fetch-covers-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const msg = container.querySelector('#fetch-covers-msg');
+    btn.disabled = true; btn.textContent = 'Fetching…';
+    msg.classList.add('hidden');
+    try {
+      const { updated, checked } = await api.fetchMissingCovers();
+      msg.className = 'text-xs text-green-400';
+      msg.textContent = checked === 0
+        ? 'All books already have cover art.'
+        : `Updated ${updated} of ${checked} book${checked !== 1 ? 's' : ''} checked.`;
+    } catch (err) {
+      msg.className = 'text-xs text-red-400';
+      msg.textContent = err.message;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Fetch covers';
+      msg.classList.remove('hidden');
+    }
+  });
+
+  // ── Find duplicates ──
+  container.querySelector('#find-dupes-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const msg = container.querySelector('#find-dupes-msg');
+    const list = container.querySelector('#dupes-list');
+    btn.disabled = true; btn.textContent = 'Scanning…';
+    msg.classList.add('hidden');
+    list.classList.add('hidden');
+    list.innerHTML = '';
+    try {
+      const pairs = await api.findDuplicates();
+      if (!pairs.length) {
+        msg.className = 'text-xs text-green-400';
+        msg.textContent = 'No duplicate books found.';
+        msg.classList.remove('hidden');
+      } else {
+        msg.className = 'text-xs text-muted';
+        msg.textContent = `${pairs.length} potential duplicate${pairs.length !== 1 ? 's' : ''} found. Choose which record to keep for each.`;
+        msg.classList.remove('hidden');
+        list.innerHTML = pairs.map((p, i) => renderDupePair(p, i)).join('');
+        list.classList.remove('hidden');
+        attachDupeHandlers(container, list, pairs);
+      }
+    } catch (err) {
+      msg.className = 'text-xs text-red-400';
+      msg.textContent = err.message;
+      msg.classList.remove('hidden');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Find duplicates';
+    }
+  });
+}
+
+function renderDupePair(pair, index) {
+  const cover = (url, title) => url
+    ? `<img src="${escHtml(url)}" alt="" class="w-10 h-14 object-cover rounded flex-shrink-0">`
+    : `<div class="w-10 h-14 bg-surface-2 rounded flex-shrink-0 flex items-center justify-center text-lg">📖</div>`;
+
+  return `
+    <div class="rounded-lg border border-border/60 p-3 space-y-2" data-dupe-index="${index}">
+      <div class="grid grid-cols-2 gap-3">
+        <!-- Keep option -->
+        <div class="space-y-1">
+          <p class="text-xs text-muted font-medium uppercase tracking-wide">Keep</p>
+          <div class="flex gap-2 items-start">
+            ${cover(pair.keep_cover, pair.keep_title)}
+            <div class="min-w-0">
+              <p class="text-xs font-medium leading-snug line-clamp-2">${escHtml(pair.keep_title)}</p>
+              <p class="text-xs text-muted truncate">${escHtml((pair.keep_authors ?? [])[0] ?? '')}</p>
+            </div>
+          </div>
+        </div>
+        <!-- Remove option -->
+        <div class="space-y-1">
+          <p class="text-xs text-muted font-medium uppercase tracking-wide">Remove</p>
+          <div class="flex gap-2 items-start">
+            ${cover(pair.remove_cover, pair.remove_title)}
+            <div class="min-w-0">
+              <p class="text-xs font-medium leading-snug line-clamp-2">${escHtml(pair.remove_title)}</p>
+              <p class="text-xs text-muted truncate">${escHtml((pair.remove_authors ?? [])[0] ?? '')}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-2 items-center">
+        <button class="dupe-merge-btn px-3 py-1 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded text-xs transition-all"
+          data-keep="${pair.keep_id}" data-remove="${pair.remove_id}">
+          Merge
+        </button>
+        <button class="dupe-swap-btn px-3 py-1 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded text-xs font-medium transition-all"
+          data-index="${index}">
+          ⇄ Swap
+        </button>
+        <p class="dupe-status text-xs hidden"></p>
+      </div>
+    </div>`;
+}
+
+function attachDupeHandlers(container, list, pairs) {
+  list.querySelectorAll('.dupe-merge-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const keepId = parseInt(btn.dataset.keep, 10);
+      const removeId = parseInt(btn.dataset.remove, 10);
+      const row = btn.closest('[data-dupe-index]');
+      const status = row.querySelector('.dupe-status');
+      btn.disabled = true; btn.textContent = 'Merging…';
+      try {
+        await api.mergeBooks(keepId, removeId);
+        row.classList.add('opacity-40', 'pointer-events-none');
+        status.className = 'dupe-status text-xs text-green-400';
+        status.textContent = 'Merged.';
+        status.classList.remove('hidden');
+      } catch (err) {
+        status.className = 'dupe-status text-xs text-red-400';
+        status.textContent = err.message;
+        status.classList.remove('hidden');
+        btn.disabled = false; btn.textContent = 'Merge';
+      }
+    });
+  });
+
+  list.querySelectorAll('.dupe-swap-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.index, 10);
+      const pair = pairs[idx];
+      // Swap keep/remove in the local data structure
+      [pair.keep_id, pair.remove_id] = [pair.remove_id, pair.keep_id];
+      [pair.keep_title, pair.remove_title] = [pair.remove_title, pair.keep_title];
+      [pair.keep_authors, pair.remove_authors] = [pair.remove_authors, pair.keep_authors];
+      [pair.keep_cover, pair.remove_cover] = [pair.remove_cover, pair.keep_cover];
+      // Re-render the row
+      const row = btn.closest('[data-dupe-index]');
+      row.outerHTML = renderDupePair(pair, idx);
+      // Re-attach handlers to the new element
+      attachDupeHandlers(container, list, pairs);
+    });
   });
 }
 
@@ -535,21 +723,21 @@ function renderIntegrationsSection(integrations = []) {
 
       <hr class="border-border/40" />
 
-      <!-- Calibre -->
+      <!-- Calibre-Web -->
       <details class="group" ${cal ? 'open' : ''}>
         <summary class="flex items-center justify-between cursor-pointer list-none select-none">
           <div class="flex items-center gap-2">
             <span class="text-lg">📚</span>
-            <span class="font-medium text-sm">Calibre Content Server</span>
+            <span class="font-medium text-sm">Calibre-Web (OPDS)</span>
             ${statusBadge(!!cal)}
           </div>
           <svg class="w-4 h-4 text-muted transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
         </summary>
         <div class="mt-4 space-y-3 pl-1">
-          <p class="text-xs text-muted">Requires Calibre Content Server running (Preferences → Sharing over the net). Default port 8080.</p>
+          <p class="text-xs text-muted">Connects via the Calibre-Web OPDS catalog. Enable it in Calibre-Web: <strong>Admin → Configuration → Feature Configuration → Allow OPDS</strong>.</p>
           <div>
             <label class="text-xs text-muted block mb-1">Server URL</label>
-            <input id="calibre-url" type="url" placeholder="http://localhost:8080"
+            <input id="calibre-url" type="url" placeholder="http://localhost:8083"
               value="${escHtml(cal?.server_url ?? '')}"
               class="field-input w-full" />
           </div>
@@ -566,12 +754,15 @@ function renderIntegrationsSection(integrations = []) {
                 class="field-input w-full" />
             </div>
           </div>
-          <div>
-            <label class="text-xs text-muted block mb-1">Library ID <span class="text-muted">(auto-detected; override if sync fails)</span></label>
-            <input id="calibre-library-id" type="text" placeholder="e.g. Calibre_Library"
-              value=""
-              class="field-input w-full" />
-          </div>
+          <details class="group/adv">
+            <summary class="text-xs text-muted cursor-pointer hover:text-text transition-colors select-none">Advanced</summary>
+            <div class="mt-2">
+              <label class="text-xs text-muted block mb-1">OPDS catalog path <span class="text-muted">(default: /opds/new)</span></label>
+              <input id="calibre-opds-path" type="text" placeholder="/opds/new"
+                value=""
+                class="field-input w-full" />
+            </div>
+          </details>
           ${cal ? `<p class="text-xs text-muted">Last synced: ${fmtDate(cal.last_synced_at)}</p>` : ''}
           <div class="flex gap-2 flex-wrap">
             <button id="calibre-save-btn"
@@ -705,13 +896,13 @@ function attachIntegrationsHandlers(container) {
       showIntMsg(container, 'calibre-msg', 'Server URL is required.', true);
       return;
     }
-    const libraryId = container.querySelector('#calibre-library-id')?.value.trim();
+    const opdsPath = container.querySelector('#calibre-opds-path')?.value.trim();
     try {
       await api.saveIntegration('calibre', {
         serverUrl: url,
         ...(username && username !== '••' ? { username } : {}),
         ...(password ? { password } : {}),
-        ...(libraryId ? { libraryId } : {}),
+        ...(opdsPath ? { opdsStartPath: opdsPath } : {}),
       });
       showIntMsg(container, 'calibre-msg', 'Connected! Initial sync starting in the background.');
       api.syncIntegration('calibre').catch(() => {});

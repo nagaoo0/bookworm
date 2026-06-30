@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
-import { getBook } from '../googleBooks.js';
+import { getBook, searchBooks } from '../googleBooks.js';
 
 const router = Router();
 
@@ -369,6 +369,175 @@ router.delete('/:id', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ── GET /api/library/duplicates ───────────────────────────────────────────────
+// Find books in the user's library that appear to be duplicates (same normalized
+// title + first author). Returns pairs with the lower-id book listed as "keep".
+router.get('/duplicates', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         b1.id          AS keep_id,    b1.title   AS keep_title,
+         b1.authors     AS keep_authors, b1.cover_url AS keep_cover,
+         b1.google_id   AS keep_google_id,
+         b2.id          AS remove_id,  b2.title   AS remove_title,
+         b2.authors     AS remove_authors, b2.cover_url AS remove_cover,
+         b2.google_id   AS remove_google_id
+       FROM books b1
+       JOIN books b2 ON b1.id < b2.id
+       JOIN library_books lb1 ON lb1.book_id = b1.id AND lb1.user_id = $1
+       JOIN library_books lb2 ON lb2.book_id = b2.id AND lb2.user_id = $1
+       WHERE lower(regexp_replace(b1.title,'[^a-zA-Z0-9]','','g'))
+           = lower(regexp_replace(b2.title,'[^a-zA-Z0-9]','','g'))
+         AND lower(regexp_replace(COALESCE(b1.authors[1],''),'[^a-zA-Z0-9]','','g'))
+           = lower(regexp_replace(COALESCE(b2.authors[1],''),'[^a-zA-Z0-9]','','g'))
+       ORDER BY b1.id
+       LIMIT 100`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// ── POST /api/library/merge ───────────────────────────────────────────────────
+// Merge two duplicate books: keep one, absorb/delete the other.
+// Body: { keepId, removeId }  (both are books.id values)
+router.post('/merge', async (req, res, next) => {
+  const { keepId, removeId } = req.body ?? {};
+  if (!keepId || !removeId || keepId === removeId) {
+    return res.status(400).json({ error: 'keepId and removeId are required and must differ' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Verify both books are in this user's library
+    const { rows: [lbKeep] } = await client.query(
+      'SELECT id FROM library_books WHERE book_id=$1 AND user_id=$2', [keepId, req.user.id]
+    );
+    const { rows: [lbRemove] } = await client.query(
+      'SELECT id FROM library_books WHERE book_id=$1 AND user_id=$2', [removeId, req.user.id]
+    );
+    if (!lbKeep || !lbRemove) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'One or both books not found in your library' });
+    }
+
+    // Enrich keep book with any metadata the remove book has that keep is missing
+    await client.query(
+      `UPDATE books SET
+         google_id      = COALESCE(b_keep.google_id,      b_rem.google_id),
+         cover_url      = COALESCE(b_keep.cover_url,      b_rem.cover_url),
+         isbn13         = COALESCE(b_keep.isbn13,         b_rem.isbn13),
+         description    = COALESCE(b_keep.description,    b_rem.description),
+         page_count     = COALESCE(b_keep.page_count,     b_rem.page_count),
+         categories     = COALESCE(b_keep.categories,     b_rem.categories),
+         published_date = COALESCE(b_keep.published_date, b_rem.published_date)
+       FROM books b_keep, books b_rem
+       WHERE books.id = $1 AND b_keep.id = $1 AND b_rem.id = $2`,
+      [keepId, removeId]
+    );
+
+    // Move shelf memberships: lbRemove → lbKeep (skip shelves already present on keep)
+    await client.query(
+      `UPDATE shelf_memberships SET library_book_id = $1
+       WHERE library_book_id = $2
+         AND shelf_id NOT IN (
+           SELECT shelf_id FROM shelf_memberships WHERE library_book_id = $1
+         )`,
+      [lbKeep.id, lbRemove.id]
+    );
+    await client.query('DELETE FROM shelf_memberships WHERE library_book_id = $1', [lbRemove.id]);
+
+    // Delete the duplicate library_books entry
+    await client.query('DELETE FROM library_books WHERE id = $1', [lbRemove.id]);
+
+    // Move book_availability for this user (skip services already linked to keep)
+    await client.query(
+      `UPDATE book_availability SET book_id = $1
+       WHERE book_id = $2 AND user_id = $3
+         AND service NOT IN (
+           SELECT service FROM book_availability WHERE book_id = $1 AND user_id = $3
+         )`,
+      [keepId, removeId, req.user.id]
+    );
+    await client.query(
+      'DELETE FROM book_availability WHERE book_id=$1 AND user_id=$2',
+      [removeId, req.user.id]
+    );
+
+    // Move reading sessions for this user
+    await client.query(
+      'UPDATE reading_sessions SET book_id=$1 WHERE book_id=$2 AND user_id=$3',
+      [keepId, removeId, req.user.id]
+    );
+
+    // Delete the orphaned books row if no other user references it
+    await client.query(
+      `DELETE FROM books WHERE id = $1
+         AND NOT EXISTS (SELECT 1 FROM library_books    WHERE book_id = $1)
+         AND NOT EXISTS (SELECT 1 FROM reading_sessions WHERE book_id = $1)
+         AND NOT EXISTS (SELECT 1 FROM book_availability WHERE book_id = $1)`,
+      [removeId]
+    );
+
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// ── POST /api/library/fetch-covers ────────────────────────────────────────────
+// Search Google Books for cover art for up to 50 books that have no cover.
+// Updates books.cover_url and backfills other metadata via COALESCE.
+router.post('/fetch-covers', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT b.id, b.title, b.authors, b.isbn13
+       FROM library_books lb
+       JOIN books b ON b.id = lb.book_id
+       WHERE lb.user_id = $1
+         AND COALESCE(lb.cover_url_override, b.cover_url) IS NULL
+       LIMIT 50`,
+      [req.user.id]
+    );
+
+    let updated = 0;
+    for (const book of rows) {
+      try {
+        let results = [];
+        if (book.isbn13) {
+          results = await searchBooks({ isbn: book.isbn13 }, 1);
+        }
+        if (!results.length && book.title) {
+          results = await searchBooks({ title: book.title, author: book.authors?.[0] ?? '' }, 1);
+        }
+        if (!results.length || !results[0].coverUrl) continue;
+
+        const g = results[0];
+        await pool.query(
+          `UPDATE books SET
+             cover_url      = COALESCE(cover_url, $1),
+             google_id      = COALESCE(google_id, $2),
+             description    = COALESCE(description, $3),
+             page_count     = COALESCE(page_count, $4),
+             categories     = COALESCE(categories, $5),
+             published_date = COALESCE(published_date, $6)
+           WHERE id = $7`,
+          [g.coverUrl, g.googleId, g.description, g.pageCount, g.categories, g.publishedDate, book.id]
+        );
+        updated++;
+      } catch { /* skip this book, non-fatal */ }
+    }
+
+    res.json({ updated, checked: rows.length });
+  } catch (err) { next(err); }
 });
 
 export default router;

@@ -65,7 +65,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
   container.innerHTML = `
     <div class="fade-in">
       <!-- Hero -->
-      <div class="relative rounded-2xl overflow-hidden mb-6 p-6 sm:p-8"
+      <div class="relative rounded-2xl overflow-hidden m-4 p-6 sm:p-8"
            style="${bannerUrl
              ? `background:url(${escHtml(bannerUrl)}) center/cover no-repeat;border:1px solid rgba(255,255,255,0.06)`
              : `background:linear-gradient(135deg, hsl(${hue},30%,10%) 0%, hsl(${(hue+40)%360},25%,8%) 100%);border:1px solid rgba(255,255,255,0.06)`}">

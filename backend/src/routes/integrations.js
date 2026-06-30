@@ -46,9 +46,7 @@ router.put('/:service', async (req, res, next) => {
     // Validate connectivity before saving
     if (service === 'audiobookshelf') await absClient.testConnection(config);
     if (service === 'calibre') {
-      // testConnection returns { ok, libraryId } — persist the discovered libraryId
-      const result = await calibreClient.testConnection(config);
-      if (result?.libraryId && !config.libraryId) config.libraryId = result.libraryId;
+      await calibreClient.testConnection(config);
     }
     // audible is validated via the OAuth callback flow, not here
 
@@ -128,8 +126,8 @@ router.get('/:service/status', async (req, res, next) => {
     const config = row.config;
     let ok = false;
     try {
-      if (service === 'audiobookshelf') ok = await absClient.testConnection(config);
-      else if (service === 'calibre') ok = await calibreClient.testConnection(config);
+      if (service === 'audiobookshelf') ok = !!(await absClient.testConnection(config));
+      else if (service === 'calibre') ok = !!(await calibreClient.testConnection(config));
       else if (service === 'audible') ok = !!config.accessToken;
     } catch { ok = false; }
 

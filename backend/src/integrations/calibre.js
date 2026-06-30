@@ -1,18 +1,29 @@
 // ---------------------------------------------------------------------------
-// Calibre Content Server REST client
-// Requires: Calibre → Preferences → Sharing over the net → Start server
-// Default URL: http://localhost:8080
+// Calibre-Web OPDS client
+// Calibre-Web exposes an OPDS (Atom/XML) catalog — NOT the /ajax/ JSON API.
+// Enable OPDS in Calibre-Web: Admin → Configuration → Feature Configuration → Allow OPDS
+//
+// OPDS root:  {serverUrl}/opds/
+// All books:  {serverUrl}/opds/new  (sorted by date added, paginated, follows rel="next")
 // ---------------------------------------------------------------------------
+
+import { XMLParser } from 'fast-xml-parser';
+
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  // These elements can appear multiple times per entry
+  isArray: (name) => ['entry', 'link', 'author', 'category', 'identifier'].includes(name),
+  removeNSPrefix: true,   // dc:identifier → identifier, etc.
+  parseTagValue: true,
+});
 
 function base(config) {
   return config.serverUrl.replace(/\/$/, '');
 }
 
-function calibreHeaders(config) {
-  const h = {
-    'Accept': 'application/json, */*;q=0.5',
-    'X-Requested-With': 'XMLHttpRequest',
-  };
+function opdsHeaders(config) {
+  const h = { Accept: 'application/atom+xml, application/xml, text/xml, */*' };
   if (config.username && config.password) {
     const creds = Buffer.from(`${config.username}:${config.password}`).toString('base64');
     h.Authorization = `Basic ${creds}`;
@@ -20,53 +31,35 @@ function calibreHeaders(config) {
   return h;
 }
 
-function isJson(res) {
-  return (res.headers.get('content-type') ?? '').includes('application/json');
-}
-
-async function calibreGet(config, path) {
-  const res = await fetch(`${base(config)}${path}`, {
-    headers: calibreHeaders(config),
+async function fetchFeed(config, url) {
+  const fullUrl = url.startsWith('http') ? url : `${base(config)}${url}`;
+  const res = await fetch(fullUrl, {
+    headers: opdsHeaders(config),
     signal: AbortSignal.timeout(15000),
   });
-  if (res.status === 401) throw new Error('CALIBRE_AUTH_REQUIRED');
-  if (!res.ok) throw new Error(`Calibre ${path} → ${res.status}`);
-  if (!isJson(res)) {
-    throw new Error(`Calibre returned HTML at ${path} — check the server URL and library_id setting.`);
+
+  if (res.status === 401) {
+    throw new Error(
+      'Calibre-Web authentication failed — add your username and password in settings.'
+    );
   }
-  return res.json();
-}
+  if (!res.ok) throw new Error(`Calibre-Web OPDS ${url} → ${res.status}`);
 
-// ---------------------------------------------------------------------------
-// Discover the primary library ID (needed for multi-library Calibre setups)
-// ---------------------------------------------------------------------------
-
-async function getLibraryId(config) {
-  // Prefer an explicit override in config
-  if (config.libraryId) return config.libraryId;
-
-  try {
-    const info = await calibreGet(config, '/ajax/library-info');
-    // Returns { library_id: "...", library_map: { id: path, ... }, default_library: "..." }
-    return info.default_library ?? info.library_id ?? Object.keys(info.library_map ?? {})[0] ?? null;
-  } catch {
-    return null; // fall back to omitting the parameter
+  const text = await res.text();
+  if (!text.includes('<feed') && !text.startsWith('<?xml')) {
+    throw new Error(
+      `Calibre-Web returned a non-OPDS response at ${url}. ` +
+      `Ensure OPDS is enabled: Admin → Configuration → Feature Configuration → Allow OPDS.`
+    );
   }
+
+  return parser.parse(text);
 }
 
-function searchUrl(base_, libraryId) {
-  const params = new URLSearchParams({ query: '', num: '10000', sort: 'title' });
-  if (libraryId) params.set('library_id', libraryId);
-  return `${base_}/ajax/search?${params}`;
-}
-
-function booksUrl(base_, ids, libraryId) {
-  const params = new URLSearchParams({
-    ids: ids.join(','),
-    fields: 'title,authors,formats,isbn,series,series_index,pubdate,publisher,rating,tags',
-  });
-  if (libraryId) params.set('library_id', libraryId);
-  return `${base_}/ajax/books?${params}`;
+function extractNextLink(parsed) {
+  const links = parsed?.feed?.link ?? [];
+  const next = links.find(l => l['@_rel'] === 'next');
+  return next?.['@_href'] ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,110 +67,100 @@ function booksUrl(base_, ids, libraryId) {
 // ---------------------------------------------------------------------------
 
 export async function testConnection(config) {
-  // 1. Check the server is reachable at all
-  const root = await fetch(`${base(config)}/`, {
-    headers: calibreHeaders(config),
-    signal: AbortSignal.timeout(8000),
-  }).catch(err => { throw new Error(`Cannot reach Calibre server: ${err.message}`); });
-
-  if (root.status === 401) throw new Error('CALIBRE_AUTH_REQUIRED — add username/password in settings.');
-  if (!root.ok) throw new Error(`Calibre unreachable: ${root.status}`);
-
-  // 2. Discover library ID
-  const libraryId = await getLibraryId(config);
-
-  // 3. Verify the AJAX search endpoint returns JSON (fetch 1 result only)
-  const probeParams = new URLSearchParams({ query: '', num: '1', sort: 'title' });
-  if (libraryId) probeParams.set('library_id', libraryId);
-  const search = await fetch(`${base(config)}/ajax/search?${probeParams}`, {
-    headers: calibreHeaders(config),
-    signal: AbortSignal.timeout(8000),
-  });
-
-  if (search.status === 401) throw new Error('CALIBRE_AUTH_REQUIRED');
-
-  if (!isJson(search)) {
-    const hint = libraryId
-      ? `library_id "${libraryId}" may be wrong`
-      : 'try adding the library_id in the advanced settings';
+  const parsed = await fetchFeed(config, '/opds/');
+  if (!parsed?.feed) {
     throw new Error(
-      `Calibre Content Server is reachable but /ajax/search returned HTML (${hint}). ` +
-      `Ensure browsing is enabled: Calibre → Preferences → Sharing over the net → ` +
-      `check "Run server" and "Allow browsing of the library".`
+      'Calibre-Web OPDS returned unexpected data. ' +
+      'Check the server URL and ensure OPDS is enabled in Calibre-Web settings.'
     );
   }
-
-  return { ok: true, libraryId };
+  return { ok: true };
 }
 
 export async function fetchBooks(config) {
-  const libraryId = await getLibraryId(config);
+  const allEntries = [];
 
-  // Step 1: get all book IDs
-  const searchRes = await fetch(searchUrl(base(config), libraryId), {
-    headers: calibreHeaders(config),
-    signal: AbortSignal.timeout(30000),
-  });
-  if (searchRes.status === 401) throw new Error('CALIBRE_AUTH_REQUIRED');
-  if (!isJson(searchRes)) {
-    throw new Error(
-      `Calibre /ajax/search returned HTML. ` +
-      (libraryId ? `Library ID used: "${libraryId}".` : 'Could not determine library ID.') +
-      ` Check the server URL and ensure "Allow browsing" is enabled.`
-    );
-  }
+  // /opds/new = all books sorted by date added (acquisition feed, ~30 per page)
+  // Follow rel="next" links until exhausted to collect the entire library.
+  let url = config.opdsStartPath ?? '/opds/new';
+  let page = 0;
+  const MAX_PAGES = 500; // guard: 500 pages × 30 books = 15 000 books max
 
-  const searchData = await searchRes.json();
-  const ids = searchData.book_ids ?? [];
-  if (!ids.length) return [];
+  while (url && page < MAX_PAGES) {
+    const parsed = await fetchFeed(config, url);
+    const entries = parsed?.feed?.entry ?? [];
 
-  // Step 2: fetch metadata in chunks of 500
-  const CHUNK = 500;
-  const all = [];
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const chunk = ids.slice(i, i + CHUNK);
-    const params = new URLSearchParams({
-      ids: chunk.join(','),
-      fields: 'title,authors,formats,isbn,series,series_index,pubdate,publisher,rating,tags',
-    });
-    if (libraryId) params.set('library_id', libraryId);
-    const data = await calibreGet(config, `/ajax/books?${params}`);
-    for (const [id, book] of Object.entries(data)) {
-      all.push({ ...book, _calibreId: id });
+    for (const entry of entries) {
+      // Skip navigation entries — they have no acquisition links
+      const links = entry.link ?? [];
+      const hasAcquisition = links.some(l => (l['@_rel'] ?? '').includes('acquisition'));
+      if (hasAcquisition) allEntries.push(entry);
     }
+
+    url = extractNextLink(parsed);
+    page++;
   }
-  return all;
+
+  return allEntries;
 }
 
-export function getCoverUrl(config, calibreId) {
-  return `${base(config)}/get/cover/${calibreId}/`;
+export function getCoverUrl(config, entry) {
+  const links = entry.link ?? [];
+  // Prefer full image over thumbnail
+  const cover =
+    links.find(l => l['@_rel'] === 'http://opds-spec.org/image') ??
+    links.find(l => (l['@_rel'] ?? '').includes('opds-spec.org/image'));
+
+  if (!cover) return null;
+  const href = cover['@_href'];
+  if (!href) return null;
+  return href.startsWith('http') ? href : `${base(config)}${href}`;
 }
 
-export function mapBookToBookworm(item) {
-  const authors = Array.isArray(item.authors) ? item.authors : (item.authors ? [item.authors] : []);
-  const formats = (item.formats ?? []).map(f => f.toLowerCase());
+export function mapBookToBookworm(entry) {
+  const title = String(entry.title ?? 'Unknown');
 
+  // Authors — each <author> element has a nested <name>
+  const authors = (entry.author ?? [])
+    .map(a => (typeof a === 'object' ? String(a.name ?? '') : String(a)))
+    .filter(Boolean);
+
+  // ISBN from dc:identifier (removeNSPrefix converts it to 'identifier')
   let isbn13 = null;
-  if (item.isbn) {
-    const cleaned = item.isbn.replace(/[^0-9X]/gi, '');
-    if (cleaned.length === 13) isbn13 = cleaned;
+  for (const id of entry.identifier ?? []) {
+    const s = String(id).replace(/^isbn:/i, '').replace(/[^0-9X]/gi, '');
+    if (s.length === 13) { isbn13 = s; break; }
   }
+
+  // Formats inferred from acquisition link MIME types
+  const links = entry.link ?? [];
+  const formats = links
+    .filter(l => (l['@_rel'] ?? '').includes('acquisition'))
+    .map(l => {
+      const type = l['@_type'] ?? '';
+      if (type.includes('epub'))                              return 'epub';
+      if (type.includes('pdf'))                               return 'pdf';
+      if (type.includes('mobi') || type.includes('mobipocket')) return 'mobi';
+      if (type.includes('azw'))                               return 'azw';
+      if (type.includes('fb2'))                               return 'fb2';
+      if (type.includes('cbz'))                               return 'cbz';
+      if (type.includes('cbr'))                               return 'cbr';
+      return null;
+    })
+    .filter(Boolean);
+
+  // Numeric Calibre book ID extracted from download link path: /opds/download/123/epub/
+  const acqLink = links.find(l => (l['@_rel'] ?? '').includes('acquisition'));
+  const idMatch = (acqLink?.['@_href'] ?? '').match(/\/download\/(\d+)\//);
+  const calibreId = idMatch?.[1] ?? String(entry.id ?? '');
 
   return {
-    title: item.title ?? 'Unknown',
+    title,
     authors,
     isbn13,
-    cover_url: null,
-    _calibreItem: item,
-    extra: {
-      calibre_id: item._calibreId,
-      formats,
-      series: item.series ?? null,
-      series_index: item.series_index ?? null,
-      rating: item.rating ? item.rating / 2 : null,
-      tags: item.tags ?? [],
-      publisher: item.publisher ?? null,
-      published_date: item.pubdate ? item.pubdate.slice(0, 10) : null,
-    },
+    cover_url: null, // resolved by caller via getCoverUrl()
+    description: typeof entry.summary === 'string' ? entry.summary : null,
+    _calibreId: calibreId,
+    extra: { calibre_id: calibreId, formats },
   };
 }

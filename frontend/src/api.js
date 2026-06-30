@@ -150,4 +150,9 @@ export const api = {
   getIntegrationStatus: (service) => request(`/integrations/${service}/status`),
   getAudibleAuthUrl: (marketplace) => request(`/integrations/audible/auth-url?marketplace=${marketplace}`),
   getNowPlaying: () => request('/integrations/abs/now-playing'),
+
+  // Library management
+  findDuplicates: () => request('/library/duplicates'),
+  mergeBooks: (keepId, removeId) => request('/library/merge', { method: 'POST', body: { keepId, removeId } }),
+  fetchMissingCovers: () => request('/library/fetch-covers', { method: 'POST' }),
 };
