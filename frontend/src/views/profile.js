@@ -358,7 +358,7 @@ function renderFeedTab(feed) {
           ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
           : '';
         const stars = s.rating ? Array.from({ length: 5 }, (_, i) =>
-          `<span style="color:${i < s.rating ? '#f59e0b' : '#44403c'}">★</span>`).join('') : '';
+          `<span style="color:${i < s.rating ? 'var(--color-accent)' : 'var(--color-border)'}">★</span>`).join('') : '';
         const authors = Array.isArray(s.authors) ? s.authors.join(', ') : (s.authors ?? '');
         const cover = s.cover_url
           ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" />`
@@ -373,8 +373,7 @@ function renderFeedTab(feed) {
           </button>` : (likeCount > 0 ? `<span class="text-xs text-muted">♥ ${likeCount}</span>` : '');
 
         return `
-          <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-surface-2/40"
-               style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)">
+          <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-surface-2/40 bg-surface border border-border/40">
             ${cover}
             <div class="flex-1 min-w-0">
               <p class="font-semibold leading-tight line-clamp-2 text-text">${escHtml(s.title)}</p>
@@ -455,7 +454,7 @@ function renderBookShelfGrid(slots, isOwnProfile) {
              style="aspect-ratio:2/3" data-slot="${escHtml(key)}">
           ${inner}${overlay}
         </div>
-        <div class="py-1.5 px-1 text-center" style="background:rgba(15,12,10,0.85)">
+        <div class="py-1.5 px-1 text-center" style="background:color-mix(in srgb,var(--color-bg) 85%,transparent)">
           <p class="text-[10px] font-semibold leading-tight text-text">${escHtml(label)}</p>
         </div>
       </div>`;
@@ -468,7 +467,7 @@ function renderBookShelfGrid(slots, isOwnProfile) {
   return `
     <div>
       ${hint}
-      <div class="grid gap-px" style="grid-template-columns:repeat(5,1fr);background:rgba(68,64,60,0.35);border:1px solid rgba(68,64,60,0.35);border-radius:0.75rem;overflow:hidden">
+      <div class="grid gap-px rounded-xl overflow-hidden" style="grid-template-columns:repeat(5,1fr);background:color-mix(in srgb,var(--color-border) 35%,transparent);border:1px solid color-mix(in srgb,var(--color-border) 35%,transparent)">
         ${cells}
       </div>
     </div>`;
@@ -511,8 +510,7 @@ function openSlotPicker(triggerEl, slotKey, slotMap, panelEl) {
       </div>` : ''}
       <div class="px-4 pt-3 pb-2">
         <input id="shelf-search" type="text" placeholder="Filter by title or author…"
-          class="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all"
-          style="background:rgba(12,10,9,0.8);border:1px solid rgba(68,64,60,0.8);color:var(--color-text)" />
+          class="field-input w-full" />
       </div>
       <div id="shelf-book-list" class="overflow-y-auto px-3 pb-4" style="max-height:340px"></div>
     </div>`;

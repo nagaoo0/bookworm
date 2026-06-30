@@ -137,7 +137,7 @@ function renderFeed(feed) {
         ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
         : '';
       const stars = s.rating ? Array.from({ length: 5 }, (_, i) =>
-        `<span style="color:${i < s.rating ? '#f59e0b' : '#44403c'}">★</span>`).join('') : '';
+        `<span style="color:${i < s.rating ? 'var(--color-accent)' : 'var(--color-border)'}">★</span>`).join('') : '';
       const authors = Array.isArray(s.authors) ? s.authors.join(', ') : (s.authors ?? '');
       const cover = s.cover_url
         ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" />`
@@ -151,8 +151,7 @@ function renderFeed(feed) {
           ${liked ? '♥' : '♡'} <span class="like-count">${likeCount > 0 ? likeCount : ''}</span>
         </button>` : (likeCount > 0 ? `<span class="text-xs text-muted">♥ ${likeCount}</span>` : '');
       return `
-        <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-surface-2/40"
-             style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)">
+        <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-surface-2/40 bg-surface border border-border/40">
           <a href="#book/${s.book_id}" class="flex-shrink-0 hover:opacity-90 transition-opacity">${cover}</a>
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2 mb-1">
@@ -205,9 +204,7 @@ function renderReadersList(users) {
   return `<div class="space-y-2 stagger">
     ${users.map(u => `
         <a href="#u/${escHtml(u.username)}"
-           class="group flex items-center gap-4 rounded-xl px-5 py-3.5 transition-all duration-200 hover:translate-x-0.5"
-           style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)"
-           onmouseenter="this.style.borderColor='rgba(245,158,11,0.25)'" onmouseleave="this.style.borderColor='rgba(68,64,60,0.4)'">
+           class="group flex items-center gap-4 rounded-xl px-5 py-3.5 transition-all duration-200 hover:translate-x-0.5 bg-surface border border-border/40 hover:border-accent/25">
           <div class="transition-all duration-200 group-hover:scale-105">
             ${avatarHTML({ username: u.username, avatarUrl: u.avatar_url }, { size: 40 })}
           </div>
