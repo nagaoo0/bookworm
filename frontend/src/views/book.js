@@ -134,6 +134,10 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
             <p class="mt-2 text-sm text-text leading-relaxed">${escHtml(effectiveDescription)}</p>
           </details>` : ''}
 
+          <!-- Where to find this book -->
+          ${renderAvailabilitySection(availability)}
+
+
           <!-- Library panel (status, shelves, progress, notes, cover, meta) -->
           <div id="library-panel">
             ${renderLibraryPanelHTML(book, libEntry, shelves)}
@@ -213,9 +217,6 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
           }).join('')}
         </div>
       </section>` : ''}
-
-      <!-- Where to find this book -->
-      ${renderAvailabilitySection(availability)}
 
       <!-- Comments -->
       <section class="mt-10">

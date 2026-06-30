@@ -427,7 +427,7 @@ const SHELF_SLOTS = [
   { key: 'favorite-protagonist',label: 'Favorite Protagonist' },
   { key: 'favorite-antagonist', label: 'Favorite Antagonist' },
   { key: 'changed-taste',       label: 'Changed my taste in Literature' },
-  { key: 'favorite-cover',      label: 'Favorite Cover' },
+  { key: 'favorite-cover',      label: 'Favorite Cover Art' },
   { key: 'want-to-talk',        label: 'I Want to Talk About This One' },
 ];
 
