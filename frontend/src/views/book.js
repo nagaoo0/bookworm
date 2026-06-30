@@ -218,10 +218,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
       ${recs.length ? `
       <section class="mt-10">
         <h2 class="font-serif text-xl font-semibold mb-4">Readers also have</h2>
-        <!-- On mobile: horizontal scroll; on sm+: 4-col grid -->
-        <div class="hidden sm:grid grid-cols-4 gap-4" id="recs-grid">
-          ${recs.map(b => recCard(b)).join('')}
-        </div>
+
         <div class="flex gap-3 overflow-x-auto sm:hidden reading-carousel pb-1" id="recs-scroll">
           ${recs.map(b => `
             <a href="#book/${b.id}" class="group flex flex-col flex-shrink-0" style="width:7rem">
