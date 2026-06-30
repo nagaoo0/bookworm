@@ -28,11 +28,11 @@ function render(container, users) {
     <div class="max-w-4xl mx-auto space-y-6">
       <h1 class="font-serif text-2xl font-semibold">Admin</h1>
 
-      <section class="bg-stone-900 rounded-xl ring-1 ring-white/10 overflow-hidden">
-        <div class="px-5 py-4 border-b border-stone-800 flex items-center justify-between">
-          <h2 class="font-semibold text-stone-200">Users <span class="text-stone-500 text-sm font-normal">(${users.length})</span></h2>
+      <section class="bg-surface rounded-xl ring-1 ring-border/40 overflow-hidden">
+        <div class="px-5 py-4 border-b border-border flex items-center justify-between">
+          <h2 class="font-semibold text-text">Users <span class="text-muted text-sm font-normal">(${users.length})</span></h2>
         </div>
-        <div id="admin-users-list" class="divide-y divide-stone-800">
+        <div id="admin-users-list" class="divide-y divide-border">
           ${users.map(u => renderUserRow(u)).join('')}
         </div>
       </section>
@@ -40,16 +40,16 @@ function render(container, users) {
 
     <!-- Reset-password modal -->
     <div id="reset-pw-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div class="bg-stone-900 rounded-xl ring-1 ring-white/10 w-full max-w-sm p-5 space-y-4">
-        <h3 class="font-semibold text-stone-200">Reset password for <span id="reset-pw-username" class="text-amber-400"></span></h3>
+      <div class="bg-surface rounded-xl ring-1 ring-border/40 w-full max-w-sm p-5 space-y-4">
+        <h3 class="font-semibold text-text">Reset password for <span id="reset-pw-username" class="text-amber-400"></span></h3>
         <input id="reset-pw-input" type="password" placeholder="New password (min 6 chars)"
-          class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+          class="field-input w-full" />
         <p id="reset-pw-error" class="text-xs text-red-400 hidden"></p>
         <div class="flex gap-3">
           <button id="reset-pw-confirm" class="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2 text-sm transition-colors">
             Set password
           </button>
-          <button id="reset-pw-cancel" class="flex-1 bg-stone-700 hover:bg-stone-600 rounded-lg py-2 text-sm transition-colors">
+          <button id="reset-pw-cancel" class="flex-1 bg-surface-2 hover:bg-border/60 rounded-lg py-2 text-sm transition-colors">
             Cancel
           </button>
         </div>
@@ -66,25 +66,25 @@ function renderUserRow(u) {
     <div class="px-5 py-4 flex flex-wrap items-center gap-3" data-user-id="${u.id}" data-username="${escHtml(u.username)}">
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
-          <span class="font-medium text-stone-200">${escHtml(u.username)}</span>
+          <span class="font-medium text-text">${escHtml(u.username)}</span>
           ${u.is_admin ? `<span class="text-xs text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">admin</span>` : ''}
         </div>
-        <div class="text-xs text-stone-500 mt-0.5">
+        <div class="text-xs text-muted mt-0.5">
           Joined ${since} · ${u.book_count} books · last session ${lastActive}
         </div>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <button class="admin-toggle-admin text-xs px-2.5 py-1.5 rounded-lg border transition-colors
-                       ${u.is_admin ? 'border-amber-500/50 text-amber-400 hover:bg-red-900/30 hover:border-red-400 hover:text-red-400' : 'border-stone-600 text-stone-400 hover:border-amber-500 hover:text-amber-400'}">
+                       ${u.is_admin ? 'border-amber-500/50 text-amber-400 hover:bg-red-900/30 hover:border-red-400 hover:text-red-400' : 'border-border text-muted hover:border-amber-500 hover:text-amber-400'}">
           ${u.is_admin ? 'Revoke admin' : 'Make admin'}
         </button>
-        <button class="admin-revoke-sessions text-xs px-2.5 py-1.5 rounded-lg border border-stone-600 text-stone-400 hover:border-amber-500 hover:text-amber-400 transition-colors">
+        <button class="admin-revoke-sessions text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted hover:border-amber-500 hover:text-amber-400 transition-colors">
           Force logout
         </button>
-        <button class="admin-reset-pw text-xs px-2.5 py-1.5 rounded-lg border border-stone-600 text-stone-400 hover:border-amber-500 hover:text-amber-400 transition-colors">
+        <button class="admin-reset-pw text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted hover:border-amber-500 hover:text-amber-400 transition-colors">
           Reset password
         </button>
-        <button class="admin-delete-user text-xs px-2.5 py-1.5 rounded-lg border border-stone-600 text-stone-400 hover:border-red-400 hover:text-red-400 transition-colors">
+        <button class="admin-delete-user text-xs px-2.5 py-1.5 rounded-lg border border-border text-muted hover:border-red-400 hover:text-red-400 transition-colors">
           Delete user
         </button>
       </div>
@@ -171,13 +171,13 @@ function attachHandlers(container, users) {
         btn.dataset.confirming = '1';
         btn.textContent = 'Confirm delete';
         btn.classList.replace('hover:text-red-400', 'text-red-400');
-        btn.classList.replace('border-stone-600', 'border-red-500');
+        btn.classList.replace('border-border', 'border-red-500');
         setTimeout(() => {
           if (btn.dataset.confirming) {
             delete btn.dataset.confirming;
             btn.textContent = 'Delete user';
             btn.classList.replace('text-red-400', 'hover:text-red-400');
-            btn.classList.replace('border-red-500', 'border-stone-600');
+            btn.classList.replace('border-red-500', 'border-border');
           }
         }, 4000);
       }

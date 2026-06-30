@@ -63,8 +63,8 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
   const coverImg = effectiveCover
     ? `<img src="${escHtml(effectiveCover)}" alt="${escHtml(book.title)}"
             class="w-full object-cover rounded-xl shadow-2xl" />`
-    : `<div class="w-full aspect-[2/3] bg-stone-800 rounded-xl flex items-center justify-center">
-         <span class="text-stone-600 text-4xl">📖</span>
+    : `<div class="w-full aspect-[2/3] bg-border/40 rounded-xl flex items-center justify-center">
+         <span class="text-muted text-4xl">📖</span>
        </div>`;
 
   const avgRating = sessions.filter(s => s.rating).length
@@ -75,7 +75,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
   container.innerHTML = `
     <div class="max-w-4xl mx-auto fade-in">
       <!-- Back -->
-      <button id="back-btn" class="inline-flex items-center gap-1.5 text-stone-400 hover:text-stone-200 text-sm mb-6 transition-colors group">
+      <button id="back-btn" class="inline-flex items-center gap-1.5 text-muted hover:text-text text-sm mb-6 transition-colors group">
         <svg class="w-4 h-4 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
         </svg>
@@ -89,7 +89,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
 
           ${libEntry
             ? `<button id="log-read-btn"
-                class="w-full px-3 py-2 bg-stone-800 hover:bg-stone-700 text-sm rounded-lg transition-colors text-center font-medium">
+                class="w-full px-3 py-2 bg-surface-2 hover:bg-border/40 text-sm rounded-lg transition-colors text-center font-medium">
                 Log a read
               </button>`
             : `<button id="add-to-library-btn"
@@ -102,10 +102,10 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
         <div class="space-y-4">
           <div>
             <h1 class="font-serif text-2xl font-bold leading-tight">${escHtml(book.title)}</h1>
-            ${book.authors?.length ? `<p class="text-stone-400 mt-1">${escHtml(book.authors.join(', '))}</p>` : ''}
+            ${book.authors?.length ? `<p class="text-muted mt-1">${escHtml(book.authors.join(', '))}</p>` : ''}
           </div>
 
-          <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-stone-400">
+          <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-muted">
             ${effectivePublished ? `<span class="flex items-center gap-1.5">
               <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
               ${escHtml(effectivePublished)}</span>` : ''}
@@ -117,11 +117,11 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
               ${escHtml(book.publisher)}</span>` : ''}
           </div>
 
-          ${stars ? `<p class="text-amber-400">${stars} <span class="text-stone-500 text-sm ml-1">${sessions.filter(s => s.rating).length} rating${sessions.filter(s => s.rating).length !== 1 ? 's' : ''}</span></p>` : ''}
+          ${stars ? `<p class="text-amber-400">${stars} <span class="text-muted text-sm ml-1">${sessions.filter(s => s.rating).length} rating${sessions.filter(s => s.rating).length !== 1 ? 's' : ''}</span></p>` : ''}
 
           ${(effectiveCategories ?? []).length ? `
           <div class="flex flex-wrap gap-2">
-            ${effectiveCategories.map(c => `<span class="text-xs bg-stone-800 px-2 py-1 rounded-full text-stone-400">${escHtml(c)}</span>`).join('')}
+            ${effectiveCategories.map(c => `<span class="text-xs bg-surface-2 px-2 py-1 rounded-full text-muted">${escHtml(c)}</span>`).join('')}
           </div>` : ''}
 
           ${effectiveDescription ? `
@@ -130,7 +130,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
               <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
               Description
             </summary>
-            <p class="mt-2 text-sm text-stone-300 leading-relaxed">${escHtml(effectiveDescription)}</p>
+            <p class="mt-2 text-sm text-text leading-relaxed">${escHtml(effectiveDescription)}</p>
           </details>` : ''}
 
           <!-- Library panel (status, shelves, progress, notes, cover, meta) -->
@@ -156,7 +156,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
             <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
             Log a read
           </summary>
-          <div class="mt-4 bg-stone-900 rounded-xl p-5 ring-1 ring-white/5">
+          <div class="mt-4 bg-surface rounded-xl p-5 ring-1 ring-border/20">
             ${renderSessionForm()}
           </div>
         </details>` : ''}
@@ -170,9 +170,9 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
           ${social.map(u => {
             const stars = u.rating ? '★'.repeat(u.rating) + '☆'.repeat(5 - u.rating) : '';
             const statusLabel = u.status === 'to_read' ? 'Wants to read' : u.status === 'reading' ? 'Currently reading' : 'Read it';
-            const statusColor = u.status === 'reading' ? 'text-amber-400' : u.status === 'done' ? 'text-green-400' : 'text-stone-400';
+            const statusColor = u.status === 'reading' ? 'text-amber-400' : u.status === 'done' ? 'text-green-400' : 'text-muted';
             return `
-              <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5">
+              <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20">
                 <div class="flex items-start justify-between gap-3">
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-1">
@@ -180,7 +180,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
                       <span class="text-xs ${statusColor}">${statusLabel}</span>
                     </div>
                     ${stars ? `<p class="text-amber-400 text-xs">${stars}</p>` : ''}
-                    ${u.review ? `<p class="text-sm text-stone-300 mt-1 leading-relaxed line-clamp-3">${escHtml(u.review)}</p>` : ''}
+                    ${u.review ? `<p class="text-sm text-text mt-1 leading-relaxed line-clamp-3">${escHtml(u.review)}</p>` : ''}
                   </div>
                 </div>
               </div>`;
@@ -196,18 +196,18 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
           ${recs.map(b => {
             const cover = b.cover_url
               ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
-              : `<div class="w-full h-full bg-stone-700 flex items-center justify-center p-2">
-                   <span class="text-stone-500 font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span>
+              : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2">
+                   <span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span>
                  </div>`;
             const authors = Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? '');
             return `
               <a href="#book/${b.id}" class="group flex flex-col">
-                <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-stone-800 shadow
-                            ring-1 ring-white/5 group-hover:ring-amber-500/40 transition-all">
+                <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-surface-2 shadow
+                            ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
                   ${cover}
                 </div>
                 <p class="mt-2 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
-                ${authors ? `<p class="text-[11px] text-stone-500 mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
+                ${authors ? `<p class="text-[11px] text-muted mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
               </a>`;
           }).join('')}
         </div>
@@ -222,8 +222,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
         ${user ? `
         <form id="comment-form" class="flex gap-3">
           <textarea name="body" rows="2" placeholder="Leave a comment…" maxlength="2000"
-            class="flex-1 bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm
-                   resize-none focus:outline-none focus:border-amber-500"></textarea>
+            class="field-input flex-1 resize-none"></textarea>
           <button type="submit"
             class="self-end px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold
                    rounded-lg text-sm transition-colors flex-shrink-0">
@@ -351,17 +350,17 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
   const pct = libEntry.progress_pct ?? 0;
 
   return `
-    <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 space-y-4">
+    <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20 space-y-4">
 
       <!-- Status -->
       <div>
-        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-2">Status</p>
+        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2">Status</p>
         <div class="flex gap-2 flex-wrap">
           ${STATUSES.map(s => `
             <button class="lib-status-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
               ${libEntry.status === s.key
-                ? 'ring-2 ring-offset-1 ring-offset-stone-900 text-stone-950'
-                : 'bg-stone-800 hover:bg-stone-700 text-stone-300'}"
+                ? 'ring-2 ring-offset-1 ring-offset-surface text-stone-950'
+                : 'bg-surface-2 hover:bg-border/40 text-text'}"
               data-status="${s.key}"
               style="${libEntry.status === s.key ? `background:${s.color};ring-color:${s.color}` : ''}">
               ${s.label}
@@ -372,13 +371,13 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
       ${shelves.length ? `
       <!-- Shelves -->
       <div>
-        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-2">Shelves</p>
+        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2">Shelves</p>
         <div class="flex flex-wrap gap-2">
           ${shelves.map(s => {
             const on = (libEntry.shelf_ids ?? []).includes(s.id);
             return `
               <button class="lib-shelf-btn flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors
-                ${on ? 'text-stone-950' : 'bg-stone-800 hover:bg-stone-700 text-stone-400'}"
+                ${on ? 'text-stone-950' : 'bg-surface-2 hover:bg-border/40 text-muted'}"
                 data-shelf-id="${s.id}" data-on="${on}"
                 style="${on ? `background:${escHtml(s.color)}` : ''}">
                 <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${escHtml(s.color)}"></span>
@@ -391,41 +390,39 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
       ${libEntry.status === 'reading' ? `
       <!-- Progress -->
       <div>
-        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-2">Progress</p>
+        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2">Progress</p>
         <div class="flex items-center gap-3">
           <input type="range" id="progress-slider" class="flex-1 accent-amber-400"
                  min="0" max="100" step="5" value="${pct}" />
-          <span id="progress-label" class="text-xs text-stone-400 w-8 text-right">${pct}%</span>
+          <span id="progress-label" class="text-xs text-muted w-8 text-right">${pct}%</span>
         </div>
       </div>` : ''}
 
       <!-- Notes -->
       <div>
-        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium mb-2">Notes</p>
+        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2">Notes</p>
         <textarea id="book-notes" rows="3" placeholder="Quotes, context, anything to remember…"
-          class="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm
-                 resize-none focus:outline-none focus:border-amber-500">${escHtml(libEntry.notes ?? '')}</textarea>
+          class="field-input w-full resize-none">${escHtml(libEntry.notes ?? '')}</textarea>
         <div class="flex items-center gap-2 mt-2">
-          <button id="save-notes-btn" class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded-lg text-xs font-medium transition-colors">Save notes</button>
+          <button id="save-notes-btn" class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded-lg text-xs font-medium transition-colors">Save notes</button>
           <span id="notes-saved" class="text-xs text-green-400 opacity-0 transition-opacity">Saved</span>
         </div>
       </div>
 
       <!-- Cover URL + Metadata -->
       <details class="group">
-        <summary class="text-xs text-stone-400 hover:text-amber-400 cursor-pointer list-none flex items-center gap-1 transition-colors">
+        <summary class="text-xs text-muted hover:text-amber-400 cursor-pointer list-none flex items-center gap-1 transition-colors">
           <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Book details &amp; cover
         </summary>
         <div class="mt-3 space-y-3">
           <!-- Cover URL -->
           <div>
-            <label class="text-xs text-stone-500 block mb-1">Cover image URL</label>
+            <label class="text-xs text-muted block mb-1">Cover image URL</label>
             <div class="flex gap-2">
               <input id="cover-url-input" type="url" placeholder="https://…"
-                class="flex-1 bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-xs
-                       focus:outline-none focus:border-amber-500" />
+                class="field-input flex-1 text-xs" />
               <button id="save-cover-btn"
-                class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
+                class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
                 Set cover
               </button>
             </div>
@@ -434,13 +431,12 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
 
           <!-- Metadata search -->
           <div>
-            <label class="text-xs text-stone-500 block mb-1">Find metadata (Google Books)</label>
+            <label class="text-xs text-muted block mb-1">Find metadata (Google Books)</label>
             <div class="flex gap-2">
               <input id="meta-search-input" type="text" value="${escHtml(book.title)}" placeholder="Search title or ISBN…"
-                class="flex-1 bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-xs
-                       focus:outline-none focus:border-amber-500" />
+                class="field-input flex-1 text-xs" />
               <button id="meta-search-btn"
-                class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
+                class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
                 Search
               </button>
             </div>
@@ -598,7 +594,7 @@ function attachSessionDeleteHandlers(container, bookId, reload) {
       btn.outerHTML = `
         <span class="sess-confirm flex items-center gap-1">
           <button class="sess-del-yes text-[10px] px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded">Delete</button>
-          <button class="sess-del-no text-[10px] px-1 text-stone-400 hover:text-stone-200">Cancel</button>
+          <button class="sess-del-no text-[10px] px-1 text-muted hover:text-text">Cancel</button>
         </span>`;
       row.querySelector('.sess-del-yes').addEventListener('click', async () => {
         await api.deleteSession(bookId, row.dataset.sessionId);

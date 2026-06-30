@@ -26,8 +26,8 @@ export function applyPrefs(prefs = loadPrefs()) {
   const html = document.documentElement;
 
   // Theme class on <html> — CSS overrides cascade to all children
-  html.classList.remove('theme-light', 'theme-sepia');
-  if (prefs.theme !== 'dark') html.classList.add(`theme-${prefs.theme}`);
+  html.classList.remove('theme-light');
+  if (prefs.theme === 'light') html.classList.add('theme-light');
 
   // Card size via CSS variable consumed by .book-grid
   html.style.setProperty('--grid-min-col', CARD_SIZES[prefs.cardSize] ?? CARD_SIZES.medium);

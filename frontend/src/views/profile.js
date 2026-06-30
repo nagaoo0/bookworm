@@ -23,8 +23,8 @@ export async function renderProfile(container, username) {
       container.innerHTML = `
         <div class="text-center py-24 space-y-3 fade-in">
           <div class="text-5xl mb-4">📚</div>
-          <p class="text-stone-300 text-lg font-semibold">Profile not found</p>
-          <p class="text-stone-500 text-sm">This user doesn't exist.</p>
+          <p class="text-text text-lg font-semibold">Profile not found</p>
+          <p class="text-muted text-sm">This user doesn't exist.</p>
         </div>`;
     } else {
       container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
@@ -53,14 +53,14 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
     <button id="follow-btn"
       class="follow-btn-transition px-5 py-2 rounded-full text-sm font-semibold ${
         isFollowing
-          ? 'bg-stone-800 hover:bg-red-900/40 text-stone-200 hover:text-red-300 ring-1 ring-stone-600 hover:ring-red-500/40'
+          ? 'bg-surface-2 hover:bg-red-900/40 text-text hover:text-red-300 ring-1 ring-border hover:ring-red-500/40'
           : 'bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-lg shadow-amber-500/20 hover:shadow-amber-400/30'
       }" data-following="${isFollowing}">
       ${isFollowing ? '✓ Following' : '+ Follow'}
     </button>` : '';
 
-  const wrappedLink   = `<a href="#u/${escHtml(username)}/wrapped" class="text-xs text-stone-500 hover:text-amber-400 transition-colors">✨ Year in Review</a>`;
-  const gridLink      = `<a href="#u/${escHtml(username)}/grid"    class="text-xs text-stone-500 hover:text-amber-400 transition-colors">📚 Book Grid</a>`;
+  const wrappedLink   = `<a href="#u/${escHtml(username)}/wrapped" class="text-xs text-muted hover:text-amber-400 transition-colors">✨ Year in Review</a>`;
+  const gridLink      = `<a href="#u/${escHtml(username)}/grid"    class="text-xs text-muted hover:text-amber-400 transition-colors">📚 Book Grid</a>`;
 
   container.innerHTML = `
     <div class="fade-in">
@@ -77,16 +77,16 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
           ${avatarHTML({ username, avatarUrl }, { size: 72, classes: 'avatar-glow flex-shrink-0' })}
           <div class="flex-1 min-w-0">
             <h1 class="font-serif text-2xl sm:text-3xl font-bold text-white leading-tight">${escHtml(username)}</h1>
-            ${bio ? `<p class="text-stone-300 text-sm mt-1 leading-snug line-clamp-3">${escHtml(bio)}</p>` : ''}
-            <p class="text-stone-400 text-xs mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            ${bio ? `<p class="text-text text-sm mt-1 leading-snug line-clamp-3">${escHtml(bio)}</p>` : ''}
+            <p class="text-muted text-xs mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span>${library.length} book${library.length !== 1 ? 's' : ''}</span>
-              <span class="text-stone-600">·</span>
+              <span class="text-muted">·</span>
               <button id="followers-pill" class="hover:text-amber-400 transition-colors">${followerCount ?? 0} follower${(followerCount ?? 0) !== 1 ? 's' : ''}</button>
-              <span class="text-stone-600">·</span>
+              <span class="text-muted">·</span>
               <button id="following-pill" class="hover:text-amber-400 transition-colors">${followingCount ?? 0} following</button>
-              <span class="text-stone-600">·</span>
+              <span class="text-muted">·</span>
               ${wrappedLink}
-              <span class="text-stone-600">·</span>
+              <span class="text-muted">·</span>
               ${gridLink}
             </p>
           </div>
@@ -98,7 +98,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
       <div id="follow-inline" class="hidden mb-4"></div>
 
       <!-- Tabs -->
-      <div role="tablist" class="flex gap-0 mb-6 border-b border-stone-800 overflow-x-auto shelf-bar">
+      <div role="tablist" class="flex gap-0 mb-6 border-b border-border overflow-x-auto shelf-bar">
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="shelves" aria-selected="true">Shelves</button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="bookshelf" aria-selected="false">My Book Grid</button>
         <button role="tab" class="profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="status" aria-selected="false">Reading Piles</button>
@@ -121,7 +121,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
     container.querySelectorAll('.profile-tab').forEach(btn => {
       const isActive = btn.dataset.tab === active;
       btn.className = `profile-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150 ${
-        isActive ? 'text-amber-400' : 'text-stone-400 hover:text-stone-200'
+        isActive ? 'text-amber-400' : 'text-muted hover:text-text'
       }`;
       btn.setAttribute('aria-selected', String(isActive));
       btn.querySelector('.tab-active-indicator')?.remove();
@@ -218,8 +218,8 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
     fetcher.then(users => {
       const html = `
         <div class="mb-3 flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-stone-300 capitalize">${type}</h3>
-          <button class="follow-inline-close text-stone-500 hover:text-stone-300 text-lg leading-none">✕</button>
+          <h3 class="text-sm font-semibold text-text capitalize">${type}</h3>
+          <button class="follow-inline-close text-muted hover:text-text text-lg leading-none">✕</button>
         </div>
         ${renderFollowList(users, type, isOwnProfile)}`;
       followInlineCache[type] = html;
@@ -258,7 +258,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
         } else {
           await api.follow(username);
           followBtn.textContent = '✓ Following';
-          followBtn.className = 'follow-btn-transition px-5 py-2 rounded-full text-sm font-semibold bg-stone-800 hover:bg-red-900/40 text-stone-200 hover:text-red-300 ring-1 ring-stone-600 hover:ring-red-500/40';
+          followBtn.className = 'follow-btn-transition px-5 py-2 rounded-full text-sm font-semibold bg-surface-2 hover:bg-red-900/40 text-text hover:text-red-300 ring-1 ring-border hover:ring-red-500/40';
           followBtn.dataset.following = 'true';
           showToast(`Now following ${username}.`);
         }
@@ -286,7 +286,7 @@ function renderShelvesTab(shelves, library, myBookIds = new Set(), isOwnProfile 
       <div class="flex items-center gap-2.5 mb-5">
         <span class="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-sm" style="box-shadow:0 0 6px rgba(245,158,11,0.6)"></span>
         <h2 class="font-serif text-lg font-semibold">Currently Reading</h2>
-        <span class="text-xs text-stone-500 bg-stone-800 px-2 py-0.5 rounded-full">${readingBooks.length}</span>
+        <span class="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded-full">${readingBooks.length}</span>
       </div>
       <div class="book-grid stagger">
         ${readingBooks.map(b => bookCardHTML(b, { readOnly: true, isReading: true, alsoRead: !isOwnProfile && myBookIds.has(String(b.book_id)) })).join('')}
@@ -301,7 +301,7 @@ function renderShelvesTab(shelves, library, myBookIds = new Set(), isOwnProfile 
         <div class="flex items-center gap-2.5 mb-5">
           <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${escHtml(shelf.color)};box-shadow:0 0 6px ${escHtml(shelf.color)}80"></span>
           <h2 class="font-serif text-lg font-semibold">${escHtml(shelf.name)}</h2>
-          <span class="text-xs text-stone-500 bg-stone-800 px-2 py-0.5 rounded-full">${books.length}</span>
+          <span class="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded-full">${books.length}</span>
         </div>
         <div class="book-grid stagger">
           ${books.map(b => bookCardHTML(b, { readOnly: true, alsoRead: !isOwnProfile && myBookIds.has(String(b.book_id)) })).join('')}
@@ -310,7 +310,7 @@ function renderShelvesTab(shelves, library, myBookIds = new Set(), isOwnProfile 
   }).join('');
 
   const combined = `${readingSection}${sections}`;
-  return combined || `<div class="text-center py-16 text-stone-500 italic">No books on shelves yet.</div>`;
+  return combined || `<div class="text-center py-16 text-muted italic">No books on shelves yet.</div>`;
 }
 
 function renderStatusTab({ to_read, reading, done }, myBookIds = new Set(), isOwnProfile = false) {
@@ -321,7 +321,7 @@ function renderStatusTab({ to_read, reading, done }, myBookIds = new Set(), isOw
         <div class="flex items-center gap-2.5 mb-5">
           <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${color};box-shadow:0 0 6px ${glow}"></span>
           <h2 class="font-serif text-lg font-semibold">${label}</h2>
-          <span class="text-xs text-stone-500 bg-stone-800 px-2 py-0.5 rounded-full">${books.length}</span>
+          <span class="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded-full">${books.length}</span>
         </div>
         <div class="book-grid stagger">
           ${books.map(b => bookCardHTML(b, { readOnly: true, alsoRead: !isOwnProfile && myBookIds.has(String(b.book_id)) })).join('')}
@@ -335,7 +335,7 @@ function renderStatusTab({ to_read, reading, done }, myBookIds = new Set(), isOw
     section('Want to Read',       to_read, '#64748b', 'rgba(100,116,139,0.4)'),
   ].join('');
 
-  return html || `<div class="text-center py-16 text-stone-500 italic">No status data yet.</div>`;
+  return html || `<div class="text-center py-16 text-muted italic">No status data yet.</div>`;
 }
 
 function linkifyMentions(text) {
@@ -345,7 +345,7 @@ function linkifyMentions(text) {
 
 function renderFeedTab(feed) {
   if (!feed.length) {
-    return `<div class="text-center py-16 text-stone-500 italic">No reading activity yet.</div>`;
+    return `<div class="text-center py-16 text-muted italic">No reading activity yet.</div>`;
   }
 
   const { user } = getState();
@@ -362,26 +362,26 @@ function renderFeedTab(feed) {
         const authors = Array.isArray(s.authors) ? s.authors.join(', ') : (s.authors ?? '');
         const cover = s.cover_url
           ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" />`
-          : `<div class="w-12 h-[4.5rem] bg-stone-800 rounded-lg flex-shrink-0"></div>`;
+          : `<div class="w-12 h-[4.5rem] bg-surface-2 rounded-lg flex-shrink-0"></div>`;
         const likeCount = s.like_count ?? 0;
         const liked = !!s.liked;
         const sid = s.session_id ?? s.id;
         const likeBtn = user ? `
-          <button class="like-btn flex items-center gap-1 text-xs transition-colors ${liked ? 'text-rose-400' : 'text-stone-500 hover:text-rose-400'}"
+          <button class="like-btn flex items-center gap-1 text-xs transition-colors ${liked ? 'text-rose-400' : 'text-muted hover:text-rose-400'}"
                   data-session-id="${sid}" data-liked="${liked}" data-count="${likeCount}">
             ${liked ? '♥' : '♡'} <span class="like-count">${likeCount > 0 ? likeCount : ''}</span>
-          </button>` : (likeCount > 0 ? `<span class="text-xs text-stone-500">♥ ${likeCount}</span>` : '');
+          </button>` : (likeCount > 0 ? `<span class="text-xs text-muted">♥ ${likeCount}</span>` : '');
 
         return `
-          <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-stone-800/40"
+          <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-surface-2/40"
                style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)">
             ${cover}
             <div class="flex-1 min-w-0">
-              <p class="font-semibold leading-tight line-clamp-2 text-stone-100">${escHtml(s.title)}</p>
-              ${authors ? `<p class="text-xs text-stone-400 mt-0.5">${escHtml(authors)}</p>` : ''}
-              ${date    ? `<p class="text-xs text-stone-500 mt-1">${escHtml(date)}</p>` : ''}
+              <p class="font-semibold leading-tight line-clamp-2 text-text">${escHtml(s.title)}</p>
+              ${authors ? `<p class="text-xs text-muted mt-0.5">${escHtml(authors)}</p>` : ''}
+              ${date    ? `<p class="text-xs text-muted mt-1">${escHtml(date)}</p>` : ''}
               ${stars   ? `<p class="text-sm mt-1 leading-none">${stars}</p>` : ''}
-              ${s.review ? `<p class="text-sm text-stone-300 mt-2 line-clamp-3 leading-relaxed">${linkifyMentions(s.review)}</p>` : ''}
+              ${s.review ? `<p class="text-sm text-text mt-2 line-clamp-3 leading-relaxed">${linkifyMentions(s.review)}</p>` : ''}
               <div class="mt-2 flex items-center gap-3">${likeBtn}</div>
             </div>
           </div>`;
@@ -404,7 +404,7 @@ function attachFeedLikeHandlers(tabEl, feed) {
         btn.dataset.liked = String(!wasLiked);
         btn.dataset.count = count;
         btn.innerHTML = `${!wasLiked ? '♥' : '♡'} <span class="like-count">${count > 0 ? count : ''}</span>`;
-        btn.className = `like-btn flex items-center gap-1 text-xs transition-colors ${!wasLiked ? 'text-rose-400' : 'text-stone-500 hover:text-rose-400'}`;
+        btn.className = `like-btn flex items-center gap-1 text-xs transition-colors ${!wasLiked ? 'text-rose-400' : 'text-muted hover:text-rose-400'}`;
       } catch (err) {
         showToast(err.message, 'error');
       } finally {
@@ -441,7 +441,7 @@ function renderBookShelfGrid(slots, isOwnProfile) {
     const inner = entry
       ? `<img src="${escHtml(entry.cover_url ?? '')}" alt="${escHtml(entry.title)}"
               class="absolute inset-0 w-full h-full object-cover" />`
-      : `<span class="text-stone-500 text-xs text-center px-2 select-none">
+      : `<span class="text-muted text-xs text-center px-2 select-none">
            ${isOwnProfile ? 'Click to add' : ''}
          </span>`;
     const cursor = isOwnProfile ? 'cursor-pointer group' : '';
@@ -451,18 +451,18 @@ function renderBookShelfGrid(slots, isOwnProfile) {
       </div>` : '';
     return `
       <div class="shelf-cell flex flex-col" data-slot="${escHtml(key)}">
-        <div class="relative ${cursor} bg-stone-800 overflow-hidden flex items-center justify-center"
+        <div class="relative ${cursor} bg-surface-2 overflow-hidden flex items-center justify-center"
              style="aspect-ratio:2/3" data-slot="${escHtml(key)}">
           ${inner}${overlay}
         </div>
         <div class="py-1.5 px-1 text-center" style="background:rgba(15,12,10,0.85)">
-          <p class="text-[10px] font-semibold leading-tight text-stone-300">${escHtml(label)}</p>
+          <p class="text-[10px] font-semibold leading-tight text-text">${escHtml(label)}</p>
         </div>
       </div>`;
   }).join('');
 
   const hint = isOwnProfile
-    ? `<p class="text-xs text-stone-500 mb-4">Click any slot to pick a book from your library.</p>`
+    ? `<p class="text-xs text-muted mb-4">Click any slot to pick a book from your library.</p>`
     : '';
 
   return `
@@ -500,10 +500,10 @@ function openSlotPicker(triggerEl, slotKey, slotMap, panelEl) {
          style="background:color-mix(in srgb,var(--color-surface) 97%,transparent);border:1px solid var(--color-border)">
       <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid var(--color-border)">
         <div>
-          <p class="font-semibold text-sm text-stone-100">Pick a book</p>
-          <p class="text-xs text-stone-400 mt-0.5">${escHtml(slotLabel)}</p>
+          <p class="font-semibold text-sm text-text">Pick a book</p>
+          <p class="text-xs text-muted mt-0.5">${escHtml(slotLabel)}</p>
         </div>
-        <button id="shelf-picker-close" class="text-stone-500 hover:text-stone-200 transition-colors text-lg leading-none">✕</button>
+        <button id="shelf-picker-close" class="text-muted hover:text-text transition-colors text-lg leading-none">✕</button>
       </div>
       ${current ? `
       <div class="px-5 pt-3 pb-0">
@@ -528,22 +528,22 @@ function openSlotPicker(triggerEl, slotKey, slotMap, panelEl) {
       ? books.filter(b => b.title.toLowerCase().includes(q) || (b.authors ?? []).some(a => a.toLowerCase().includes(q)))
       : books;
     if (!filtered.length) {
-      listEl.innerHTML = `<p class="text-stone-500 text-xs italic text-center py-4">No books found.</p>`;
+      listEl.innerHTML = `<p class="text-muted text-xs italic text-center py-4">No books found.</p>`;
       return;
     }
     listEl.innerHTML = filtered.map(b => {
       const cover = b.cover_url
         ? `<img src="${escHtml(b.cover_url)}" class="w-9 h-12 object-cover rounded flex-shrink-0" />`
-        : `<div class="w-9 h-12 bg-stone-700 rounded flex-shrink-0"></div>`;
+        : `<div class="w-9 h-12 bg-border/40 rounded flex-shrink-0"></div>`;
       const isCurrent = current && String(current.book_id) === String(b.book_id);
       return `
         <div class="shelf-pick-book flex items-center gap-3 px-2 py-2 rounded-lg cursor-pointer transition-colors
-                    ${isCurrent ? 'bg-amber-500/10 ring-1 ring-amber-500/30' : 'hover:bg-stone-800/60'}"
+                    ${isCurrent ? 'bg-amber-500/10 ring-1 ring-amber-500/30' : 'hover:bg-surface-2/60'}"
              data-book-id="${b.book_id}" data-cover="${escHtml(b.cover_url ?? '')}" data-title="${escHtml(b.title)}">
           ${cover}
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-stone-100 line-clamp-1">${escHtml(b.title)}</p>
-            <p class="text-xs text-stone-500 line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
+            <p class="text-sm font-medium text-text line-clamp-1">${escHtml(b.title)}</p>
+            <p class="text-xs text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
           </div>
           ${isCurrent ? '<span class="text-amber-400 text-xs flex-shrink-0">✓</span>' : ''}
         </div>`;
@@ -594,14 +594,14 @@ function updateSlotCell(panelEl, slotKey, entry) {
     cell.innerHTML = `<img src="${escHtml(entry.cover_url ?? '')}" alt="${escHtml(entry.title)}"
           class="absolute inset-0 w-full h-full object-cover" />${overlay}`;
   } else {
-    cell.innerHTML = `<span class="text-stone-500 text-xs text-center px-2 select-none">Click to add</span>${overlay}`;
+    cell.innerHTML = `<span class="text-muted text-xs text-center px-2 select-none">Click to add</span>${overlay}`;
   }
 }
 
 function renderFollowList(users, type, isOwnProfile) {
   if (!users.length) {
     const empty = type === 'followers' ? 'No followers yet.' : 'Not following anyone yet.';
-    return `<div class="text-center py-16 text-stone-500 italic">${empty}</div>`;
+    return `<div class="text-center py-16 text-muted italic">${empty}</div>`;
   }
 
   const { user: me } = getState();
@@ -619,20 +619,20 @@ function renderFollowList(users, type, isOwnProfile) {
         const isMe = me?.username === u.username;
         const followBtn = (!isMe && me) ? `
           <button class="follow-list-btn text-xs px-3 py-1.5 rounded-full font-semibold transition-all duration-150
-                         bg-stone-700 hover:bg-amber-500 hover:text-stone-950 text-stone-300"
+                         bg-surface-2 hover:bg-amber-500 hover:text-stone-950 text-text"
                   data-username="${escHtml(u.username)}">
             Follow
           </button>` : '';
 
         return `
-          <div class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors hover:bg-stone-800/40"
+          <div class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors hover:bg-surface-2/40"
                style="background:rgba(28,25,23,0.7);border:1px solid rgba(68,64,60,0.4)">
             <a href="#u/${escHtml(u.username)}" class="flex-shrink-0">${avatar}</a>
             <div class="flex-1 min-w-0">
-              <a href="#u/${escHtml(u.username)}" class="font-semibold text-stone-100 hover:text-amber-400 transition-colors text-sm">
+              <a href="#u/${escHtml(u.username)}" class="font-semibold text-text hover:text-amber-400 transition-colors text-sm">
                 ${escHtml(u.username)}
               </a>
-              <p class="text-xs text-stone-500">${u.book_count} book${u.book_count !== 1 ? 's' : ''}</p>
+              <p class="text-xs text-muted">${u.book_count} book${u.book_count !== 1 ? 's' : ''}</p>
             </div>
             ${followBtn}
           </div>`;
@@ -652,7 +652,7 @@ function attachFollowListHandlers(panelEl) {
       try {
         await api.follow(target);
         btn.textContent = '✓ Following';
-        btn.className = 'follow-list-btn text-xs px-3 py-1.5 rounded-full font-semibold transition-all duration-150 bg-stone-800 text-stone-400 ring-1 ring-stone-600 cursor-default';
+        btn.className = 'follow-list-btn text-xs px-3 py-1.5 rounded-full font-semibold transition-all duration-150 bg-surface-2 text-muted ring-1 ring-border cursor-default';
         btn.disabled = true;
         btn.style.opacity = '';
       } catch (err) {
@@ -684,8 +684,8 @@ export async function renderBookGrid(container, username) {
     container.innerHTML = `
       <div class="max-w-3xl mx-auto fade-in">
         <div class="flex items-center gap-3 mb-6">
-          <a href="#u/${escHtml(username)}" class="text-xs text-stone-500 hover:text-amber-400 transition-colors">← ${escHtml(username)}</a>
-          <span class="text-stone-700">·</span>
+          <a href="#u/${escHtml(username)}" class="text-xs text-muted hover:text-amber-400 transition-colors">← ${escHtml(username)}</a>
+          <span class="text-muted">·</span>
           <h1 class="font-serif text-xl font-semibold">Book Grid</h1>
         </div>
         <div id="grid-panel"></div>

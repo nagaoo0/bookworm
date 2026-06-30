@@ -43,23 +43,23 @@ function render(container, user, invites, goal, currentYear) {
           ${avatarHTML(user, { size: 48 })}
           <div>
             <div class="flex items-center gap-2">
-              <p class="font-semibold text-stone-100">${escHtml(user.username)}</p>
+              <p class="font-semibold text-text">${escHtml(user.username)}</p>
               ${user.isAdmin ? '<span class="text-xs text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded-full ring-1 ring-amber-400/20">admin</span>' : ''}
             </div>
-            <p class="text-xs text-stone-500 mt-0.5">Your profile is public</p>
+            <p class="text-xs text-muted mt-0.5">Your profile is public</p>
           </div>
         </div>
 
         <!-- Bio -->
         <div>
-          <label class="text-xs text-stone-500 block mb-1">Bio <span class="text-stone-600">(shown on your public profile)</span></label>
+          <label class="text-xs text-muted block mb-1">Bio <span class="text-muted">(shown on your public profile)</span></label>
           <textarea id="bio-input" rows="2" maxlength="500" placeholder="A few words about you…"
             class="field-input w-full resize-none">${escHtml(user.bio ?? '')}</textarea>
         </div>
 
         <!-- Avatar URL -->
         <div>
-          <label class="text-xs text-stone-500 block mb-1">Profile picture URL</label>
+          <label class="text-xs text-muted block mb-1">Profile picture URL</label>
           <input id="avatar-url-input" type="url" value="${escHtml(user.avatarUrl ?? '')}"
             placeholder="https://example.com/photo.jpg"
             class="field-input w-full" />
@@ -67,7 +67,7 @@ function render(container, user, invites, goal, currentYear) {
 
         <!-- Banner URL -->
         <div>
-          <label class="text-xs text-stone-500 block mb-1">Profile banner URL <span class="text-stone-600">(wide image, shown behind your name)</span></label>
+          <label class="text-xs text-muted block mb-1">Profile banner URL <span class="text-muted">(wide image, shown behind your name)</span></label>
           <input id="banner-url-input" type="url" value="${escHtml(user.bannerUrl ?? '')}"
             placeholder="https://example.com/banner.jpg"
             class="field-input w-full" />
@@ -80,25 +80,25 @@ function render(container, user, invites, goal, currentYear) {
         <p id="profile-msg" class="text-xs hidden"></p>
 
         <div class="glass-card rounded-lg px-3 py-2.5 text-xs">
-          <span class="text-stone-500">Shareable link: </span>
+          <span class="text-muted">Shareable link: </span>
           <a href="${escHtml(profileUrl)}" class="text-amber-400 hover:text-amber-300 transition-colors break-all">${escHtml(profileUrl)}</a>
         </div>
       </section>
 
       <!-- Change password -->
       <section class="card-section space-y-3">
-        <h2 class="font-semibold text-stone-200">Change password</h2>
+        <h2 class="font-semibold text-text">Change password</h2>
         <form id="change-pw-form" class="space-y-3">
           <div>
-            <label class="text-xs text-stone-500 block mb-1">Current password</label>
+            <label class="text-xs text-muted block mb-1">Current password</label>
             <input type="password" name="currentPassword" required class="field-input" />
           </div>
           <div>
-            <label class="text-xs text-stone-500 block mb-1">New password</label>
+            <label class="text-xs text-muted block mb-1">New password</label>
             <input type="password" name="newPassword" required class="field-input" />
           </div>
           <button type="submit"
-            class="px-4 py-2 bg-stone-700 hover:bg-stone-600 active:scale-[0.98] rounded-lg text-sm font-medium transition-all duration-150">
+            class="px-4 py-2 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-sm font-medium transition-all duration-150">
             Update password
           </button>
           <p id="pw-msg" class="text-xs hidden"></p>
@@ -174,15 +174,15 @@ function renderGoalSection(goal, year) {
   return `
     <section class="card-section space-y-4">
       <div class="flex items-center justify-between">
-        <h2 class="font-semibold text-stone-200">Reading Goal — ${year}</h2>
-        ${target ? `<span class="text-xs text-stone-500">${read} / ${target} books</span>` : ''}
+        <h2 class="font-semibold text-text">Reading Goal — ${year}</h2>
+        ${target ? `<span class="text-xs text-muted">${read} / ${target} books</span>` : ''}
       </div>
       ${target ? `
       <div class="space-y-1.5">
-        <div class="w-full rounded-full overflow-hidden" style="background:rgba(68,64,60,0.4);height:6px">
+        <div class="w-full rounded-full overflow-hidden bg-border/40" style="height:6px">
           <div class="h-full rounded-full progress-fill" style="width:${pct}%;background:var(--color-accent)"></div>
         </div>
-        <p class="text-xs text-stone-500">${pct}% of your ${year} goal</p>
+        <p class="text-xs text-muted">${pct}% of your ${year} goal</p>
       </div>` : ''}
       <form id="goal-form" class="flex gap-3 items-center">
         <input type="number" id="goal-input" name="target" min="1" max="9999"
@@ -194,7 +194,7 @@ function renderGoalSection(goal, year) {
           Save
         </button>
         ${target ? `<button type="button" id="clear-goal-btn"
-          class="px-3 py-2 text-stone-500 hover:text-red-400 text-sm transition-colors">
+          class="px-3 py-2 text-muted hover:text-red-400 text-sm transition-colors">
           Clear
         </button>` : ''}
       </form>
@@ -229,7 +229,7 @@ function renderAppearanceSection() {
   const { theme, cardSize, accent, searchLanguage } = loadPrefs();
 
   const activeStyle = 'border-color:var(--color-accent);color:var(--color-accent);background:color-mix(in srgb,var(--color-accent) 10%,transparent)';
-  const idleClass = 'border-stone-600 text-stone-400 hover:border-stone-400';
+  const idleClass = 'border-border text-muted hover:border-muted';
 
   const themeBtn = (value, label) => `
     <button class="theme-btn flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${value !== theme ? idleClass : ''}"
@@ -240,7 +240,7 @@ function renderAppearanceSection() {
     <button class="size-btn flex-1 flex flex-col items-center gap-1.5 py-3 rounded-lg border transition-colors ${value !== cardSize ? idleClass : ''}"
             style="${value === cardSize ? activeStyle : ''}"
             data-size="${value}">
-      <span class="${icon} bg-stone-600 rounded-sm" style="display:inline-block"></span>
+      <span class="${icon} bg-border rounded-sm" style="display:inline-block"></span>
       <span class="text-xs">${label}</span>
     </button>`;
 
@@ -254,19 +254,18 @@ function renderAppearanceSection() {
 
   return `
     <section id="appearance-section" class="card-section space-y-5">
-      <h2 class="font-semibold text-stone-200">Appearance</h2>
+      <h2 class="font-semibold text-text">Appearance</h2>
 
       <div class="space-y-2">
-        <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Theme</p>
+        <p class="text-xs text-muted font-medium uppercase tracking-wider">Theme</p>
         <div class="flex gap-2">
           ${themeBtn('dark', 'Dark')}
-          ${themeBtn('sepia', 'Sepia')}
           ${themeBtn('light', 'Light')}
         </div>
       </div>
 
       <div class="space-y-2">
-        <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Card size</p>
+        <p class="text-xs text-muted font-medium uppercase tracking-wider">Card size</p>
         <div class="flex gap-2">
           ${sizeBtn('miniature', 'Miniature', 'w-3 h-5')}
           ${sizeBtn('small',     'Small',     'w-5 h-7')}
@@ -276,15 +275,15 @@ function renderAppearanceSection() {
       </div>
 
       <div class="space-y-2">
-        <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Accent color</p>
+        <p class="text-xs text-muted font-medium uppercase tracking-wider">Accent color</p>
         <div class="flex gap-3 items-center">
           ${Object.keys(ACCENT_COLORS).map(accentSwatch).join('')}
         </div>
       </div>
 
       <div class="space-y-2">
-        <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Search language</p>
-        <p class="text-xs text-stone-500">Default language filter applied to all book searches. You can still override it per-search in the advanced form.</p>
+        <p class="text-xs text-muted font-medium uppercase tracking-wider">Search language</p>
+        <p class="text-xs text-muted">Default language filter applied to all book searches. You can still override it per-search in the advanced form.</p>
         <select id="search-language-select" class="field-input rounded-lg py-2">
           ${SEARCH_LANGUAGES.map(([v, l]) => `<option value="${v}"${searchLanguage === v ? ' selected' : ''}>${l}</option>`).join('')}
         </select>
@@ -322,23 +321,23 @@ function attachAppearanceHandlers(container) {
 function renderImportExportSection() {
   return `
     <section class="card-section space-y-4">
-      <h2 class="font-semibold text-stone-200">Import / Export</h2>
-      <p class="text-xs text-stone-500">Tab-separated CSV. Compatible with the Places reading app format.</p>
+      <h2 class="font-semibold text-text">Import / Export</h2>
+      <p class="text-xs text-muted">Tab-separated CSV. Compatible with the Places reading app format.</p>
 
       <div class="flex gap-3">
         <button id="export-btn"
-          class="px-4 py-2 bg-stone-700 hover:bg-stone-600 active:scale-[0.98] rounded-lg text-sm font-medium transition-all duration-150">
+          class="px-4 py-2 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-sm font-medium transition-all duration-150">
           ↓ Export library
         </button>
       </div>
 
       <div class="space-y-2">
-        <label class="text-xs text-stone-400 block">Import from CSV file</label>
+        <label class="text-xs text-muted block">Import from CSV file</label>
         <div class="flex gap-3 items-center">
           <input type="file" id="import-file" accept=".csv,.tsv,.txt"
-            class="text-sm text-stone-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
-                   file:bg-stone-700 file:text-stone-200 file:text-sm file:cursor-pointer
-                   file:hover:bg-stone-600 file:transition-colors" />
+            class="text-sm text-muted file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0
+                   file:bg-surface-2 file:text-text file:text-sm file:cursor-pointer
+                   file:hover:bg-border/60 file:transition-colors" />
           <button id="import-btn" disabled
             class="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed
                    text-stone-950 font-semibold rounded-lg text-sm transition-colors">
@@ -412,7 +411,7 @@ function renderInviteSection(invites) {
   return `
     <section class="card-section space-y-4">
       <div class="flex items-center justify-between">
-        <h2 class="font-semibold text-stone-200">Invite codes</h2>
+        <h2 class="font-semibold text-text">Invite codes</h2>
         <button id="create-invite-btn"
           class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg text-sm transition-all duration-150 shadow-sm shadow-amber-500/20">
           + New invite
@@ -420,7 +419,7 @@ function renderInviteSection(invites) {
       </div>
       <p id="invite-msg" class="text-xs hidden"></p>
       <div id="invites-list" class="space-y-2">
-        ${invites.length ? invites.map(i => renderInviteRow(i)).join('') : `<p class="text-stone-500 text-sm italic">No invite codes yet.</p>`}
+        ${invites.length ? invites.map(i => renderInviteRow(i)).join('') : `<p class="text-muted text-sm italic">No invite codes yet.</p>`}
       </div>
     </section>`;
 }
@@ -428,12 +427,12 @@ function renderInviteSection(invites) {
 function renderInviteRow(invite) {
   const used = !!invite.used_at;
   return `
-    <div class="flex items-center gap-2 bg-stone-800 rounded-lg px-3 py-2 text-sm" data-invite-code="${escHtml(invite.code)}">
+    <div class="flex items-center gap-2 bg-surface-2 rounded-lg px-3 py-2 text-sm" data-invite-code="${escHtml(invite.code)}">
       <code class="flex-1 font-mono text-sm ${used ? 'text-stone-500 line-through' : 'text-amber-300'}">${escHtml(invite.code)}</code>
       ${used
-        ? `<span class="text-xs text-stone-500">Used by ${escHtml(invite.used_by_username ?? '?')}</span>`
-        : `<button class="copy-invite text-xs text-stone-400 hover:text-amber-400 transition-colors" data-code="${escHtml(invite.code)}">Copy</button>
-           <button class="revoke-invite text-xs text-stone-500 hover:text-red-400 transition-colors" data-code="${escHtml(invite.code)}">Revoke</button>`}
+        ? `<span class="text-xs text-muted">Used by ${escHtml(invite.used_by_username ?? '?')}</span>`
+        : `<button class="copy-invite text-xs text-muted hover:text-amber-400 transition-colors" data-code="${escHtml(invite.code)}">Copy</button>
+           <button class="revoke-invite text-xs text-muted hover:text-red-400 transition-colors" data-code="${escHtml(invite.code)}">Revoke</button>`}
     </div>`;
 }
 
@@ -471,14 +470,14 @@ function attachInviteHandlers(container) {
       btn.outerHTML = `
         <span class="revoke-confirm flex items-center gap-1">
           <button class="revoke-yes text-xs px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded font-medium">Revoke</button>
-          <button class="revoke-no text-xs px-1 text-stone-400 hover:text-stone-200">Cancel</button>
+          <button class="revoke-no text-xs px-1 text-muted hover:text-text">Cancel</button>
         </span>`;
       row.querySelector('.revoke-yes').addEventListener('click', async () => {
         try {
           await api.deleteInvite(btn.dataset.code);
           row.remove();
           if (!container.querySelectorAll('[data-invite-code]').length) {
-            container.querySelector('#invites-list').innerHTML = `<p class="text-stone-500 text-sm italic">No invite codes yet.</p>`;
+            container.querySelector('#invites-list').innerHTML = `<p class="text-muted text-sm italic">No invite codes yet.</p>`;
           }
         } catch (err) {
           inviteMsg.className = 'text-xs text-red-400';
@@ -488,7 +487,7 @@ function attachInviteHandlers(container) {
       });
       row.querySelector('.revoke-no').addEventListener('click', () => {
         row.querySelector('.revoke-confirm').outerHTML =
-          `<button class="revoke-invite text-xs text-stone-500 hover:text-red-400 transition-colors" data-code="${escHtml(btn.dataset.code)}">Revoke</button>`;
+          `<button class="revoke-invite text-xs text-muted hover:text-red-400 transition-colors" data-code="${escHtml(btn.dataset.code)}">Revoke</button>`;
         attachInviteHandlers(container);
       });
     });

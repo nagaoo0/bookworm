@@ -28,15 +28,6 @@ html.theme-light {
   --color-muted: #78716c;
 }
 
-/* ── Sepia theme ──────────────────────────────────────────────────────────── */
-html.theme-sepia {
-  --color-bg: #f5f0e8;
-  --color-surface: #ede8de;
-  --color-surface-2: #e0d8cc;
-  --color-border: #c4b9a8;
-  --color-text: #2c1f14;
-  --color-muted: #8a7060;
-}
 
 * { box-sizing: border-box; }
 

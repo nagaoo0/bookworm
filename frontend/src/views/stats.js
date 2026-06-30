@@ -27,22 +27,22 @@ export function render(container, s, opts = {}, goal = null) {
   const goalSection = (!opts.compact && goal?.target) ? (() => {
     const pct = Math.min(100, Math.round((goal.booksRead / goal.target) * 100));
     return `
-      <section class="bg-stone-900 rounded-xl p-5 ring-1 ring-white/5">
+      <section class="bg-surface rounded-xl p-5 ring-1 ring-border/20">
         <div class="flex items-center justify-between mb-3">
           <h2 class="font-serif text-lg font-semibold">${currentYear} Reading Goal</h2>
-          <span class="text-sm text-stone-400">${goal.booksRead} / ${goal.target} books</span>
+          <span class="text-sm text-muted">${goal.booksRead} / ${goal.target} books</span>
         </div>
-        <div class="w-full bg-stone-800 rounded-full h-3 overflow-hidden">
+        <div class="w-full bg-surface-2 rounded-full h-3 overflow-hidden">
           <div class="h-3 rounded-full transition-all" style="width:${pct}%;background:var(--color-accent,#f59e0b)"></div>
         </div>
-        <p class="text-xs text-stone-500 mt-2">${pct}% complete${pct >= 100 ? ' 🎉' : ''}</p>
+        <p class="text-xs text-muted mt-2">${pct}% complete${pct >= 100 ? ' 🎉' : ''}</p>
       </section>`;
   })() : '';
 
   container.innerHTML = `
     <div class="${opts.compact ? '' : 'max-w-2xl mx-auto '}space-y-8 fade-in">
 
-      ${!opts.compact ? `<div class="flex items-center justify-between"><h1 class="font-serif text-2xl font-bold">Stats</h1><a href="#wrapped" class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 hover:bg-stone-800/60" style="border:1px solid rgba(68,64,60,0.5);color:var(--color-accent)">✨ Year in Review</a></div>` : ''}
+      ${!opts.compact ? `<div class="flex items-center justify-between"><h1 class="font-serif text-2xl font-bold">Stats</h1><a href="#wrapped" class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-150 hover:bg-surface-2/60 border border-border/50" style="color:var(--color-accent)">✨ Year in Review</a></div>` : ''}
 
       ${goalSection}
 
@@ -57,9 +57,9 @@ export function render(container, s, opts = {}, goal = null) {
       <!-- Year selector -->
       ${years.length ? `
       <div class="flex items-center gap-3">
-        <label class="text-sm text-stone-400 font-medium">Year</label>
+        <label class="text-sm text-muted font-medium">Year</label>
         <select id="${opts.yearSelectId ?? 'year-select'}"
-          class="bg-stone-800 border border-stone-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500">
+          class="field-input rounded-lg px-3 py-1.5 text-sm">
           ${years.map(y => `<option value="${y}" ${y === currentYear ? 'selected' : ''}>${y}</option>`).join('')}
         </select>
       </div>` : ''}
@@ -67,7 +67,7 @@ export function render(container, s, opts = {}, goal = null) {
       <!-- Monthly bar chart -->
       <section>
         <h2 class="font-serif text-xl font-semibold mb-4">Books Finished by Month</h2>
-        <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5" style="height:220px">
+        <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20" style="height:220px">
           <canvas id="${opts.barCanvasId ?? 'monthly-chart'}"></canvas>
         </div>
       </section>
@@ -76,7 +76,7 @@ export function render(container, s, opts = {}, goal = null) {
       ${hasCats ? `
       <section id="${opts.pieSectionId ?? 'pie-section'}">
         <h2 class="font-serif text-xl font-semibold mb-4">Genres / Categories</h2>
-        <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 flex items-center justify-center" style="height:280px">
+        <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20 flex items-center justify-center" style="height:280px">
           <canvas id="${opts.pieCanvasId ?? 'pie-chart'}"></canvas>
         </div>
       </section>` : ''}
@@ -85,7 +85,7 @@ export function render(container, s, opts = {}, goal = null) {
       ${Object.keys(s.dailySessions ?? {}).length ? `
       <section>
         <h2 class="font-serif text-xl font-semibold mb-4">Reading Activity</h2>
-        <div id="${opts.heatmapId ?? 'reading-heatmap'}" class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5 overflow-x-auto"></div>
+        <div id="${opts.heatmapId ?? 'reading-heatmap'}" class="bg-surface rounded-xl p-4 ring-1 ring-border/20 overflow-x-auto"></div>
       </section>` : ''}
 
     </div>`;
@@ -117,6 +117,11 @@ function drawMonthlyChart(monthly, year, canvasId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
 
+  const cs = getComputedStyle(document.documentElement);
+  const surface2 = cs.getPropertyValue('--color-surface-2').trim() || '#292524';
+  const muted    = cs.getPropertyValue('--color-muted').trim()    || '#a8a29e';
+  const accent   = cs.getPropertyValue('--color-accent').trim()   || '#f59e0b';
+
   const counts = MONTH_LABELS.map((_, i) => monthly[year]?.[i + 1] ?? 0);
 
   chartInstances[canvasId]?.destroy();
@@ -127,8 +132,8 @@ function drawMonthlyChart(monthly, year, canvasId) {
       datasets: [{
         label: String(year),
         data: counts,
-        backgroundColor: '#f59e0b99',
-        borderColor: '#f59e0b',
+        backgroundColor: accent + '99',
+        borderColor: accent,
         borderWidth: 1,
         borderRadius: 4,
       }],
@@ -138,10 +143,10 @@ function drawMonthlyChart(monthly, year, canvasId) {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { color: '#292524' }, ticks: { color: '#a8a29e' } },
+        x: { grid: { color: surface2 }, ticks: { color: muted } },
         y: {
-          grid: { color: '#292524' },
-          ticks: { color: '#a8a29e', stepSize: 1, precision: 0 },
+          grid: { color: surface2 },
+          ticks: { color: muted, stepSize: 1, precision: 0 },
           beginAtZero: true,
         },
       },
@@ -189,12 +194,16 @@ function drawPieChart(categoriesByYear, year, canvasId) {
   const data   = top.map(([, v]) => v);
   const colors = labels.map((_, i) => PALETTE[i % PALETTE.length]);
 
+  const cs2 = getComputedStyle(document.documentElement);
+  const surface   = cs2.getPropertyValue('--color-surface').trim()   || '#1c1917';
+  const mutedPie  = cs2.getPropertyValue('--color-muted').trim()     || '#a8a29e';
+
   chartInstances[canvasId]?.destroy();
   chartInstances[canvasId] = new Chart(canvas, {
     type: 'pie',
     data: {
       labels,
-      datasets: [{ data, backgroundColor: colors, borderColor: '#1c1917', borderWidth: 2 }],
+      datasets: [{ data, backgroundColor: colors, borderColor: surface, borderWidth: 2 }],
     },
     options: {
       responsive: true,
@@ -202,7 +211,7 @@ function drawPieChart(categoriesByYear, year, canvasId) {
       plugins: {
         legend: {
           position: 'right',
-          labels: { color: '#a8a29e', boxWidth: 12, font: { size: 11 } },
+          labels: { color: mutedPie, boxWidth: 12, font: { size: 11 } },
         },
         tooltip: {
           callbacks: {
@@ -216,9 +225,9 @@ function drawPieChart(categoriesByYear, year, canvasId) {
 
 function statCard(label, value) {
   return `
-    <div class="bg-stone-800 rounded-xl p-4 text-center ring-1 ring-white/5">
+    <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20">
       <div class="font-serif text-3xl font-bold text-amber-400">${value}</div>
-      <div class="text-xs text-stone-400 mt-1 uppercase tracking-wider">${label}</div>
+      <div class="text-xs text-muted mt-1 uppercase tracking-wider">${label}</div>
     </div>`;
 }
 
@@ -235,6 +244,14 @@ function drawHeatmap(dailySessions, containerId) {
   startDate.setDate(startDate.getDate() - 364);
   // Rewind to previous Sunday
   startDate.setDate(startDate.getDate() - startDate.getDay());
+
+  const csH = getComputedStyle(document.documentElement);
+  const heatSurface2 = csH.getPropertyValue('--color-surface-2').trim() || '#292524';
+  const heatAccent   = csH.getPropertyValue('--color-accent').trim()    || '#f59e0b';
+  // Convert accent hex to rgba parts for opacity variation
+  const accentRgb = heatAccent.startsWith('#') && heatAccent.length === 7
+    ? `${parseInt(heatAccent.slice(1,3),16)},${parseInt(heatAccent.slice(3,5),16)},${parseInt(heatAccent.slice(5,7),16)}`
+    : '245,158,11';
 
   const maxVal = Math.max(1, ...Object.values(dailySessions));
 
@@ -280,7 +297,7 @@ function drawHeatmap(dailySessions, containerId) {
       const x = labelW + wi * (cellSize + gap);
       const y = labelH + di * (cellSize + gap);
       const intensity = day.count === 0 ? 0 : Math.max(0.15, day.count / maxVal);
-      const fill = day.count === 0 ? '#292524' : `rgba(245,158,11,${intensity.toFixed(2)})`;
+      const fill = day.count === 0 ? heatSurface2 : `rgba(${accentRgb},${intensity.toFixed(2)})`;
       const label = `${day.key}: ${day.count} session${day.count !== 1 ? 's' : ''}`;
       return `<rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" rx="2"
                 fill="${fill}" class="heatmap-cell" data-tip="${label}">
@@ -291,12 +308,12 @@ function drawHeatmap(dailySessions, containerId) {
 
   const monthLabelsSVG = monthLabels.map(({ wi, label }) => {
     const x = labelW + wi * (cellSize + gap);
-    return `<text x="${x}" y="${labelH - 4}" fill="#78716c" font-size="10" font-family="sans-serif">${label}</text>`;
+    return `<text x="${x}" y="${labelH - 4}" fill="${csH.getPropertyValue('--color-muted').trim() || '#78716c'}" font-size="10" font-family="sans-serif">${label}</text>`;
   }).join('');
 
   const dayLabelsSVG = [1, 3, 5].map(di => {
     const y = labelH + di * (cellSize + gap) + cellSize - 2;
-    return `<text x="0" y="${y}" fill="#78716c" font-size="10" font-family="sans-serif">${DAY_LABELS[di]}</text>`;
+    return `<text x="0" y="${y}" fill="${csH.getPropertyValue('--color-muted').trim() || '#78716c'}" font-size="10" font-family="sans-serif">${DAY_LABELS[di]}</text>`;
   }).join('');
 
   el.innerHTML = `
@@ -306,10 +323,10 @@ function drawHeatmap(dailySessions, containerId) {
       ${cells}
     </svg>
     <div class="flex items-center gap-1.5 mt-3 justify-end">
-      <span class="text-xs text-stone-500">Less</span>
+      <span class="text-xs text-muted">Less</span>
       ${[0, 0.25, 0.5, 0.75, 1].map(v =>
-        `<div style="width:12px;height:12px;border-radius:2px;background:${v === 0 ? '#292524' : `rgba(245,158,11,${v})`}"></div>`
+        `<div style="width:12px;height:12px;border-radius:2px;background:${v === 0 ? heatSurface2 : `rgba(${accentRgb},${v})`}"></div>`
       ).join('')}
-      <span class="text-xs text-stone-500">More</span>
+      <span class="text-xs text-muted">More</span>
     </div>`;
 }

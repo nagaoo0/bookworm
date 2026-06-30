@@ -73,7 +73,7 @@ export function renderHome(container) {
       <!-- Library search + select toggle -->
       <div class="flex gap-2 items-center">
         <div class="relative flex-1">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
             </svg>
@@ -83,7 +83,7 @@ export function renderHome(container) {
             class="library-search w-full rounded-xl pl-9 pr-4 py-2.5 text-sm" />
         </div>
         <button id="select-mode-btn"
-          class="flex-shrink-0 px-3 py-2.5 rounded-xl border border-stone-700 text-xs text-stone-400
+          class="flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted
                  hover:border-amber-500 hover:text-amber-400 transition-colors">
           Select
         </button>
@@ -91,12 +91,12 @@ export function renderHome(container) {
 
       <!-- Bulk action bar (hidden unless books selected) -->
       <div id="bulk-bar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50
-           bg-stone-800 border border-stone-600 rounded-2xl shadow-2xl px-4 py-3
+           bg-surface-2 border border-border rounded-2xl shadow-2xl px-4 py-3
            flex items-center gap-3 text-sm">
-        <span id="bulk-count" class="text-stone-300 font-medium mr-1"></span>
-        <button id="bulk-status-btn" class="px-3 py-1.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-stone-200 transition-colors">Set status…</button>
+        <span id="bulk-count" class="text-text font-medium mr-1"></span>
+        <button id="bulk-status-btn" class="px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-border/60 text-text transition-colors">Set status…</button>
         <button id="bulk-remove-btn" class="px-3 py-1.5 rounded-lg bg-red-900/60 hover:bg-red-900 text-red-300 transition-colors">Remove</button>
-        <button id="bulk-cancel-btn" class="px-2 py-1.5 text-stone-500 hover:text-stone-200 transition-colors">✕</button>
+        <button id="bulk-cancel-btn" class="px-2 py-1.5 text-muted hover:text-text transition-colors">✕</button>
       </div>
 
       <!-- Shelf selector bar -->
@@ -108,14 +108,14 @@ export function renderHome(container) {
                   data-shelf="${s.id}" style="${selectedShelfId === s.id ? `background:${escHtml(s.color)}22;border-color:${escHtml(s.color)};color:${escHtml(s.color)}` : ''}">
             <span class="inline-block w-2 h-2 rounded-full mr-1.5 flex-shrink-0" style="background:${escHtml(s.color)}"></span>${escHtml(s.name)}
           </button>`).join('')}
-        <button id="new-shelf-btn" class="shelf-chip shelf-chip-idle text-stone-500 border-dashed">+ New shelf</button>
+        <button id="new-shelf-btn" class="shelf-chip shelf-chip-idle text-muted border-dashed">+ New shelf</button>
       </div>
 
       <!-- Main content area -->
       <div id="shelf-content"></div>
 
       <!-- Shelf manager (collapsed by default) -->
-      <div class="pt-4 border-t border-stone-800">
+      <div class="pt-4 border-t border-border">
         ${renderShelfManager(shelves)}
       </div>
     </div>`;
@@ -157,7 +157,7 @@ export function renderHome(container) {
     selectBtn.textContent = selectMode ? 'Done' : 'Select';
     selectBtn.className = selectMode
       ? 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-amber-500 text-xs text-amber-400 transition-colors'
-      : 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-stone-700 text-xs text-stone-400 hover:border-amber-500 hover:text-amber-400 transition-colors';
+      : 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted hover:border-amber-500 hover:text-amber-400 transition-colors';
     bulkBar.classList.add('hidden');
     // Re-attach to toggle checkbox visibility
     attachCardHandlers(container, shelves, library, { selectMode, selectedLibIds, updateBulkBar });
@@ -167,7 +167,7 @@ export function renderHome(container) {
     selectMode = false;
     selectedLibIds.clear();
     selectBtn.textContent = 'Select';
-    selectBtn.className = 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-stone-700 text-xs text-stone-400 hover:border-amber-500 hover:text-amber-400 transition-colors';
+    selectBtn.className = 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted hover:border-amber-500 hover:text-amber-400 transition-colors';
     bulkBar.classList.add('hidden');
     container.querySelectorAll('.book-card').forEach(c => c.querySelector('.bulk-check')?.classList.add('hidden'));
   });
@@ -230,14 +230,13 @@ function showInlineShelfCreate(container) {
   form.className = 'flex items-center gap-1.5';
   form.innerHTML = `
     <input name="name" required placeholder="Shelf name…" autofocus
-      class="bg-stone-800 border border-stone-600 rounded-lg px-2 py-1 text-sm
-             focus:outline-none focus:border-amber-500 w-36" />
+      class="field-input w-36" />
     <button type="submit"
       class="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm">
       Add
     </button>
     <button type="button" id="cancel-shelf-create"
-      class="px-2 py-1 text-stone-400 hover:text-stone-200 rounded-lg text-sm">
+      class="px-2 py-1 text-muted hover:text-text rounded-lg text-sm">
       ✕
     </button>`;
 
@@ -294,7 +293,7 @@ function renderAllBooks(el, library, container, shelves) {
     const sorted = sortBooks(books, sort);
     const isReading = key === 'reading';
     const chevron = `
-      <svg class="w-4 h-4 text-stone-500 flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <svg class="w-4 h-4 text-muted flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
       </svg>`;
     const dot = `<span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${color}"></span>`;
@@ -325,11 +324,11 @@ function renderAllBooks(el, library, container, shelves) {
 
   const emptyHtml = libraryQuery
     ? `<div class="text-center py-20 space-y-2">
-        <p class="text-stone-400">No books match "<em class="text-stone-300">${escHtml(libraryQuery)}</em>".</p>
-        <p class="text-stone-600 text-sm">Try a different title or author name.</p>
+        <p class="text-muted">No books match "<em class="text-text">${escHtml(libraryQuery)}</em>".</p>
+        <p class="text-muted text-sm">Try a different title or author name.</p>
        </div>`
     : `<div class="text-center py-24 space-y-5 fade-in">
-        <svg class="w-20 h-20 mx-auto text-stone-700" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <svg class="w-20 h-20 mx-auto text-border" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <rect x="8" y="20" width="14" height="44" rx="2" fill="currentColor" opacity="0.5"/>
           <rect x="10" y="18" width="10" height="4" rx="1" fill="#f59e0b" opacity="0.6"/>
           <rect x="26" y="14" width="12" height="50" rx="2" fill="currentColor" opacity="0.7"/>
@@ -341,8 +340,8 @@ function renderAllBooks(el, library, container, shelves) {
           <line x1="4" y1="65" x2="76" y2="65" stroke="currentColor" stroke-width="2" stroke-opacity="0.4" stroke-linecap="round"/>
         </svg>
         <div class="space-y-1">
-          <p class="text-stone-300 text-lg font-serif font-semibold">Your library is empty</p>
-          <p class="text-stone-500 text-sm">Start building your reading collection.</p>
+          <p class="text-text text-lg font-serif font-semibold">Your library is empty</p>
+          <p class="text-muted text-sm">Start building your reading collection.</p>
         </div>
         <a href="#search"
            class="inline-block px-6 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-stone-950 font-semibold rounded-xl text-sm transition-all duration-150 shadow-lg shadow-amber-500/20">
@@ -381,13 +380,13 @@ function renderShelfGrid(el, shelf, books) {
       <div class="flex items-center gap-2 mb-4">
         ${dot}
         <h2 class="font-serif text-xl font-semibold">${escHtml(title)}</h2>
-        <span class="text-sm text-stone-500">${books.length}</span>
+        <span class="text-sm text-muted">${books.length}</span>
       </div>
       ${books.length
         ? `<div class="book-grid stagger">
              ${books.map(b => bookCardHTML(b, { showStatus: true })).join('')}
            </div>`
-        : `<p class="text-stone-500 italic text-sm py-3">No books on this shelf yet.</p>`}
+        : `<p class="text-muted italic text-sm py-3">No books on this shelf yet.</p>`}
     </section>`;
 }
 
@@ -507,14 +506,14 @@ function showContextMenu(x, y, card, shelves, library) {
   ];
 
   const menu = document.createElement('div');
-  menu.className = 'ctx-menu fixed bg-stone-800 border border-stone-600 rounded-xl shadow-2xl z-50 py-2 text-sm min-w-[200px] select-none';
+  menu.className = 'ctx-menu fixed bg-surface-2 border border-border rounded-xl shadow-2xl z-50 py-2 text-sm min-w-[200px] select-none';
   menu.style.cssText = `left:${Math.min(x, window.innerWidth - 220)}px;top:${Math.min(y, window.innerHeight - 300)}px`;
 
   menu.innerHTML = `
-    <div class="px-3 py-1.5 text-xs text-stone-500 uppercase tracking-wider font-medium">Status</div>
+    <div class="px-3 py-1.5 text-xs text-muted uppercase tracking-wider font-medium">Status</div>
     ${STATUSES.map(s => `
       <button class="ctx-status w-full text-left px-3 py-2 flex items-center gap-2
-                     ${libEntry.status === s.key ? 'text-amber-400' : 'hover:bg-stone-700 text-stone-300'}"
+                     ${libEntry.status === s.key ? 'text-amber-400' : 'hover:bg-border/40 text-text'}"
               data-status="${s.key}">
         <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${s.color}"></span>
         ${s.label}
@@ -522,16 +521,16 @@ function showContextMenu(x, y, card, shelves, library) {
       </button>`).join('')}
 
     ${shelves.length ? `
-    <div class="border-t border-stone-700 mt-1 pt-1">
-      <div class="px-3 py-1.5 text-xs text-stone-500 uppercase tracking-wider font-medium">Shelves</div>
+    <div class="border-t border-border mt-1 pt-1">
+      <div class="px-3 py-1.5 text-xs text-muted uppercase tracking-wider font-medium">Shelves</div>
       ${shelves.map(s => {
         const on = shelfIds.includes(s.id);
         return `
           <button class="ctx-shelf w-full text-left px-3 py-2 flex items-center gap-2
-                         hover:bg-stone-700 ${on ? 'text-stone-200' : 'text-stone-400'}"
+                         hover:bg-border/40 ${on ? 'text-text' : 'text-muted'}"
                   data-shelf-id="${s.id}" data-on="${on}">
             <span class="w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-xs
-                         ${on ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-stone-500'}">
+                         ${on ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-border'}"
               ${on ? '✓' : ''}
             </span>
             <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${escHtml(s.color)}"></span>
@@ -541,19 +540,19 @@ function showContextMenu(x, y, card, shelves, library) {
     </div>` : ''}
 
     ${libEntry.status === 'reading' ? `
-    <div class="border-t border-stone-700 mt-1 pt-1">
+    <div class="border-t border-border mt-1 pt-1">
       <div class="px-3 py-2 space-y-1.5">
-        <p class="text-xs text-stone-500 uppercase tracking-wider font-medium">Progress</p>
+        <p class="text-xs text-muted uppercase tracking-wider font-medium">Progress</p>
         <div class="flex items-center gap-2">
           <input type="range" class="ctx-progress-slider flex-1 accent-amber-400"
                  min="0" max="100" step="5"
                  value="${libEntry.progress_pct ?? 0}" />
-          <span class="ctx-progress-label text-xs text-stone-400 w-8 text-right">${libEntry.progress_pct ?? 0}%</span>
+          <span class="ctx-progress-label text-xs text-muted w-8 text-right">${libEntry.progress_pct ?? 0}%</span>
         </div>
       </div>
     </div>` : ''}
 
-    <div class="border-t border-stone-700 mt-1 pt-1">
+    <div class="border-t border-border mt-1 pt-1">
       <button class="ctx-remove w-full text-left px-3 py-2 hover:bg-red-900/40 text-red-400">
         Remove from library
       </button>
@@ -590,9 +589,9 @@ function showContextMenu(x, y, card, shelves, library) {
     const removeBtn = menu.querySelector('.ctx-remove');
     removeBtn.outerHTML = `
       <div class="ctx-remove-confirm flex items-center gap-2 px-3 py-2">
-        <span class="text-stone-300 text-xs flex-1">Remove from library?</span>
+        <span class="text-text text-xs flex-1">Remove from library?</span>
         <button class="ctx-remove-yes px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded font-medium">Yes</button>
-        <button class="ctx-remove-no px-2 py-0.5 text-stone-400 hover:text-stone-200 text-xs">No</button>
+        <button class="ctx-remove-no px-2 py-0.5 text-muted hover:text-text text-xs">No</button>
       </div>`;
     menu.querySelector('.ctx-remove-yes').addEventListener('click', async () => {
       menu.remove();
@@ -627,7 +626,7 @@ function showContextMenu(x, y, card, shelves, library) {
 function showBulkStatusMenu(anchor, libIds, onDone) {
   document.querySelector('.bulk-status-menu')?.remove();
   const menu = document.createElement('div');
-  menu.className = 'bulk-status-menu absolute bottom-full mb-2 left-0 bg-stone-800 border border-stone-600 rounded-xl shadow-xl py-1 text-sm min-w-[160px]';
+  menu.className = 'bulk-status-menu absolute bottom-full mb-2 left-0 bg-surface-2 border border-border rounded-xl shadow-xl py-1 text-sm min-w-[160px]';
   menu.style.zIndex = 60;
   const STATUSES = [
     { key: 'to_read', label: 'To Read' },
@@ -635,7 +634,7 @@ function showBulkStatusMenu(anchor, libIds, onDone) {
     { key: 'done',    label: 'Done'    },
   ];
   menu.innerHTML = STATUSES.map(s =>
-    `<button class="w-full text-left px-4 py-2 hover:bg-stone-700 text-stone-200" data-status="${s.key}">${s.label}</button>`
+    `<button class="w-full text-left px-4 py-2 hover:bg-border/40 text-text" data-status="${s.key}">${s.label}</button>`
   ).join('');
   anchor.style.position = 'relative';
   anchor.appendChild(menu);
@@ -656,29 +655,28 @@ function showBulkStatusMenu(anchor, libIds, onDone) {
 function renderShelfManager(shelves) {
   return `
     <details class="group">
-      <summary class="flex items-center gap-2 cursor-pointer list-none text-sm text-stone-400
-                      hover:text-stone-200 transition-colors select-none">
+      <summary class="flex items-center gap-2 cursor-pointer list-none text-sm text-muted
+                      hover:text-text transition-colors select-none">
         <span class="group-open:rotate-90 transition-transform inline-block">▸</span>
         Manage shelves
       </summary>
       <div class="mt-4 space-y-3 max-w-md">
         ${shelves.length ? shelves.map(s => `
           <div class="flex flex-col gap-1" data-shelf-row="${s.id}">
-            <div class="flex items-center gap-2 bg-stone-800 rounded-lg px-3 py-2">
+            <div class="flex items-center gap-2 bg-surface-2 rounded-lg px-3 py-2">
               <input type="color" value="${escHtml(s.color)}" class="shelf-color-input w-7 h-7 rounded cursor-pointer bg-transparent border-none" data-shelf-id="${s.id}" />
               <span class="flex-1 text-sm font-medium">${escHtml(s.name)}</span>
-              <button class="rename-shelf-btn text-xs text-stone-400 hover:text-amber-400 px-2 transition-colors" data-shelf-id="${s.id}" data-shelf-name="${escHtml(s.name)}">Rename</button>
-              <button class="delete-shelf-btn text-xs text-stone-500 hover:text-red-400 px-1 transition-colors" data-shelf-id="${s.id}">✕</button>
+              <button class="rename-shelf-btn text-xs text-muted hover:text-amber-400 px-2 transition-colors" data-shelf-id="${s.id}" data-shelf-name="${escHtml(s.name)}">Rename</button>
+              <button class="delete-shelf-btn text-xs text-muted hover:text-red-400 px-1 transition-colors" data-shelf-id="${s.id}">✕</button>
             </div>
             <p class="shelf-err text-xs text-red-400 px-1 hidden"></p>
-          </div>`).join('') : `<p class="text-stone-500 text-sm italic">No shelves yet.</p>`}
+          </div>`).join('') : `<p class="text-muted text-sm italic">No shelves yet.</p>`}
 
         <form id="create-shelf-form" class="flex gap-2 mt-2">
           <input name="name" required placeholder="New shelf name…"
-            class="flex-1 bg-stone-800 border border-stone-600 rounded-lg px-3 py-2 text-sm
-                   focus:outline-none focus:border-amber-500 transition-colors" />
+            class="field-input flex-1" />
           <input type="color" name="color" value="#a78bfa"
-            class="w-10 h-[38px] rounded-lg cursor-pointer bg-stone-800 border border-stone-600" />
+            class="w-10 h-[38px] rounded-lg cursor-pointer bg-surface-2 border border-border" />
           <button type="submit"
             class="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg px-3 text-sm transition-colors">
             + Add
@@ -727,7 +725,7 @@ function showInlineRename(btn) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = btn.dataset.shelfName;
-  input.className = 'inline-rename flex-1 bg-stone-700 border border-amber-500 rounded px-2 py-0.5 text-sm focus:outline-none';
+  input.className = 'inline-rename flex-1 bg-surface-2 border border-amber-500 rounded px-2 py-0.5 text-sm focus:outline-none';
 
   const save = document.createElement('button');
   save.textContent = 'Save';
@@ -735,7 +733,7 @@ function showInlineRename(btn) {
 
   const cancel = document.createElement('button');
   cancel.textContent = 'Cancel';
-  cancel.className = 'text-xs px-1 py-1 text-stone-400 hover:text-stone-200';
+  cancel.className = 'text-xs px-1 py-1 text-muted hover:text-text';
 
   nameSpan.replaceWith(input);
   btn.replaceWith(save);
@@ -765,9 +763,9 @@ function showInlineDeleteConfirm(btn) {
   const confirm = document.createElement('span');
   confirm.className = 'inline-confirm flex items-center gap-1 text-xs';
   confirm.innerHTML = `
-    <span class="text-stone-400">Delete?</span>
+    <span class="text-muted">Delete?</span>
     <button class="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded font-medium confirm-yes">Yes</button>
-    <button class="px-2 py-0.5 text-stone-400 hover:text-stone-200 confirm-no">No</button>`;
+    <button class="px-2 py-0.5 text-muted hover:text-text confirm-no">No</button>`;
 
   btn.replaceWith(confirm);
 

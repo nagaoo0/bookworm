@@ -14,32 +14,32 @@ export function renderAuth(container, onSuccess) {
           <div class="flex flex-col items-center mb-8 gap-3">
             <div class="relative">
               <div class="absolute inset-0 rounded-full bg-amber-400/20 blur-xl"></div>
-              <div class="relative flex items-center justify-center bg-stone-800 rounded-full p-1.5 ring-2 ring-amber-500/30">
+              <div class="relative flex items-center justify-center bg-surface-2 rounded-full p-1.5 ring-2 ring-amber-500/30">
                 <img src="/logo.png" class="h-20 w-20 sm:h-24 sm:w-24 rounded-full object-cover" alt="Bookworm logo" />
               </div>
             </div>
             <h1 class="font-serif text-3xl sm:text-4xl font-bold text-amber-400 tracking-tight">Bookworm</h1>
-            <p class="text-stone-400 text-sm">${isRegister ? 'Create your account' : 'Sign in to your library'}</p>
+            <p class="text-muted text-sm">${isRegister ? 'Create your account' : 'Sign in to your library'}</p>
           </div>
           <form id="auth-form" class="glass-card rounded-2xl p-6 space-y-4 shadow-2xl">
             <div>
-              <label for="auth-username" class="text-xs text-stone-400 block mb-1">Username</label>
+              <label for="auth-username" class="text-xs text-muted block mb-1">Username</label>
               <input id="auth-username" type="text" name="username" required autofocus autocomplete="username"
                 placeholder="2–32 characters, letters / numbers / _ -"
                 class="field-input py-2.5" />
             </div>
             <div>
-              <label for="auth-password" class="text-xs text-stone-400 block mb-1">Password</label>
+              <label for="auth-password" class="text-xs text-muted block mb-1">Password</label>
               <input id="auth-password" type="password" name="password" required autocomplete="${isRegister ? 'new-password' : 'current-password'}"
                 class="field-input py-2.5" />
             </div>
             ${isRegister ? `
             <div>
-              <label for="auth-confirm" class="text-xs text-stone-400 block mb-1">Confirm password</label>
+              <label for="auth-confirm" class="text-xs text-muted block mb-1">Confirm password</label>
               <input id="auth-confirm" type="password" name="confirmPassword" required autocomplete="new-password"
                 class="field-input py-2.5" />
             </div>
-            <div id="recaptcha-status" class="text-stone-400 text-xs"></div>
+            <div id="recaptcha-status" class="text-muted text-xs"></div>
             <input type="hidden" name="recaptchaToken" id="recaptcha-token" />
             ` : ''}
             <button type="submit" id="submit-btn"
@@ -48,7 +48,7 @@ export function renderAuth(container, onSuccess) {
             </button>
             <p id="auth-error" class="text-red-400 text-xs text-center hidden"></p>
           </form>
-          <p class="text-center text-sm text-stone-500 mt-4">
+          <p class="text-center text-sm text-muted mt-4">
             ${isRegister
               ? `Already have an account? <button id="toggle-mode" class="text-amber-400 hover:text-amber-300">Sign in</button>`
               : `Don't have an account? <button id="toggle-mode" class="text-amber-400 hover:text-amber-300">Register</button>`}
