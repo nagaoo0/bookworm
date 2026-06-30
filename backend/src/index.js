@@ -136,6 +136,9 @@ app.get('/api/users', async (_req, res, next) => {
 app.get('/api/books/by-google/:googleId', async (req, res, next) => {
   try {
     const { googleId } = req.params;
+    if (!googleId || googleId === 'null' || googleId === 'undefined') {
+      return res.status(400).json({ error: 'Invalid Google Book ID' });
+    }
     // Try the DB first
     const { rows: [existing] } = await pool.query(
       `SELECT id, google_id, title, authors, cover_url, page_count,

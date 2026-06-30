@@ -71,14 +71,15 @@ router.get('/recommendations', async (req, res, next) => {
       const raw = (await Promise.all(searches)).flat();
       const seenG = new Set();
       googlePool = raw
-        .filter(r => r.googleId && !seenG.has(r.googleId) && seenG.add(r.googleId))
+        .filter(r => r.googleId && typeof r.googleId === 'string' && r.googleId !== 'null'
+                  && !seenG.has(r.googleId) && seenG.add(r.googleId))
         .map(r => ({
-          id:           null,
-          title:        r.title,
-          authors:      r.authors,
-          cover_url:    r.coverUrl,
+          id:             null,
+          title:          r.title,
+          authors:        r.authors,
+          cover_url:      r.coverUrl,
           published_date: r.publishedDate,
-          google_id:    r.googleId,
+          google_id:      r.googleId,
         }));
       recsCache.set(bookId, { ts: Date.now(), pool: googlePool });
     }

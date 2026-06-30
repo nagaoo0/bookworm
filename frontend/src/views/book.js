@@ -7,6 +7,8 @@ import { escHtml } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
 
 function recCard(b) {
+  if (!b.id && !b.google_id) return '';
+  const href = b.id ? '#book/' + b.id : '#book/g:' + b.google_id;
   const cover = b.cover_url
     ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
     : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2">
@@ -14,7 +16,7 @@ function recCard(b) {
        </div>`;
   const authors = Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? '');
   return `
-    <a href="${b.id ? `#book/${b.id}` : `#book/g:${b.google_id}`}" class="group flex flex-col">
+    <a href="${href}" class="group flex flex-col">
       <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-surface-2 shadow
                   ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
         ${cover}
