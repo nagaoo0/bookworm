@@ -345,6 +345,12 @@ function renderLibraryPanel(container, book, libEntry, shelves) {
 function renderLibraryPanelHTML(book, libEntry, shelves) {
   if (!libEntry) return '';
 
+  // Compute effective display values (libEntry overrides take precedence over shared book data)
+  const effectiveCover       = libEntry.cover_url       ?? book.cover_url;
+  const effectivePageCount   = libEntry.page_count      ?? book.page_count;
+  const effectivePublished   = libEntry.published_date  ?? book.published_date;
+  const effectiveDescription = libEntry.description     ?? book.description;
+
   const STATUSES = [
     { key: 'to_read', label: 'To Read',  color: '#64748b' },
     { key: 'reading', label: 'Reading',  color: '#f59e0b' },
