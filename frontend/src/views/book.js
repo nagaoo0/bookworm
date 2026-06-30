@@ -222,18 +222,26 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
       <!-- Recommendations -->
       ${recs.length ? `
       <section class="mt-10">
-        <h2 class="font-serif text-xl font-semibold mb-4">Readers also have</h2>
+        <h2 class="font-serif text-xl font-semibold mb-4">You might also like :</h2>
 
-        <div class="flex gap-3 overflow-x-auto sm:hidden reading-carousel pb-1" id="recs-scroll">
-          ${recs.map(b => `
-            <a href="#book/${b.id}" class="group flex flex-col flex-shrink-0" style="width:7rem">
+        <!-- Mobile: horizontal scroll -->
+        <div class="flex gap-3 overflow-x-auto sm:hidden reading-carousel pb-1">
+          ${recs.filter(b => b.id || b.google_id).map(b => {
+            const href = b.id ? '#book/' + b.id : '#book/g:' + b.google_id;
+            return `
+            <a href="${href}" class="group flex flex-col flex-shrink-0" style="width:7rem">
               <div class="relative w-full rounded overflow-hidden bg-surface-2 shadow ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all" style="aspect-ratio:2/3">
                 ${b.cover_url
                   ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
                   : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2"><span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span></div>`}
               </div>
               <p class="mt-1.5 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
-            </a>`).join('')}
+            </a>`;
+          }).join('')}
+        </div>
+        <!-- Desktop: grid -->
+        <div class="hidden sm:grid grid-cols-4 lg:grid-cols-6 gap-4">
+          ${recs.map(b => recCard(b)).join('')}
         </div>
       </section>` : ''}
 
