@@ -3,6 +3,7 @@ import { getState, setState } from '../store.js';
 import { loadPrefs, savePrefs, ACCENT_COLORS } from '../prefs.js';
 import { showToast } from '../components/toast.js';
 import { avatarHTML } from '../components/avatar.js';
+import { escHtml } from '../utils.js';
 
 const SEARCH_LANGUAGES = [
   ['', 'Any language'],
@@ -78,7 +79,7 @@ function render(container, user, invites, goal, currentYear) {
         </button>
         <p id="profile-msg" class="text-xs hidden"></p>
 
-        <div class="rounded-lg px-3 py-2.5 text-xs" style="background:rgba(12,10,9,0.6);border:1px solid rgba(68,64,60,0.5)">
+        <div class="glass-card rounded-lg px-3 py-2.5 text-xs">
           <span class="text-stone-500">Shareable link: </span>
           <a href="${escHtml(profileUrl)}" class="text-amber-400 hover:text-amber-300 transition-colors break-all">${escHtml(profileUrl)}</a>
         </div>
@@ -284,9 +285,7 @@ function renderAppearanceSection() {
       <div class="space-y-2">
         <p class="text-xs text-stone-400 font-medium uppercase tracking-wider">Search language</p>
         <p class="text-xs text-stone-500">Default language filter applied to all book searches. You can still override it per-search in the advanced form.</p>
-        <select id="search-language-select"
-          class="rounded-lg px-3 py-2 text-sm outline-none transition-all duration-150"
-          style="background:rgba(12,10,9,0.8);border:1px solid rgba(68,64,60,0.8);color:var(--color-text)">
+        <select id="search-language-select" class="field-input rounded-lg py-2">
           ${SEARCH_LANGUAGES.map(([v, l]) => `<option value="${v}"${searchLanguage === v ? ' selected' : ''}>${l}</option>`).join('')}
         </select>
       </div>
@@ -496,6 +495,3 @@ function attachInviteHandlers(container) {
   });
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

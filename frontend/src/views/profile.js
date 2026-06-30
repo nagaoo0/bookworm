@@ -5,6 +5,7 @@ import { render as renderStatsContent } from './stats.js';
 import { showToast } from '../components/toast.js';
 import { avatarHTML } from '../components/avatar.js';
 import { ACCENT_COLORS } from '../prefs.js';
+import { escHtml } from '../utils.js';
 
 const lastTab = new Map();
 
@@ -697,6 +698,3 @@ export async function renderBookGrid(container, username) {
   }
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

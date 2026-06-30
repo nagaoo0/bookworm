@@ -1,3 +1,5 @@
+import { escHtml } from '../utils.js';
+
 function hue(username) {
   return [...username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
 }
@@ -24,6 +26,3 @@ export function avatarHTML(user, { size = 40, classes = '' } = {}) {
   </div>`;
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

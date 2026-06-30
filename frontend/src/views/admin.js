@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { getState } from '../store.js';
 import { showToast } from '../components/toast.js';
+import { escHtml } from '../utils.js';
 
 export async function renderAdmin(container) {
   const { user } = getState();
@@ -184,6 +185,3 @@ function attachHandlers(container, users) {
   });
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

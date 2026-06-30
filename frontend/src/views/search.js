@@ -3,6 +3,7 @@ import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { loadLibrary } from './home.js';
 import { loadPrefs } from '../prefs.js';
+import { escHtml } from '../utils.js';
 
 const LANGUAGES = [
   ['', 'Any language'],
@@ -16,8 +17,7 @@ function shelfSelectHTML(shelves, name = '_shelfId') {
   if (!shelves.length) return `<input type="hidden" name="${name}" value="" />`;
   return `
     <select name="${name}"
-      class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm
-             focus:outline-none focus:border-amber-500">
+      class="field-input">
       ${shelves.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('')}
     </select>`;
 }
@@ -40,9 +40,7 @@ export function renderSearch(container) {
         </span>
         <input id="search-input" type="text" value="${escHtml(searchQuery)}"
           placeholder="Search by title, author, anything…"
-          class="w-full rounded-xl pl-10 pr-4 py-3 text-base transition-all duration-200
-                 placeholder-stone-500 outline-none"
-          style="background:rgba(41,37,36,0.8);border:1px solid rgba(68,64,60,0.8)" />
+          class="glass-input w-full rounded-xl pl-10 pr-4 py-3 text-base" />
       </div>
 
       <!-- Advanced toggle -->
@@ -52,8 +50,7 @@ export function renderSearch(container) {
           <span id="adv-arrow" class="transition-transform duration-200">▸</span>
           <span>Advanced search</span>
         </button>
-        <div id="advanced-form" class="hidden mt-3 rounded-xl p-4 space-y-3"
-             style="background:rgba(28,25,23,0.8);border:1px solid rgba(68,64,60,0.5)">
+        <div id="advanced-form" class="glass-card hidden mt-3 rounded-xl p-4 space-y-3">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             ${advField('adv-title',     'Book title',       'intitle: …')}
             ${advField('adv-author',    'Author',           'inauthor: …')}
@@ -62,9 +59,7 @@ export function renderSearch(container) {
             ${advField('adv-isbn',      'ISBN',             '9780…')}
             <div>
               <label class="text-xs text-stone-400 block mb-1">Language</label>
-              <select id="adv-language"
-                class="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all duration-150"
-                style="background:rgba(12,10,9,0.8);border:1px solid rgba(68,64,60,0.8);color:var(--color-text)">
+              <select id="adv-language" class="field-input rounded-lg">
                 ${LANGUAGES.map(([v, l]) => `<option value="${v}"${prefLang === v ? ' selected' : ''}>${l}</option>`).join('')}
               </select>
             </div>
@@ -163,8 +158,7 @@ function advField(id, label, placeholder) {
     <div>
       <label for="${id}" class="text-xs text-stone-400 block mb-1">${label}</label>
       <input id="${id}" type="text" placeholder="${placeholder}"
-        class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm
-               focus:outline-none focus:border-amber-500 transition-colors" />
+        class="field-input" />
     </div>`;
 }
 
@@ -295,27 +289,27 @@ function renderManualForm(wrapper) {
         <div class="sm:col-span-2">
           <label class="text-xs text-stone-400 block mb-1">Title <span class="text-red-400">*</span></label>
           <input name="title" required placeholder="e.g. Dune"
-            class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+            class="field-input" />
         </div>
         <div class="sm:col-span-2">
           <label class="text-xs text-stone-400 block mb-1">Author(s) <span class="text-stone-500">(comma-separated)</span></label>
           <input name="authors" placeholder="e.g. Frank Herbert"
-            class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+            class="field-input" />
         </div>
         <div>
           <label class="text-xs text-stone-400 block mb-1">Cover URL</label>
           <input name="coverUrl" type="url" placeholder="https://…"
-            class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+            class="field-input" />
         </div>
         <div>
           <label class="text-xs text-stone-400 block mb-1">Published year</label>
           <input name="publishedDate" placeholder="e.g. 1965"
-            class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+            class="field-input" />
         </div>
         ${shelves.length ? `
         <div class="sm:col-span-2">
           <label class="text-xs text-stone-400 block mb-1">Add to shelf (optional)</label>
-          <select name="shelfId" class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
+          <select name="shelfId" class="field-input"
             <option value="">No shelf</option>
             ${shelves.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('')}
           </select>
@@ -357,6 +351,3 @@ function renderManualForm(wrapper) {
   });
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

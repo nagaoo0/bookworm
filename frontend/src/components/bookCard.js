@@ -1,4 +1,5 @@
 import { starRatingHTML } from './starRating.js';
+import { escHtml } from '../utils.js';
 
 export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false, readOnly = false, alsoRead = false } = {}) {
   const coverSrc = book.cover_url ?? book.coverUrl ?? null;
@@ -88,6 +89,3 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
     </article>`;
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

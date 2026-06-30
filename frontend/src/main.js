@@ -1,6 +1,7 @@
 import './styles.css';
 import { applyPrefs, savePrefs } from './prefs.js';
 import { getState, setState, subscribe } from './store.js';
+import { escHtml } from './utils.js';
 
 applyPrefs();
 import { renderHome, loadLibrary } from './views/home.js';
@@ -21,8 +22,7 @@ setOnSessionSaved(loadLibrary);
 // ── Layout ─────────────────────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = `
   <div class="min-h-screen flex flex-col">
-    <header id="app-header" class="sticky top-0 z-40 hidden"
-            style="background:color-mix(in srgb,var(--color-bg) 88%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--color-border);transition:background 0.2s">
+    <header id="app-header" class="glass-header sticky top-0 z-40 hidden">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
         <a href="#home" class="flex items-center gap-2.5 flex-shrink-0 group">
           <div class="relative">
@@ -73,7 +73,7 @@ document.getElementById('app').innerHTML = `
       </div>
 
       <!-- Mobile dropdown menu -->
-      <div id="mobile-menu" class="hidden sm:hidden panel-enter border-t border-stone-800/60" style="background:color-mix(in srgb,var(--color-bg) 97%,transparent);backdrop-filter:blur(20px)">
+      <div id="mobile-menu" class="glass-dropdown hidden sm:hidden panel-enter border-t border-stone-800/60">
         <div class="px-4 py-3 space-y-0.5">
           <a href="#home"     class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="home">Library</a>
           <a href="#search"   class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="search">Search</a>
@@ -96,8 +96,7 @@ document.getElementById('app').innerHTML = `
     </header>
 
     <!-- Logged-out public profile header -->
-    <header id="public-header" class="sticky top-0 z-40 hidden"
-            style="background:color-mix(in srgb,var(--color-bg) 88%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--color-border);transition:background 0.2s">
+    <header id="public-header" class="glass-header sticky top-0 z-40 hidden">
       <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
         <span class="flex items-center gap-2.5 font-serif text-xl font-semibold text-amber-400">
           <img src="/logo.png" class="h-8 w-8 rounded-full ring-2 ring-amber-500/30" alt="" />
@@ -307,10 +306,6 @@ function formatTimeAgo(isoDate) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 function showAuth() {
   headerEl.classList.add('hidden');
   pubHeader.classList.add('hidden');
@@ -358,20 +353,16 @@ function getRoute() {
 async function navigate(route) {
   setState({ route });
 
-  // Refresh active state on both nav bars
+  // Refresh active state on all nav bars
   document.querySelectorAll('.nav-link').forEach(a => {
     const active = a.dataset.route === route;
-    a.className = 'nav-link relative px-3 py-1.5 text-sm font-medium' +
-      (active
-        ? ' bg-amber-500/15 text-amber-400 rounded-lg'
-        : ' nav-link-inactive');
+    a.classList.toggle('nav-link-active',   active);
+    a.classList.toggle('nav-link-inactive', !active);
   });
   document.querySelectorAll('.nav-link-mob').forEach(a => {
     const active = a.dataset.route === route;
-    a.className = 'nav-link-mob flex items-center px-3 py-2.5 text-sm font-medium' +
-      (active
-        ? ' bg-amber-500/15 text-amber-400 rounded-xl'
-        : ' nav-link-mob-inactive');
+    a.classList.toggle('nav-link-mob-active',   active);
+    a.classList.toggle('nav-link-mob-inactive', !active);
   });
 
   const user = getState().user;

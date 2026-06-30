@@ -3,6 +3,7 @@ import { getState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from '../components/starRating.js';
 import { showToast } from '../components/toast.js';
 import { loadLibrary } from './home.js';
+import { escHtml } from '../utils.js';
 
 export async function renderBook(container, bookId) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
@@ -705,6 +706,3 @@ async function runMetaSearch(container, q, libId, onAttached) {
   }
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

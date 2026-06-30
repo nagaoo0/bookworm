@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { getState } from '../store.js';
 import { ACCENT_COLORS } from '../prefs.js';
 import { avatarHTML } from '../components/avatar.js';
+import { escHtml } from '../utils.js';
 
 export async function renderWrapped(container, username) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
@@ -140,6 +141,3 @@ function statCard(icon, value, label, accent) {
     </div>`;
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

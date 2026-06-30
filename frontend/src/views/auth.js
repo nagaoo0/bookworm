@@ -21,26 +21,23 @@ export function renderAuth(container, onSuccess) {
             <h1 class="font-serif text-3xl sm:text-4xl font-bold text-amber-400 tracking-tight">Bookworm</h1>
             <p class="text-stone-400 text-sm">${isRegister ? 'Create your account' : 'Sign in to your library'}</p>
           </div>
-          <form id="auth-form" class="rounded-2xl p-6 space-y-4 shadow-2xl" style="background:rgba(22,19,17,0.9);border:1px solid rgba(68,64,60,0.5);backdrop-filter:blur(12px)">
+          <form id="auth-form" class="glass-card rounded-2xl p-6 space-y-4 shadow-2xl">
             <div>
               <label for="auth-username" class="text-xs text-stone-400 block mb-1">Username</label>
               <input id="auth-username" type="text" name="username" required autofocus autocomplete="username"
                 placeholder="2–32 characters, letters / numbers / _ -"
-                class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
-                       focus:outline-none focus:border-amber-500 transition-colors" />
+                class="field-input py-2.5" />
             </div>
             <div>
               <label for="auth-password" class="text-xs text-stone-400 block mb-1">Password</label>
               <input id="auth-password" type="password" name="password" required autocomplete="${isRegister ? 'new-password' : 'current-password'}"
-                class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
-                       focus:outline-none focus:border-amber-500 transition-colors" />
+                class="field-input py-2.5" />
             </div>
             ${isRegister ? `
             <div>
               <label for="auth-confirm" class="text-xs text-stone-400 block mb-1">Confirm password</label>
               <input id="auth-confirm" type="password" name="confirmPassword" required autocomplete="new-password"
-                class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
-                       focus:outline-none focus:border-amber-500 transition-colors" />
+                class="field-input py-2.5" />
             </div>
             <div id="recaptcha-status" class="text-stone-400 text-xs"></div>
             <input type="hidden" name="recaptchaToken" id="recaptcha-token" />

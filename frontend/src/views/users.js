@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { getState } from '../store.js';
 import { showToast } from '../components/toast.js';
 import { avatarHTML } from '../components/avatar.js';
+import { escHtml } from '../utils.js';
 
 let feedFilter = 'all'; // 'all' | 'following'
 let activeTab = 'feed';
@@ -582,6 +583,3 @@ function groupJoinForm() {
     </form>`;
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { setState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from './starRating.js';
+import { escHtml } from '../utils.js';
 
 let _onSessionSaved = () => {};
 export function setOnSessionSaved(fn) { _onSessionSaved = fn; }
@@ -22,8 +23,8 @@ async function renderModal(bookId, bookTitle, libId, notes) {
   backdrop.id = 'modal-backdrop';
   backdrop.className = 'fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 fade-in';
   backdrop.innerHTML = `
-    <div class="bg-stone-900 rounded-t-2xl sm:rounded-xl w-full sm:max-w-lg h-[90vh] sm:h-auto sm:max-h-[90vh]
-                overflow-y-auto shadow-2xl ring-1 ring-white/10 flex flex-col">
+    <div class="bg-surface rounded-t-2xl sm:rounded-xl w-full sm:max-w-lg h-[90vh] sm:h-auto sm:max-h-[90vh]
+                overflow-y-auto shadow-2xl ring-1 ring-white/5 flex flex-col">
       <div class="flex-1 p-5 sm:p-6 overflow-y-auto space-y-5">
 
         <!-- Header -->
@@ -45,27 +46,22 @@ async function renderModal(bookId, bookTitle, libId, notes) {
             <form id="session-form" class="mt-3 space-y-3">
               <div class="grid grid-cols-2 gap-3">
                 <div>
-                  <label class="text-xs text-stone-400 block mb-1">Started</label>
-                  <input type="date" name="startedAt"
-                    class="w-full bg-stone-800 border border-stone-600 rounded px-2 py-1.5 text-sm
-                           focus:outline-none focus:border-amber-500" />
+                  <label class="text-xs text-muted block mb-1">Started</label>
+                  <input type="date" name="startedAt" class="field-input" />
                 </div>
                 <div>
-                  <label class="text-xs text-stone-400 block mb-1">Finished</label>
-                  <input type="date" name="finishedAt"
-                    class="w-full bg-stone-800 border border-stone-600 rounded px-2 py-1.5 text-sm
-                           focus:outline-none focus:border-amber-500" />
+                  <label class="text-xs text-muted block mb-1">Finished</label>
+                  <input type="date" name="finishedAt" class="field-input" />
                 </div>
               </div>
               <div>
-                <label class="text-xs text-stone-400 block mb-1">Rating</label>
+                <label class="text-xs text-muted block mb-1">Rating</label>
                 <div id="session-stars" class="flex gap-1">${starRatingHTML(0, { interactive: true })}</div>
               </div>
               <div>
-                <label class="text-xs text-stone-400 block mb-1">Review</label>
+                <label class="text-xs text-muted block mb-1">Review</label>
                 <textarea name="review" rows="3" placeholder="Your thoughts…"
-                  class="w-full bg-stone-800 border border-stone-600 rounded px-2 py-1.5 text-sm
-                         resize-none focus:outline-none focus:border-amber-500"></textarea>
+                  class="field-input resize-none"></textarea>
               </div>
               <button type="submit"
                 class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded py-2.5 text-sm transition-colors">
@@ -78,11 +74,10 @@ async function renderModal(bookId, bookTitle, libId, notes) {
 
         ${libId ? `
         <!-- Notes -->
-        <div class="border-t border-stone-700 pt-4">
-          <h3 class="text-sm font-semibold text-stone-300 mb-2">Notes</h3>
+        <div class="border-t border-border pt-4">
+          <h3 class="text-sm font-semibold mb-2">Notes</h3>
           <textarea id="book-notes" rows="4" placeholder="Quotes, context, anything you want to remember…"
-            class="w-full bg-stone-800 border border-stone-600 rounded px-2 py-1.5 text-sm
-                   resize-none focus:outline-none focus:border-amber-500">${escHtml(notes ?? '')}</textarea>
+            class="field-input resize-none">${escHtml(notes ?? '')}</textarea>
           <div class="flex items-center gap-2 mt-2">
             <button id="save-notes-btn"
               class="px-4 py-2 bg-stone-700 hover:bg-stone-600 rounded text-sm font-medium transition-colors">
@@ -93,16 +88,15 @@ async function renderModal(bookId, bookTitle, libId, notes) {
         </div>
 
         <!-- Metadata / cover -->
-        <div class="border-t border-stone-700 pt-4">
-          <h3 class="text-sm font-semibold text-stone-300 mb-3">Book details</h3>
+        <div class="border-t border-border pt-4">
+          <h3 class="text-sm font-semibold mb-3">Book details</h3>
 
           <!-- Manual cover URL -->
           <div class="space-y-1.5 mb-4">
-            <label class="text-xs text-stone-400">Cover image URL</label>
+            <label class="text-xs text-muted">Cover image URL</label>
             <div class="flex gap-2">
               <input id="cover-url-input" type="url" placeholder="https://…"
-                class="flex-1 bg-stone-800 border border-stone-600 rounded px-2 py-1.5 text-sm
-                       focus:outline-none focus:border-amber-500" />
+                class="field-input flex-1" />
               <button id="save-cover-btn"
                 class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded text-sm font-medium transition-colors whitespace-nowrap">
                 Set cover
@@ -119,8 +113,7 @@ async function renderModal(bookId, bookTitle, libId, notes) {
             <div class="mt-2 space-y-2">
               <div class="flex gap-2">
                 <input id="meta-search-input" type="text" value="${escHtml(bookTitle)}" placeholder="Search title or ISBN…"
-                  class="flex-1 bg-stone-800 border border-stone-600 rounded px-2 py-1.5 text-sm
-                         focus:outline-none focus:border-amber-500" />
+                  class="field-input flex-1" />
                 <button id="meta-search-btn"
                   class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded text-sm font-medium transition-colors whitespace-nowrap">
                   Search
@@ -224,8 +217,8 @@ async function runMetaSearch(q, libId) {
       return;
     }
     el.innerHTML = results.slice(0, 5).map((b, i) => `
-      <div class="flex gap-2 items-center bg-stone-800 rounded-lg px-3 py-2 cursor-pointer
-                  hover:bg-stone-700 transition-colors meta-result" data-idx="${i}">
+      <div class="flex gap-2 items-center bg-surface-2 rounded-lg px-3 py-2 cursor-pointer
+                  hover:bg-border/60 transition-colors meta-result" data-idx="${i}">
         ${b.coverUrl
           ? `<img src="${escHtml(b.coverUrl)}" class="w-8 h-11 object-cover rounded flex-shrink-0" />`
           : `<div class="w-8 h-11 bg-stone-700 rounded flex-shrink-0"></div>`}
@@ -278,7 +271,7 @@ async function loadSessions(bookId) {
       return;
     }
     container.innerHTML = sessions.map(s => `
-      <div class="bg-stone-800 rounded-lg p-3 text-sm" data-session-id="${s.id}">
+      <div class="bg-surface-2 rounded-lg p-3 text-sm" data-session-id="${s.id}">
         <div class="flex items-center justify-between mb-1">
           <div class="flex gap-0.5">${starRatingHTML(s.rating ?? 0)}</div>
           <div class="flex items-center gap-2">
@@ -318,8 +311,4 @@ function formatDateRange(start, end) {
   if (!start && !end) return '';
   if (!end) return `Started ${fmt(start)}`;
   return `${fmt(start)} – ${fmt(end)}`;
-}
-
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

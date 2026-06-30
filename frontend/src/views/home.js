@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
+import { escHtml } from '../utils.js';
 
 // Persists collapse/sort state across re-renders
 const sectionState = {
@@ -786,6 +787,3 @@ function showInlineDeleteConfirm(btn) {
   confirm.querySelector('.confirm-no').addEventListener('click', loadLibrary);
 }
 
-function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
