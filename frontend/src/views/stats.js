@@ -19,7 +19,11 @@ export async function renderStats(container) {
 }
 
 export function render(container, s, opts = {}, goal = null, absStatus = null) {
-  const years = Object.keys(s.perYear).map(Number).sort((a, b) => b - a);
+  const allYearKeys = new Set([
+    ...Object.keys(s.perYear ?? {}),
+    ...Object.keys(s.absSessionsByYear ?? {}),
+  ]);
+  const years = [...allYearKeys].map(Number).sort((a, b) => b - a);
   const currentYear = years[0] ?? new Date().getFullYear();
 
   const hasCats = Object.keys(s.categoriesByYear ?? {}).length > 0;
@@ -56,7 +60,7 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
       </div>
 
       <!-- Listening Activity (Audiobookshelf) -->
-      ${absStatus?.connected ? renderListeningCard(s) : ''}
+      ${absStatus?.connected ? `<div id="${opts.listeningCardId ?? 'abs-listening-card'}">${renderListeningCard(s, currentYear)}</div>` : ''}
 
       <!-- Year selector -->
       ${years.length ? `
@@ -106,6 +110,8 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
     const y = Number(e.target.value);
     drawMonthlyChart(s.monthly ?? {}, y, barId);
     drawPieChart(s.categoriesByYear ?? {}, y, pieId);
+    const listeningCardWrapper = container.querySelector(`#${opts.listeningCardId ?? 'abs-listening-card'}`);
+    if (listeningCardWrapper) listeningCardWrapper.innerHTML = renderListeningCard(s, y);
   });
 }
 
@@ -337,10 +343,10 @@ function drawHeatmap(dailySessions, containerId) {
 
 // ── Listening Activity (ABS) ──────────────────────────────────────────────────
 
-function renderListeningCard(s) {
-  const absSessions = (s.sessionsBySource ?? {})['audiobookshelf'] ?? 0;
-  // absListeningMinutes = sum of duration_minutes for finished ABS books (from book_availability)
-  const absHours = s.absListeningMinutes != null ? Math.round(s.absListeningMinutes / 60) : null;
+function renderListeningCard(s, year) {
+  const absSessions = (s.absSessionsByYear ?? {})[year] ?? 0;
+  const absMinutes = (s.absMinutesByYear ?? {})[year] ?? 0;
+  const absHours = absMinutes > 0 ? Math.round(absMinutes / 60) : null;
 
   return `
     <section class="bg-surface rounded-xl p-5 ring-1 ring-border/20">
@@ -360,7 +366,7 @@ function renderListeningCard(s) {
           <div class="text-xs text-muted mt-1 uppercase tracking-wider">Hours of Audio</div>
         </div>` : `
         <div class="bg-surface-2 rounded-xl p-4 text-center ring-1 ring-border/20 flex items-center justify-center">
-          <p class="text-xs text-muted">Sync your library to see hours</p>
+          <p class="text-xs text-muted">No hours for ${year}</p>
         </div>`}
       </div>
     </section>`;

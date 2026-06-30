@@ -5,7 +5,7 @@ const router = Router();
 
 // Shared stats computation — accepts a user id, works for both /stats and profile stats
 export async function computeStats(uid) {
-  const [totals, perYear, avgRating, currentlyReading, monthly, categoriesPerYear, dailySessions, pagesPerYear, authorsPerYear, sourceBreakdown, absMinutes] = await Promise.all([
+  const [totals, perYear, avgRating, currentlyReading, monthly, categoriesPerYear, dailySessions, pagesPerYear, authorsPerYear, sourceBreakdown, absSessionsPerYear, absMinutesPerYear] = await Promise.all([
     pool.query(
       `SELECT COUNT(DISTINCT book_id) AS total_books, COUNT(*) AS total_sessions
        FROM reading_sessions WHERE user_id = $1 AND finished_at IS NOT NULL`,
@@ -85,25 +85,28 @@ export async function computeStats(uid) {
        GROUP BY source`,
       [uid]
     ),
-    // Total listening minutes: sum duration_minutes for ABS books that have a
-    // finished reading session. Avoids relying on library_books.status which
-    // may lag behind ABS progress for books already in the library.
+    // ABS audiobooks finished per year
     pool.query(
-      `SELECT COALESCE(
-         SUM((ba.extra->>'duration_minutes')::NUMERIC)
-         FILTER (WHERE ba.extra->>'duration_minutes' IS NOT NULL
-                   AND ba.extra->>'duration_minutes' != ''),
-         0
-       )::INT AS abs_minutes
-       FROM book_availability ba
-       WHERE ba.user_id = $1 AND ba.service = 'audiobookshelf'
-         AND EXISTS (
-           SELECT 1 FROM reading_sessions rs
-           WHERE rs.user_id = $1
-             AND rs.book_id = ba.book_id
-             AND rs.source = 'audiobookshelf'
-             AND rs.finished_at IS NOT NULL
-         )`,
+      `SELECT EXTRACT(YEAR FROM finished_at)::INT AS year, COUNT(*) AS count
+       FROM reading_sessions
+       WHERE user_id = $1 AND source = 'audiobookshelf' AND finished_at IS NOT NULL
+       GROUP BY year`,
+      [uid]
+    ),
+    // ABS listening minutes per year — duration from book_availability joined to finish year
+    pool.query(
+      `SELECT EXTRACT(YEAR FROM rs.finished_at)::INT AS year,
+              COALESCE(
+                SUM((ba.extra->>'duration_minutes')::NUMERIC)
+                FILTER (WHERE ba.extra->>'duration_minutes' IS NOT NULL
+                          AND ba.extra->>'duration_minutes' != ''),
+                0
+              )::INT AS minutes
+       FROM reading_sessions rs
+       JOIN book_availability ba
+         ON ba.book_id = rs.book_id AND ba.user_id = rs.user_id AND ba.service = 'audiobookshelf'
+       WHERE rs.user_id = $1 AND rs.source = 'audiobookshelf' AND rs.finished_at IS NOT NULL
+       GROUP BY year`,
       [uid]
     ),
   ]);
@@ -149,7 +152,11 @@ export async function computeStats(uid) {
   const sessionsBySource = {};
   for (const row of sourceBreakdown.rows) sessionsBySource[row.source] = Number(row.count);
 
-  const absListeningMinutes = Number(absMinutes.rows[0]?.abs_minutes ?? 0);
+  const absSessionsByYear = {};
+  for (const row of absSessionsPerYear.rows) absSessionsByYear[row.year] = Number(row.count);
+
+  const absMinutesByYear = {};
+  for (const row of absMinutesPerYear.rows) absMinutesByYear[row.year] = Number(row.minutes);
 
   return {
     totalBooks: Number(totals.rows[0].total_books),
@@ -163,7 +170,8 @@ export async function computeStats(uid) {
     pagesByYear,
     favoriteAuthorByYear,
     sessionsBySource,
-    absListeningMinutes: absListeningMinutes > 0 ? absListeningMinutes : null,
+    absSessionsByYear,
+    absMinutesByYear,
   };
 }
 
