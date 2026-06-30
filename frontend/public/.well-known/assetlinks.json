@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.bookworm.app",
+    "sha256_cert_fingerprints": [
+      "D3:56:C7:29:71:EA:84:F9:E1:07:1A:AD:C8:B3:EB:38:E5:70:13:82:ED:7E:29:A7:E5:3C:56:2E:20:BB:2D:B4"
+    ]
+  }
+}]
