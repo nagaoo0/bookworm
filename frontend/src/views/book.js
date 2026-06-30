@@ -532,27 +532,22 @@ function renderSessionForm() {
     <form id="session-form" class="space-y-4">
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="text-xs text-stone-400 block mb-1">Started</label>
-          <input type="date" name="startedAt"
-            class="w-full bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-sm
-                   focus:outline-none focus:border-amber-500" />
+          <label class="text-xs text-muted block mb-1">Started</label>
+          <input type="date" name="startedAt" class="field-input w-full" />
         </div>
         <div>
-          <label class="text-xs text-stone-400 block mb-1">Finished</label>
-          <input type="date" name="finishedAt"
-            class="w-full bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-sm
-                   focus:outline-none focus:border-amber-500" />
+          <label class="text-xs text-muted block mb-1">Finished</label>
+          <input type="date" name="finishedAt" class="field-input w-full" />
         </div>
       </div>
       <div>
-        <label class="text-xs text-stone-400 block mb-1">Rating</label>
+        <label class="text-xs text-muted block mb-1">Rating</label>
         <div id="session-stars" class="flex gap-1">${starRatingHTML(0, { interactive: true })}</div>
       </div>
       <div>
-        <label class="text-xs text-stone-400 block mb-1">Review</label>
+        <label class="text-xs text-muted block mb-1">Review</label>
         <textarea name="review" rows="3" placeholder="Your thoughts…"
-          class="w-full bg-stone-800 border border-stone-600 rounded-lg px-2 py-1.5 text-sm
-                 resize-none focus:outline-none focus:border-amber-500"></textarea>
+          class="field-input w-full resize-none"></textarea>
       </div>
       <button type="submit"
         class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
@@ -563,21 +558,21 @@ function renderSessionForm() {
 }
 
 function renderSessionList(sessions, _bookId, _reload) {
-  if (!sessions.length) return `<p class="text-stone-500 italic text-sm">No reads logged yet.</p>`;
+  if (!sessions.length) return `<p class="text-muted italic text-sm">No reads logged yet.</p>`;
   return sessions.map(s => {
     const date = s.finished_at
       ? new Date(s.finished_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
       : s.started_at ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}` : '';
     const sStars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
     return `
-      <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5" data-session-id="${s.id}">
+      <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20" data-session-id="${s.id}">
         <div class="flex items-start justify-between gap-4">
           <div class="flex-1 min-w-0">
             ${sStars ? `<p class="text-amber-400 text-sm">${sStars}</p>` : ''}
-            ${date   ? `<p class="text-xs text-stone-500 mt-0.5">${escHtml(date)}</p>` : ''}
-            ${s.review ? `<p class="text-sm text-stone-300 mt-2 leading-relaxed">${escHtml(s.review)}</p>` : ''}
+            ${date   ? `<p class="text-xs text-muted mt-0.5">${escHtml(date)}</p>` : ''}
+            ${s.review ? `<p class="text-sm text-text mt-2 leading-relaxed">${escHtml(s.review)}</p>` : ''}
           </div>
-          <button class="delete-session text-stone-600 hover:text-red-400 text-xs flex-shrink-0 transition-colors" data-session-id="${s.id}">✕</button>
+          <button class="delete-session text-muted hover:text-red-400 text-xs flex-shrink-0 transition-colors" data-session-id="${s.id}">✕</button>
         </div>
       </div>`;
   }).join('');
@@ -610,7 +605,7 @@ function attachSessionDeleteHandlers(container, bookId, reload) {
 // ── Comments ───────────────────────────────────────────────────────────────────
 
 function renderCommentsList(comments, user) {
-  if (!comments.length) return `<p class="text-stone-500 italic text-sm">No comments yet — be the first!</p>`;
+  if (!comments.length) return `<p class="text-muted italic text-sm">No comments yet — be the first!</p>`;
   return comments.map(c => renderComment(c, user)).join('');
 }
 
@@ -618,16 +613,16 @@ function renderComment(c, user) {
   const date = new Date(c.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   const canDelete = user?.username === c.username;
   return `
-    <div class="bg-stone-900 rounded-xl p-4 ring-1 ring-white/5" data-comment-id="${c.id}">
+    <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20" data-comment-id="${c.id}">
       <div class="flex items-start justify-between gap-2">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
             <a href="#u/${escHtml(c.username)}" class="text-xs text-amber-400 hover:underline font-medium">@${escHtml(c.username)}</a>
-            <span class="text-xs text-stone-600">${escHtml(date)}</span>
+            <span class="text-xs text-muted">${escHtml(date)}</span>
           </div>
-          <p class="text-sm text-stone-300 leading-relaxed">${escHtml(c.body)}</p>
+          <p class="text-sm text-text leading-relaxed">${escHtml(c.body)}</p>
         </div>
-        ${canDelete ? `<button class="delete-comment text-stone-600 hover:text-red-400 text-xs transition-colors flex-shrink-0">✕</button>` : ''}
+        ${canDelete ? `<button class="delete-comment text-muted hover:text-red-400 text-xs transition-colors flex-shrink-0">✕</button>` : ''}
       </div>
     </div>`;
 }
@@ -654,22 +649,22 @@ function attachCommentDeleteHandlers(container, bookId) {
 async function runMetaSearch(container, q, libId, onAttached) {
   const el = container.querySelector('#meta-results');
   if (!el) return;
-  el.innerHTML = `<p class="text-stone-400 text-xs">Searching…</p>`;
+  el.innerHTML = `<p class="text-muted text-xs">Searching…</p>`;
   try {
     const results = await api.search(`q=${encodeURIComponent(q)}`);
     if (!results.length) {
-      el.innerHTML = `<p class="text-stone-500 text-xs italic">No results.</p>`;
+      el.innerHTML = `<p class="text-muted text-xs italic">No results.</p>`;
       return;
     }
     el.innerHTML = results.slice(0, 5).map((b, i) => `
-      <div class="flex gap-2 items-center bg-stone-800 rounded-lg px-3 py-2">
+      <div class="flex gap-2 items-center bg-surface-2 rounded-lg px-3 py-2">
         ${b.coverUrl
           ? `<img src="${escHtml(b.coverUrl)}" class="w-8 h-11 object-cover rounded flex-shrink-0" />`
-          : `<div class="w-8 h-11 bg-stone-700 rounded flex-shrink-0"></div>`}
+          : `<div class="w-8 h-11 bg-border/40 rounded flex-shrink-0"></div>`}
         <div class="flex-1 min-w-0">
           <p class="text-xs font-medium line-clamp-1">${escHtml(b.title)}</p>
-          <p class="text-[10px] text-stone-400 line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
-          ${b.publishedDate ? `<p class="text-[10px] text-stone-500">${escHtml(b.publishedDate)}</p>` : ''}
+          <p class="text-[10px] text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
+          ${b.publishedDate ? `<p class="text-[10px] text-muted">${escHtml(b.publishedDate)}</p>` : ''}
         </div>
         <button class="attach-meta-btn text-[10px] px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/40 transition-colors flex-shrink-0"
                 data-idx="${i}">Attach</button>

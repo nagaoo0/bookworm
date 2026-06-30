@@ -7,14 +7,13 @@ export function renderLogin(container, onSuccess) {
         <div class="text-center mb-8">
           <img src="/logo.png" class="h-32 w-32 rounded-full" alt="" />
           <h1 class="font-serif text-3xl font-semibold text-amber-400 mt-3">Bookworm</h1>
-          <p class="text-stone-400 text-sm mt-1">Enter your password to continue</p>
+          <p class="text-muted text-sm mt-1">Enter your password to continue</p>
         </div>
-        <form id="login-form" class="bg-stone-900 rounded-xl p-6 space-y-4 ring-1 ring-white/10 shadow-2xl">
+        <form id="login-form" class="bg-surface rounded-xl p-6 space-y-4 ring-1 ring-border/40 shadow-2xl">
           <div>
-            <label class="text-xs text-stone-400 block mb-1">Password</label>
+            <label class="text-xs text-muted block mb-1">Password</label>
             <input type="password" name="password" required autofocus
-              class="w-full bg-stone-800 border border-stone-600 rounded-lg px-3 py-2.5 text-sm
-                     focus:outline-none focus:border-amber-500 transition-colors" />
+              class="field-input py-2.5" />
           </div>
           <button type="submit"
             class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">

@@ -428,7 +428,7 @@ function renderInviteRow(invite) {
   const used = !!invite.used_at;
   return `
     <div class="flex items-center gap-2 bg-surface-2 rounded-lg px-3 py-2 text-sm" data-invite-code="${escHtml(invite.code)}">
-      <code class="flex-1 font-mono text-sm ${used ? 'text-stone-500 line-through' : 'text-amber-300'}">${escHtml(invite.code)}</code>
+      <code class="flex-1 font-mono text-sm ${used ? 'text-muted line-through' : 'text-amber-300'}">${escHtml(invite.code)}</code>
       ${used
         ? `<span class="text-xs text-muted">Used by ${escHtml(invite.used_by_username ?? '?')}</span>`
         : `<button class="copy-invite text-xs text-muted hover:text-amber-400 transition-colors" data-code="${escHtml(invite.code)}">Copy</button>

@@ -38,16 +38,16 @@ document.getElementById('app').innerHTML = `
           <a href="#search"   class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="search">Search</a>
           <a href="#stats"    class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="stats">Stats</a>
           <a href="#users"    class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="users">Readers</a>
-          <a id="my-profile-link" href="#" class="relative px-3 py-1.5 rounded-lg text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800/60 transition-all duration-150 hidden">Profile</a>
+          <a id="my-profile-link" href="#" class="relative px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-text hover:bg-surface-2/60 transition-all duration-150 hidden">Profile</a>
           <a href="#settings" class="nav-link relative px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150" data-route="settings">Settings</a>
           <a id="admin-nav-link" href="#admin" class="nav-link relative hidden px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 text-amber-500/90 hover:text-amber-400" data-route="admin">Admin</a>
 
-          <div class="w-px h-4 bg-stone-700 mx-1.5"></div>
+          <div class="w-px h-4 bg-border mx-1.5"></div>
 
-          <button class="theme-toggle-btn p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800/60 transition-all duration-150" aria-label="Switch theme"></button>
+          <button class="theme-toggle-btn p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface-2/60 transition-all duration-150" aria-label="Switch theme"></button>
 
           <!-- Notification bell -->
-          <button id="notif-btn" class="relative p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800/60 transition-all duration-150 hidden" aria-label="Notifications">
+          <button id="notif-btn" class="relative p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface-2/60 transition-all duration-150 hidden" aria-label="Notifications">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
                 d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
@@ -59,17 +59,17 @@ document.getElementById('app').innerHTML = `
             <div class="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
               <span id="nav-avatar-letter" class="text-amber-400 text-xs font-bold leading-none"></span>
             </div>
-            <span id="nav-username" class="text-xs text-stone-400 font-medium"></span>
+            <span id="nav-username" class="text-xs text-muted font-medium"></span>
           </div>
-          <button id="logout-btn" class="ml-1 px-3 py-1.5 rounded-lg text-sm font-medium text-stone-500 hover:text-stone-300 hover:bg-stone-800/60 transition-all duration-150">
+          <button id="logout-btn" class="ml-1 px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-text hover:bg-surface-2/60 transition-all duration-150">
             Sign out
           </button>
         </nav>
 
         <!-- Mobile right controls -->
         <div class="sm:hidden flex items-center gap-0.5">
-          <button class="theme-toggle-btn p-2 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800/60 transition-colors" aria-label="Switch theme"></button>
-          <button id="mobile-menu-btn" class="p-2 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800/60 transition-colors" aria-label="Menu">
+          <button class="theme-toggle-btn p-2 rounded-lg text-muted hover:text-text hover:bg-surface-2/60 transition-colors" aria-label="Switch theme"></button>
+          <button id="mobile-menu-btn" class="p-2 rounded-lg text-muted hover:text-text hover:bg-surface-2/60 transition-colors" aria-label="Menu">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
@@ -78,23 +78,23 @@ document.getElementById('app').innerHTML = `
       </div>
 
       <!-- Mobile dropdown menu -->
-      <div id="mobile-menu" class="glass-dropdown hidden sm:hidden panel-enter border-t border-stone-800/60">
+      <div id="mobile-menu" class="glass-dropdown hidden sm:hidden panel-enter border-t border-border/60">
         <div class="px-4 py-3 space-y-0.5">
           <a href="#home"     class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="home">Library</a>
           <a href="#search"   class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="search">Search</a>
           <a href="#stats"    class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="stats">Stats</a>
           <a href="#users"    class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="users">Readers</a>
-          <a id="my-profile-link-mob" href="#" class="flex items-center px-3 py-2.5 rounded-xl text-sm font-medium text-stone-400 hover:text-stone-200 hover:bg-stone-800/60 transition-all duration-150 hidden">Profile</a>
+          <a id="my-profile-link-mob" href="#" class="flex items-center px-3 py-2.5 rounded-xl text-sm font-medium text-muted hover:text-text hover:bg-surface-2/60 transition-all duration-150 hidden">Profile</a>
           <a href="#settings" class="nav-link-mob flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-route="settings">Settings</a>
-          <a id="admin-nav-link-mob" href="#admin" class="nav-link-mob hidden px-3 py-2.5 rounded-xl text-sm font-medium text-amber-500 hover:text-amber-400 hover:bg-stone-800/60 transition-all duration-150" data-route="admin">Admin</a>
-          <div class="border-t border-stone-800/60 pt-2.5 mt-2.5 flex items-center justify-between px-1">
+          <a id="admin-nav-link-mob" href="#admin" class="nav-link-mob hidden px-3 py-2.5 rounded-xl text-sm font-medium text-amber-500 hover:text-amber-400 hover:bg-surface-2/60 transition-all duration-150" data-route="admin">Admin</a>
+          <div class="border-t border-border/60 pt-2.5 mt-2.5 flex items-center justify-between px-1">
             <div class="flex items-center gap-2">
               <div class="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center">
                 <span id="nav-avatar-letter-mob" class="text-amber-400 text-xs font-bold leading-none"></span>
               </div>
-              <span id="nav-username-mob" class="text-xs text-stone-400 font-medium"></span>
+              <span id="nav-username-mob" class="text-xs text-muted font-medium"></span>
             </div>
-            <button id="logout-btn-mob" class="text-sm text-stone-400 hover:text-stone-200 transition-colors">Sign out</button>
+            <button id="logout-btn-mob" class="text-sm text-muted hover:text-text transition-colors">Sign out</button>
           </div>
         </div>
       </div>
@@ -108,7 +108,7 @@ document.getElementById('app').innerHTML = `
           <span class="hidden sm:inline">Bookworm</span>
         </span>
         <div class="flex items-center gap-2">
-          <button class="theme-toggle-btn p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800/60 transition-all duration-150" aria-label="Switch theme"></button>
+          <button class="theme-toggle-btn p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface-2/60 transition-all duration-150" aria-label="Switch theme"></button>
           <a href="#home" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm transition-all duration-150 hover:shadow-lg hover:shadow-amber-500/20 active:scale-95">
             Sign in
           </a>
@@ -293,7 +293,7 @@ function openNotifPanel() {
     const list = document.getElementById('notif-list');
     if (!list) return;
     if (!items.length) {
-      list.innerHTML = `<p class="text-stone-500 text-sm italic text-center py-6">No notifications.</p>`;
+      list.innerHTML = `<p class="text-muted text-sm italic text-center py-6">No notifications.</p>`;
       return;
     }
     list.innerHTML = items.map(n => {
@@ -301,15 +301,15 @@ function openNotifPanel() {
       const unreadBg = !n.read_at ? 'background:rgba(245,158,11,0.04)' : '';
       const dot = !n.read_at ? `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 mt-1.5"></span>` : `<span class="w-1.5 flex-shrink-0"></span>`;
       let msg = '';
-      if (n.type === 'follow')  msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> started following you.`;
-      if (n.type === 'comment') msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> commented on <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
-      if (n.type === 'like')    msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> liked your review of <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
-      if (n.type === 'mention') msg = `<strong class="text-stone-200">@${escHtml(n.actor_username)}</strong> mentioned you in a review of <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
+      if (n.type === 'follow')  msg = `<strong class="text-text">@${escHtml(n.actor_username)}</strong> started following you.`;
+      if (n.type === 'comment') msg = `<strong class="text-text">@${escHtml(n.actor_username)}</strong> commented on <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
+      if (n.type === 'like')    msg = `<strong class="text-text">@${escHtml(n.actor_username)}</strong> liked your review of <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
+      if (n.type === 'mention') msg = `<strong class="text-text">@${escHtml(n.actor_username)}</strong> mentioned you in a review of <em>${escHtml(n.payload?.title ?? 'a book')}</em>.`;
       return `<div class="flex gap-2.5 px-4 py-3 text-sm" style="border-bottom:1px solid rgba(68,64,60,0.3);${unreadBg}">
         ${dot}
         <div class="flex-1 min-w-0">
-          <p class="text-stone-300 leading-snug">${msg}</p>
-          <p class="text-stone-500 text-xs mt-1">${timeAgo}</p>
+          <p class="text-text leading-snug">${msg}</p>
+          <p class="text-muted text-xs mt-1">${timeAgo}</p>
         </div>
       </div>`;
     }).join('');

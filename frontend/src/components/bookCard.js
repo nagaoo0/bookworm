@@ -17,7 +17,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
     ? `<span class="inline-flex items-center text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded-full font-semibold mt-1
         ${book.status === 'reading' ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30'
           : book.status === 'done'  ? 'bg-green-500/15 text-green-400 ring-1 ring-green-500/30'
-          : 'bg-stone-700/60 text-stone-400 ring-1 ring-stone-600/40'}">
+          : 'bg-surface-2/60 text-muted ring-1 ring-border/40'}">
         ${book.status === 'to_read' ? 'To Read' : book.status === 'reading' ? 'Reading' : 'Done'}
        </span>`
     : '';
@@ -65,9 +65,9 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
              data-google-id="${escHtml(book.googleId ?? '')}"
              data-notes="${escHtml(book.notes ?? '')}"
              data-progress-pct="${pct ?? ''}">
-      <div class="relative w-full aspect-[2/3] rounded-lg overflow-hidden bg-stone-800
+      <div class="relative w-full aspect-[2/3] rounded-lg overflow-hidden bg-surface-2
                   shadow-md group-hover:shadow-xl group-hover:shadow-black/40
-                  ring-1 ring-white/5 group-hover:ring-amber-500/40
+                  ring-1 ring-border/20 group-hover:ring-amber-500/40
                   transition-all duration-300">
         ${coverImg}
         <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -81,7 +81,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
           ? `<a href="#book/${book.book_id ?? book.id}" class="font-serif text-sm font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors duration-150" onclick="event.stopPropagation()"><h3>${escHtml(book.title)}</h3></a>`
           : `<h3 class="font-serif text-sm font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors duration-150">${escHtml(book.title)}</h3>`
         }
-        ${authors ? `<p class="text-xs text-stone-400 mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
+        ${authors ? `<p class="text-xs text-muted mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
         ${rating}
         ${statusBadge}
         ${addButtons}

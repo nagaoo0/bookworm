@@ -24,23 +24,23 @@ async function renderModal(bookId, bookTitle, libId, notes) {
   backdrop.className = 'fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 fade-in';
   backdrop.innerHTML = `
     <div class="bg-surface rounded-t-2xl sm:rounded-xl w-full sm:max-w-lg h-[90vh] sm:h-auto sm:max-h-[90vh]
-                overflow-y-auto shadow-2xl ring-1 ring-white/5 flex flex-col">
+                overflow-y-auto shadow-2xl ring-1 ring-border/20 flex flex-col">
       <div class="flex-1 p-5 sm:p-6 overflow-y-auto space-y-5">
 
         <!-- Header -->
         <div class="flex items-start justify-between">
           <h2 class="font-serif text-lg font-semibold leading-snug pr-4">${escHtml(bookTitle)}</h2>
-          <button id="modal-close" class="text-stone-400 hover:text-white text-3xl leading-none flex-shrink-0 -mt-1">×</button>
+          <button id="modal-close" class="text-muted hover:text-text text-3xl leading-none flex-shrink-0 -mt-1">×</button>
         </div>
         
         <!-- Reading sessions -->
         <div>
-          <h3 class="text-sm font-semibold text-stone-300 mb-2">Reading history</h3>
+          <h3 class="text-sm font-semibold text-text mb-2">Reading history</h3>
           <div id="modal-sessions-list" class="space-y-2 mb-3">
-            <p class="text-stone-400 text-sm">Loading…</p>
+            <p class="text-muted text-sm">Loading…</p>
           </div>
           <details class="group">
-            <summary class="text-xs text-stone-400 hover:text-amber-400 transition-colors cursor-pointer list-none flex items-center gap-1">
+            <summary class="text-xs text-muted hover:text-amber-400 transition-colors cursor-pointer list-none flex items-center gap-1">
               <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Log a read
             </summary>
             <form id="session-form" class="mt-3 space-y-3">
@@ -80,7 +80,7 @@ async function renderModal(bookId, bookTitle, libId, notes) {
             class="field-input resize-none">${escHtml(notes ?? '')}</textarea>
           <div class="flex items-center gap-2 mt-2">
             <button id="save-notes-btn"
-              class="px-4 py-2 bg-stone-700 hover:bg-stone-600 rounded text-sm font-medium transition-colors">
+              class="px-4 py-2 bg-surface-2 hover:bg-border/60 rounded text-sm font-medium transition-colors">
               Save notes
             </button>
             <span id="notes-saved" class="text-xs text-green-400 opacity-0 transition-opacity">Saved</span>
@@ -98,7 +98,7 @@ async function renderModal(bookId, bookTitle, libId, notes) {
               <input id="cover-url-input" type="url" placeholder="https://…"
                 class="field-input flex-1" />
               <button id="save-cover-btn"
-                class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded text-sm font-medium transition-colors whitespace-nowrap">
+                class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded text-sm font-medium transition-colors whitespace-nowrap">
                 Set cover
               </button>
             </div>
@@ -107,7 +107,7 @@ async function renderModal(bookId, bookTitle, libId, notes) {
 
           <!-- Find metadata from Google Books -->
           <details class="group">
-            <summary class="text-xs text-stone-400 hover:text-amber-400 transition-colors cursor-pointer list-none flex items-center gap-1 mb-2">
+            <summary class="text-xs text-muted hover:text-amber-400 transition-colors cursor-pointer list-none flex items-center gap-1 mb-2">
               <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Find metadata (Google Books)
             </summary>
             <div class="mt-2 space-y-2">
@@ -115,7 +115,7 @@ async function renderModal(bookId, bookTitle, libId, notes) {
                 <input id="meta-search-input" type="text" value="${escHtml(bookTitle)}" placeholder="Search title or ISBN…"
                   class="field-input flex-1" />
                 <button id="meta-search-btn"
-                  class="px-3 py-1.5 bg-stone-700 hover:bg-stone-600 rounded text-sm font-medium transition-colors whitespace-nowrap">
+                  class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded text-sm font-medium transition-colors whitespace-nowrap">
                   Search
                 </button>
               </div>
@@ -209,11 +209,11 @@ async function renderModal(bookId, bookTitle, libId, notes) {
 async function runMetaSearch(q, libId) {
   const el = document.getElementById('meta-results');
   if (!el) return;
-  el.innerHTML = `<p class="text-stone-400 text-xs">Searching…</p>`;
+  el.innerHTML = `<p class="text-muted text-xs">Searching…</p>`;
   try {
     const results = await api.search(`q=${encodeURIComponent(q)}`);
     if (!results.length) {
-      el.innerHTML = `<p class="text-stone-500 text-xs italic">No results found.</p>`;
+      el.innerHTML = `<p class="text-muted text-xs italic">No results found.</p>`;
       return;
     }
     el.innerHTML = results.slice(0, 5).map((b, i) => `
@@ -221,11 +221,11 @@ async function runMetaSearch(q, libId) {
                   hover:bg-border/60 transition-colors meta-result" data-idx="${i}">
         ${b.coverUrl
           ? `<img src="${escHtml(b.coverUrl)}" class="w-8 h-11 object-cover rounded flex-shrink-0" />`
-          : `<div class="w-8 h-11 bg-stone-700 rounded flex-shrink-0"></div>`}
+          : `<div class="w-8 h-11 bg-border/40 rounded flex-shrink-0"></div>`}
         <div class="flex-1 min-w-0">
           <p class="text-xs font-medium line-clamp-1">${escHtml(b.title)}</p>
-          <p class="text-[10px] text-stone-400 line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
-          ${b.publishedDate ? `<p class="text-[10px] text-stone-500">${escHtml(b.publishedDate)}</p>` : ''}
+          <p class="text-[10px] text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
+          ${b.publishedDate ? `<p class="text-[10px] text-muted">${escHtml(b.publishedDate)}</p>` : ''}
         </div>
         <button class="text-[10px] px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/40 transition-colors flex-shrink-0 attach-meta-btn"
                 data-idx="${i}">Attach</button>
@@ -267,7 +267,7 @@ async function loadSessions(bookId) {
   try {
     const sessions = await api.getSessions(bookId);
     if (!sessions.length) {
-      container.innerHTML = `<p class="text-stone-500 text-sm italic">No reads logged yet.</p>`;
+      container.innerHTML = `<p class="text-muted text-sm italic">No reads logged yet.</p>`;
       return;
     }
     container.innerHTML = sessions.map(s => `
@@ -275,11 +275,11 @@ async function loadSessions(bookId) {
         <div class="flex items-center justify-between mb-1">
           <div class="flex gap-0.5">${starRatingHTML(s.rating ?? 0)}</div>
           <div class="flex items-center gap-2">
-            <span class="text-xs text-stone-500">${formatDateRange(s.started_at, s.finished_at)}</span>
-            <button class="delete-session text-stone-600 hover:text-red-400 text-xs" data-session-id="${s.id}">✕</button>
+            <span class="text-xs text-muted">${formatDateRange(s.started_at, s.finished_at)}</span>
+            <button class="delete-session text-muted/60 hover:text-red-400 text-xs" data-session-id="${s.id}">✕</button>
           </div>
         </div>
-        ${s.review ? `<p class="text-stone-300 mt-1 leading-relaxed">${escHtml(s.review)}</p>` : ''}
+        ${s.review ? `<p class="text-text mt-1 leading-relaxed">${escHtml(s.review)}</p>` : ''}
       </div>`).join('');
 
     container.querySelectorAll('.delete-session').forEach(btn => {
@@ -290,7 +290,7 @@ async function loadSessions(bookId) {
         btn.outerHTML = `
           <span class="session-confirm flex items-center gap-1">
             <button class="sess-del-yes text-[10px] px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded">Delete</button>
-            <button class="sess-del-no text-[10px] px-1 text-stone-400 hover:text-stone-200">Cancel</button>
+            <button class="sess-del-no text-[10px] px-1 text-muted hover:text-text">Cancel</button>
           </span>`;
         row.querySelector('.sess-del-yes').addEventListener('click', async () => {
           await api.deleteSession(bookId, row.dataset.sessionId);

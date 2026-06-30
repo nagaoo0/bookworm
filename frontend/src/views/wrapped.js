@@ -33,8 +33,8 @@ export async function renderWrapped(container, username) {
   } catch (err) {
     container.innerHTML = `
       <div class="text-center py-24 space-y-3 fade-in">
-        <p class="text-stone-300 text-lg font-semibold">Could not load year in review</p>
-        <p class="text-stone-500 text-sm">${escHtml(err.message)}</p>
+        <p class="text-text text-lg font-semibold">Could not load year in review</p>
+        <p class="text-muted text-sm">${escHtml(err.message)}</p>
       </div>`;
   }
 }
@@ -64,7 +64,7 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
   container.innerHTML = `
     <div class="max-w-lg mx-auto fade-in">
       <!-- Back link -->
-      <a href="#u/${escHtml(username)}" class="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-300 transition-colors mb-6">
+      <a href="#u/${escHtml(username)}" class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mb-6">
         ← Back to profile
       </a>
 
@@ -77,9 +77,9 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
           <div class="flex justify-center mb-4">
             ${avatarHTML({ username, avatarUrl }, { size: 64, classes: 'mx-auto ring-2' })}
           </div>
-          <p class="text-stone-400 text-sm mb-1">@${escHtml(username)}'s</p>
+          <p class="text-muted text-sm mb-1">@${escHtml(username)}'s</p>
           <h1 class="font-serif text-3xl font-bold mb-1" style="color:${accentColor}">${year}</h1>
-          <p class="font-serif text-xl font-semibold text-stone-200">Year in Review</p>
+          <p class="font-serif text-xl font-semibold text-text">Year in Review</p>
         </div>
       </div>
 
@@ -96,14 +96,14 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
       <!-- Monthly bars -->
       ${Object.keys(monthlyThisYear).length ? `
       <div class="card-section mb-6">
-        <h2 class="font-semibold text-stone-200 mb-4 text-sm uppercase tracking-wider">Books per Month</h2>
+        <h2 class="font-semibold text-text mb-4 text-sm uppercase tracking-wider">Books per Month</h2>
         <div class="flex items-end gap-1.5 h-24">
           ${monthNames.map((m, i) => {
             const count = monthlyThisYear[i + 1] ?? 0;
             const h = count ? Math.max(6, Math.round((count / maxMonth) * 80)) : 4;
             return `<div class="flex-1 flex flex-col items-center gap-1">
               <div class="w-full rounded-t transition-all duration-500" style="height:${h}px;background:${count ? accentColor : 'rgba(68,64,60,0.4)'}"></div>
-              <span class="text-[9px] text-stone-600">${m}</span>
+              <span class="text-[9px] text-muted">${m}</span>
             </div>`;
           }).join('')}
         </div>
@@ -111,9 +111,9 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
 
       <!-- Share -->
       <div class="card-section text-center space-y-3">
-        <p class="text-sm text-stone-400">Share your reading year</p>
+        <p class="text-sm text-muted">Share your reading year</p>
         <div class="rounded-lg px-3 py-2.5 text-xs" style="background:rgba(12,10,9,0.6);border:1px solid rgba(68,64,60,0.5)">
-          <span class="text-stone-500 select-none">Link: </span>
+          <span class="text-muted select-none">Link: </span>
           <a href="${escHtml(shareUrl)}" class="text-amber-400 hover:text-amber-300 transition-colors break-all">${escHtml(shareUrl)}</a>
         </div>
         <button id="copy-wrapped-btn"
@@ -136,8 +136,8 @@ function statCard(icon, value, label, accent) {
   return `
     <div class="card-section text-center py-5">
       <div class="text-2xl mb-1">${icon}</div>
-      <div class="font-serif text-2xl font-bold text-stone-100 truncate" style="color:${accent}">${escHtml(String(value))}</div>
-      <div class="text-xs text-stone-500 mt-0.5">${escHtml(label)}</div>
+      <div class="font-serif text-2xl font-bold text-text truncate" style="color:${accent}">${escHtml(String(value))}</div>
+      <div class="text-xs text-muted mt-0.5">${escHtml(label)}</div>
     </div>`;
 }
 
