@@ -757,6 +757,7 @@ function renderAvailabilitySection(availability = []) {
     }
     if (a.service === 'calibre') {
       const formats = (a.formats ?? []).map(f => f.toUpperCase()).join(', ');
+      const calibreUrl = a.server_url && a.external_id ? `${a.server_url}/book/${a.external_id}` : null;
       return `
         <div class="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
           <span class="text-2xl">📚</span>
@@ -764,6 +765,10 @@ function renderAvailabilitySection(availability = []) {
             <p class="text-sm font-medium text-text">Calibre Library</p>
             <p class="text-xs text-muted">In your ebook collection${formats ? ' · ' + formats : ''}${a.extra?.series ? ' · Series: ' + escHtml(a.extra.series) : ''}</p>
           </div>
+          ${calibreUrl ? `<a href="${escHtml(calibreUrl)}" target="_blank" rel="noopener"
+               class="text-xs px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg transition-colors flex-shrink-0">
+               Open in Calibre →
+             </a>` : ''}
         </div>`;
     }
     return '';
