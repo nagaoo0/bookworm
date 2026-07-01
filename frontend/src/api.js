@@ -149,6 +149,7 @@ export const api = {
   syncIntegration: (service) => request(`/integrations/${service}/sync`, { method: 'POST' }),
   getIntegrationStatus: (service) => request(`/integrations/${service}/status`),
   getNowPlaying: () => request('/integrations/abs/now-playing'),
+  getRecentlyAdded: () => request('/integrations/recently-added'),
 
   // Library management
   findDuplicates: () => request('/library/duplicates'),

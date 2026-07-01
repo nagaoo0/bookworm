@@ -54,6 +54,15 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
        </div>`
     : '';
 
+  const absAvail = (book.availability ?? []).find(a => a.service === 'audiobookshelf');
+  const absDurationMins = absAvail?.extra?.duration_minutes ?? null;
+  const absPct = absAvail?.extra?.progress_pct ?? null;
+  const remainingMins = (isReading && absDurationMins && absPct !== null && absPct < 100)
+    ? Math.round(absDurationMins * (1 - absPct / 100)) : null;
+  const remainingEta = remainingMins
+    ? (remainingMins >= 60 ? `${Math.floor(remainingMins / 60)}h ${remainingMins % 60}m left` : `${remainingMins}m left`)
+    : null;
+
   const alsoReadBadge = alsoRead
     ? `<div class="absolute top-1.5 left-1.5 text-[9px] bg-amber-500/90 text-stone-950 font-bold px-1.5 py-0.5 rounded-full leading-tight backdrop-blur-sm">✓ You read this</div>`
     : '';
@@ -99,6 +108,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
         ${rating}
         ${statusBadge}
         ${availabilityBadges}
+        ${remainingEta ? `<p class="text-[10px] text-blue-300/80 mt-1">⏱ ${remainingEta}</p>` : ''}
         ${addButtons}
       </div>
     </article>`;

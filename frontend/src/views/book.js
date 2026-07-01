@@ -6,6 +6,9 @@ import { loadLibrary } from './home.js';
 import { escHtml } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
 
+// SSE connection for live ABS progress on the currently viewed book
+let _bookSse = null;
+
 function recCard(b) {
   if (!b.id && !b.google_id) return '';
   const href = b.id ? '#book/' + b.id : '#book/g:' + b.google_id;
@@ -27,6 +30,8 @@ function recCard(b) {
 }
 
 export async function renderBook(container, bookId) {
+  // Close any SSE connection from a previous book view
+  if (_bookSse) { _bookSse.close(); _bookSse = null; }
   // Clean up any leftover sticky CTA from a previous book view
   document.getElementById('sticky-book-cta')?.remove();
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
@@ -53,6 +58,32 @@ export async function renderBook(container, bookId) {
       user ? api.getBookAvailability(resolvedId).catch(() => []) : Promise.resolve([]),
     ]);
     mount(container, book, sessions, comments, library ?? [], shelves ?? [], recs, social, availability);
+
+    // Subscribe to live ABS progress if this book is in Audiobookshelf
+    const absAvail = availability.find(a => a.service === 'audiobookshelf');
+    if (user && absAvail) {
+      try {
+        const es = new EventSource('/api/integrations/sse', { withCredentials: true });
+        _bookSse = es;
+        es.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.type !== 'progress') return;
+            if (msg.data?.libraryItemId !== absAvail.external_id) return;
+            const raw = msg.data.progress ?? (msg.data.duration > 0 ? msg.data.currentTime / msg.data.duration : null);
+            if (raw == null) return;
+            const pct = Math.round(raw * 100);
+            // Update progress bar fill
+            const fill = container.querySelector('.abs-progress-fill');
+            if (fill) fill.style.width = `${pct}%`;
+            // Update label text
+            const label = container.querySelector('.abs-progress-label');
+            if (label) label.textContent = `${pct}% complete`;
+          } catch { /* malformed */ }
+        };
+        es.onerror = () => { es.close(); if (_bookSse === es) _bookSse = null; };
+      } catch { /* SSE unavailable */ }
+    }
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
   }
@@ -163,6 +194,11 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
           <!-- Where to find this book -->
           ${renderAvailabilitySection(availability)}
 
+          <!-- Narrator browse -->
+          ${renderNarratorSection(availability, library, book.id)}
+
+          <!-- Series in library -->
+          ${renderSeriesSection(availability, library, book.id)}
 
           <!-- Library panel (status, shelves, progress, notes, cover, meta) -->
           <div id="library-panel">
@@ -696,12 +732,20 @@ function renderSessionList(sessions, _bookId, _reload) {
       ? new Date(s.finished_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
       : s.started_at ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}` : '';
     const sStars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
+    const sourceBadge = s.source === 'audiobookshelf'
+      ? `<span class="text-[10px] bg-blue-500/15 text-blue-300 ring-1 ring-blue-500/20 px-1.5 py-0.5 rounded-full">🎧 via ABS</span>`
+      : s.source === 'calibre'
+        ? `<span class="text-[10px] bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20 px-1.5 py-0.5 rounded-full">📚 via Calibre</span>`
+        : '';
     return `
       <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20" data-session-id="${s.id}">
         <div class="flex items-start justify-between gap-4">
           <div class="flex-1 min-w-0">
             ${sStars ? `<p class="text-amber-400 text-sm">${sStars}</p>` : ''}
-            ${date   ? `<p class="text-xs text-muted mt-0.5">${escHtml(date)}</p>` : ''}
+            <div class="flex items-center gap-2 flex-wrap mt-0.5">
+              ${date ? `<p class="text-xs text-muted">${escHtml(date)}</p>` : ''}
+              ${sourceBadge}
+            </div>
             ${s.review ? `<p class="text-sm text-text mt-2 leading-relaxed">${escHtml(s.review)}</p>` : ''}
           </div>
           <button class="delete-session text-muted hover:text-red-400 text-xs flex-shrink-0 transition-colors" data-session-id="${s.id}">✕</button>
@@ -734,6 +778,66 @@ function attachSessionDeleteHandlers(container, bookId, reload) {
   });
 }
 
+// ── Narrator browse ────────────────────────────────────────────────────────────
+
+function renderNarratorSection(availability, library, currentBookId) {
+  const narrator = availability.find(a => a.service === 'audiobookshelf')?.extra?.narrator;
+  if (!narrator) return '';
+
+  const others = (library ?? []).filter(b =>
+    String(b.book_id) !== String(currentBookId) &&
+    (b.availability ?? []).some(a => a.service === 'audiobookshelf' && a.extra?.narrator === narrator)
+  ).slice(0, 6);
+
+  if (!others.length) return '';
+
+  return `
+    <section class="mt-6">
+      <h2 class="font-serif text-base font-semibold mb-3 text-muted">More narrated by ${escHtml(narrator)}</h2>
+      <div class="flex gap-3 overflow-x-auto pb-1">
+        ${others.map(b => {
+          const cover = b.cover_url
+            ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
+            : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-1 text-[10px] text-center text-muted font-serif">${escHtml(b.title)}</div>`;
+          return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-16 group">
+            <div class="w-16 h-24 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">${cover}</div>
+            <p class="text-[10px] text-muted mt-1 line-clamp-2 group-hover:text-text transition-colors">${escHtml(b.title)}</p>
+          </a>`;
+        }).join('')}
+      </div>
+    </section>`;
+}
+
+// ── Series in library ──────────────────────────────────────────────────────────
+
+function renderSeriesSection(availability, library, currentBookId) {
+  const series = availability.find(a => a.extra?.series)?.extra?.series;
+  if (!series) return '';
+
+  const others = (library ?? []).filter(b =>
+    String(b.book_id) !== String(currentBookId) &&
+    (b.availability ?? []).some(a => a.extra?.series === series)
+  ).slice(0, 8);
+
+  if (!others.length) return '';
+
+  return `
+    <section class="mt-6">
+      <h2 class="font-serif text-base font-semibold mb-3 text-muted">Also in <em>${escHtml(series)}</em></h2>
+      <div class="flex gap-3 overflow-x-auto pb-1">
+        ${others.map(b => {
+          const cover = b.cover_url
+            ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
+            : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-1 text-[10px] text-center text-muted font-serif">${escHtml(b.title)}</div>`;
+          return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-16 group">
+            <div class="w-16 h-24 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">${cover}</div>
+            <p class="text-[10px] text-muted mt-1 line-clamp-2 group-hover:text-text transition-colors">${escHtml(b.title)}</p>
+          </a>`;
+        }).join('')}
+      </div>
+    </section>`;
+}
+
 // ── Availability ───────────────────────────────────────────────────────────────
 
 function renderAvailabilitySection(availability = []) {
@@ -751,11 +855,11 @@ function renderAvailabilitySection(availability = []) {
       const progressEl = (pct !== null && pct > 0) ? `
         <div class="mt-2.5">
           <div class="flex justify-between text-[10px] text-muted mb-1">
-            <span>${isFinished ? '✓ Finished' : pct + '% complete'}</span>
+            <span class="abs-progress-label">${isFinished ? '✓ Finished' : pct + '% complete'}</span>
             ${remainingMins ? `<span>${remainingMins >= 60 ? Math.floor(remainingMins / 60) + 'h ' + (remainingMins % 60) + 'm' : remainingMins + 'm'} remaining</span>` : ''}
           </div>
           <div class="h-1 rounded-full bg-white/10 overflow-hidden">
-            <div class="h-1 rounded-full transition-all ${isFinished ? 'bg-green-400' : 'bg-blue-400'}" style="width:${pct}%"></div>
+            <div class="abs-progress-fill h-1 rounded-full transition-all ${isFinished ? 'bg-green-400' : 'bg-blue-400'}" style="width:${pct}%"></div>
           </div>
         </div>` : '';
 
@@ -769,7 +873,7 @@ function renderAvailabilitySection(availability = []) {
             </div>
             ${absUrl ? `<a href="${escHtml(absUrl)}" target="_blank" rel="noopener"
                  class="text-xs px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-colors flex-shrink-0">
-                 Open in ABS →
+                 ${isFinished ? 'Listen Again →' : (pct > 0 ? `Resume (${pct}%) →` : 'Open in ABS →')}
                </a>` : ''}
           </div>
           ${progressEl}

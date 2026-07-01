@@ -178,6 +178,28 @@ router.get('/abs/now-playing', async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/integrations/recently-added — books added to library from integrations
+// in the last 7 days (uses library_books.added_at which is set only on first insert)
+// ---------------------------------------------------------------------------
+router.get('/recently-added', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT b.id AS book_id, b.title, b.authors, b.cover_url, ba.service, lb.added_at
+       FROM library_books lb
+       JOIN books b ON b.id = lb.book_id
+       JOIN book_availability ba ON ba.book_id = b.id AND ba.user_id = lb.user_id
+       WHERE lb.user_id = $1
+         AND lb.added_at >= now() - interval '7 days'
+         AND ba.service IN ('audiobookshelf', 'calibre')
+       ORDER BY lb.added_at DESC
+       LIMIT 12`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/integrations/book/:bookId/availability — availability for one book
 // ---------------------------------------------------------------------------
 router.get('/book/:bookId/availability', async (req, res, next) => {

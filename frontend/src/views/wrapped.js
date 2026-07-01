@@ -49,6 +49,8 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
   const favAuthor = stats.favoriteAuthorByYear?.[year] ?? null;
   const avgRating = stats.avgRating;
   const totalBooks = stats.totalBooks;
+  const absBooks = stats.absSessionsByYear?.[year] ?? 0;
+  const absHours = stats.absMinutesByYear?.[year] ? Math.round(stats.absMinutesByYear[year] / 60) : null;
 
   // Top genre for this year
   const genresThisYear = stats.categoriesByYear?.[year] ?? {};
@@ -95,6 +97,8 @@ function renderView(container, { stats, username, avatarUrl, accent, year }) {
         ${topGenre  ? statCard('🏷️', topGenre, 'Top Genre', accentColor) : ''}
         ${avgRating ? statCard('⭐', avgRating.toFixed(1), 'Avg Rating', accentColor) : ''}
         ${statCard('📖', totalBooks, 'Total Library', accentColor)}
+        ${absBooks > 0 ? statCard('🎧', absBooks, absBooks === 1 ? 'Audiobook Listened' : 'Audiobooks Listened', accentColor) : ''}
+        ${absHours ? statCard('⏱', absHours + 'h', 'Hours of Audio', accentColor) : ''}
       </div>
 
       <!-- Monthly bars -->

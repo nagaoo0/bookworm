@@ -120,6 +120,9 @@ export function renderHome(container) {
         <button id="bulk-cancel-btn" class="px-2 py-1.5 text-muted hover:text-text transition-colors">✕</button>
       </div>
 
+      <!-- Recently added from integrations (filled async) -->
+      <div id="recently-added-banner"></div>
+
       <!-- Shelf selector bar -->
       <div class="shelf-bar flex items-center gap-2 overflow-x-auto">
         <button class="shelf-chip ${selectedShelfId == null ? 'shelf-chip-active' : 'shelf-chip-idle'}"
@@ -165,6 +168,7 @@ export function renderHome(container) {
 
   // Now Playing: fetch current ABS session and subscribe to SSE for live updates
   initNowPlaying(container);
+  initRecentlyAdded(container);
 
   const searchInput = container.querySelector('#library-search');
   searchInput?.addEventListener('input', e => {
@@ -252,6 +256,15 @@ function attachShelfBar(container, shelves, library) {
       const raw = chip.dataset.shelf;
       const id = raw === 'all' ? null : Number(raw);
       setState({ selectedShelfId: id });
+
+      // Clicking "All Books" clears the availability filter
+      if (id === null && availFilter !== null) {
+        availFilter = null;
+        container.querySelectorAll('.avail-filter-chip').forEach(c => {
+          c.className = `avail-filter-chip shelf-chip shelf-chip-idle`;
+        });
+      }
+
       // Re-render content from already-loaded state — no network round-trip needed
       const contentEl = container.querySelector('#shelf-content');
       if (contentEl) renderShelfContent(contentEl, library, shelves, id, container);
@@ -926,5 +939,37 @@ async function initNowPlaying(container) {
       if (_sseSource === es) _sseSource = null;
     };
   } catch { /* SSE not available */ }
+}
+
+async function initRecentlyAdded(container) {
+  const { user } = getState();
+  if (!user) return;
+  try {
+    const books = await api.getRecentlyAdded();
+    if (!books?.length) return;
+    const el = container.querySelector('#recently-added-banner');
+    if (!el) return;
+
+    const SERVICE_LABEL = { audiobookshelf: '🎧', calibre: '📚' };
+    el.innerHTML = `
+      <section class="bg-surface-2/60 border border-border/30 rounded-2xl px-4 py-3">
+        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2.5">Recently added to your library</p>
+        <div class="flex gap-3 overflow-x-auto pb-1">
+          ${books.map(b => {
+            const icon = SERVICE_LABEL[b.service] ?? '';
+            const cover = b.cover_url
+              ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover">`
+              : `<div class="w-full h-full bg-border/40 flex items-center justify-center text-base">${icon}</div>`;
+            return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-14 group">
+              <div class="relative w-14 h-20 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
+                ${cover}
+                <span class="absolute bottom-0.5 right-0.5 text-[10px] leading-none">${icon}</span>
+              </div>
+              <p class="text-[10px] text-muted mt-1 line-clamp-2 group-hover:text-text transition-colors">${escHtml(b.title)}</p>
+            </a>`;
+          }).join('')}
+        </div>
+      </section>`;
+  } catch { /* integrations not configured */ }
 }
 
