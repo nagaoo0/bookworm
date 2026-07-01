@@ -564,6 +564,10 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
   });
 
   // ── Book search (add books) ──
+  // Prefetch library in the background so it's ready when the user starts typing
+  let libraryCache = null;
+  api.getLibrary().then(lib => { libraryCache = lib; }).catch(() => {});
+
   let bookSearchTimer;
   el.querySelectorAll('.book-search-input').forEach(input => {
     const cid = input.dataset.challengeId;
@@ -576,22 +580,52 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
         resultsEl.innerHTML = `<p class="px-3 py-2 text-xs text-muted">Searching…</p>`;
         resultsEl.classList.remove('hidden');
         try {
-          const results = await api.search(q);
-          if (!results.length) {
+          const ql = q.toLowerCase();
+          const library = libraryCache ?? [];
+
+          // Library matches first (filtered client-side)
+          const libMatches = library.filter(b =>
+            b.title?.toLowerCase().includes(ql) ||
+            (b.authors ?? []).some(a => a.toLowerCase().includes(ql))
+          ).slice(0, 4);
+
+          // External results, deduplicated against library
+          const extResults = await api.search(q);
+          const libGoogleIds = new Set(libMatches.map(b => b.google_id).filter(Boolean));
+          const extMatches = extResults
+            .filter(r => !libGoogleIds.has(r.googleId))
+            .slice(0, Math.max(2, 6 - libMatches.length));
+
+          if (!libMatches.length && !extMatches.length) {
             resultsEl.innerHTML = `<p class="px-3 py-2 text-xs text-muted italic">No results.</p>`;
             return;
           }
-          resultsEl.innerHTML = results.slice(0, 6).map(r => `
-            <button class="add-book-result w-full text-left flex items-center gap-2.5 px-3 py-2 hover:bg-surface transition-colors"
-                    data-google-id="${escHtml(r.googleId ?? '')}" data-challenge-id="${cid}">
-              ${r.coverUrl
-                ? `<img src="${escHtml(r.coverUrl)}" alt="" class="w-7 h-10 object-cover rounded flex-shrink-0" />`
-                : `<div class="w-7 h-10 bg-surface rounded flex-shrink-0"></div>`}
-              <div class="flex-1 min-w-0">
-                <p class="text-xs font-medium text-text line-clamp-1">${escHtml(r.title ?? '')}</p>
-                <p class="text-[11px] text-muted line-clamp-1">${Array.isArray(r.authors) ? r.authors.join(', ') : ''}</p>
-              </div>
-            </button>`).join('');
+
+          resultsEl.innerHTML = [
+            ...libMatches.map(b => `
+              <button class="add-book-result w-full text-left flex items-center gap-2.5 px-3 py-2 hover:bg-surface transition-colors"
+                      data-book-id="${b.id}" data-challenge-id="${cid}">
+                ${b.cover_url
+                  ? `<img src="${escHtml(b.cover_url)}" alt="" class="w-7 h-10 object-cover rounded flex-shrink-0" />`
+                  : `<div class="w-7 h-10 bg-surface rounded flex-shrink-0"></div>`}
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium text-text line-clamp-1">${escHtml(b.title ?? '')}</p>
+                  <p class="text-[11px] text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
+                </div>
+                <span class="flex-shrink-0 text-[10px] font-semibold text-amber-400">Library</span>
+              </button>`),
+            ...extMatches.map(r => `
+              <button class="add-book-result w-full text-left flex items-center gap-2.5 px-3 py-2 hover:bg-surface transition-colors"
+                      data-google-id="${escHtml(r.googleId ?? '')}" data-challenge-id="${cid}">
+                ${r.coverUrl
+                  ? `<img src="${escHtml(r.coverUrl)}" alt="" class="w-7 h-10 object-cover rounded flex-shrink-0" />`
+                  : `<div class="w-7 h-10 bg-surface rounded flex-shrink-0"></div>`}
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium text-text line-clamp-1">${escHtml(r.title ?? '')}</p>
+                  <p class="text-[11px] text-muted line-clamp-1">${escHtml(Array.isArray(r.authors) ? r.authors.join(', ') : '')}</p>
+                </div>
+              </button>`),
+          ].join('');
         } catch {
           resultsEl.innerHTML = `<p class="px-3 py-2 text-xs text-red-400">Search failed.</p>`;
         }
@@ -603,12 +637,14 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
     resultsEl.addEventListener('click', async e => {
       const btn = e.target.closest('.add-book-result');
       if (!btn) return;
+      const bookId   = btn.dataset.bookId;
       const googleId = btn.dataset.googleId;
       const cid2 = btn.dataset.challengeId;
       btn.disabled = true;
       try {
-        const book = await api.getBookByGoogleId(googleId);
-        await api.addChallengeBook(cid2, book.id);
+        // Library books already have an internal id — no extra fetch needed
+        const finalBookId = bookId ?? (await api.getBookByGoogleId(googleId)).id;
+        await api.addChallengeBook(cid2, finalBookId);
         input.value = '';
         resultsEl.classList.add('hidden');
         showToast('Book added to challenge', 'success');
