@@ -742,33 +742,64 @@ function renderAvailabilitySection(availability = []) {
   const items = availability.map(a => {
     if (a.service === 'audiobookshelf') {
       const absUrl = a.server_url ? `${a.server_url}/item/${a.external_id}` : null;
-      return `
-        <div class="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
-          <span class="text-2xl">🎧</span>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-text">Audiobookshelf</p>
-            <p class="text-xs text-muted">Audiobook available${a.extra?.narrator ? ' · Narrated by ' + escHtml(a.extra.narrator) : ''}${a.extra?.duration_minutes ? ' · ' + Math.round(a.extra.duration_minutes / 60) + ' hrs' : ''}</p>
+      const pct = a.extra?.progress_pct ?? null;
+      const isFinished = a.extra?.is_finished ?? false;
+      const durationMins = a.extra?.duration_minutes ?? null;
+      const remainingMins = (pct !== null && pct < 100 && durationMins)
+        ? Math.round(durationMins * (1 - pct / 100)) : null;
+
+      const progressEl = (pct !== null && pct > 0) ? `
+        <div class="mt-2.5">
+          <div class="flex justify-between text-[10px] text-muted mb-1">
+            <span>${isFinished ? '✓ Finished' : pct + '% complete'}</span>
+            ${remainingMins ? `<span>${remainingMins >= 60 ? Math.floor(remainingMins / 60) + 'h ' + (remainingMins % 60) + 'm' : remainingMins + 'm'} remaining</span>` : ''}
           </div>
-          ${absUrl ? `<a href="${escHtml(absUrl)}" target="_blank" rel="noopener"
-               class="text-xs px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-colors flex-shrink-0">
-               Open in ABS →
-             </a>` : ''}
+          <div class="h-1 rounded-full bg-white/10 overflow-hidden">
+            <div class="h-1 rounded-full transition-all ${isFinished ? 'bg-green-400' : 'bg-blue-400'}" style="width:${pct}%"></div>
+          </div>
+        </div>` : '';
+
+      return `
+        <div class="bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">🎧</span>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-text">Audiobookshelf</p>
+              <p class="text-xs text-muted">Audiobook available${a.extra?.narrator ? ' · Narrated by ' + escHtml(a.extra.narrator) : ''}${durationMins ? ' · ' + Math.round(durationMins / 60) + ' hrs' : ''}</p>
+            </div>
+            ${absUrl ? `<a href="${escHtml(absUrl)}" target="_blank" rel="noopener"
+                 class="text-xs px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-colors flex-shrink-0">
+                 Open in ABS →
+               </a>` : ''}
+          </div>
+          ${progressEl}
         </div>`;
     }
     if (a.service === 'calibre') {
-      const formats = (a.formats ?? []).map(f => f.toUpperCase()).join(', ');
+      const formats = a.formats ?? [];
+      const formatsLabel = formats.map(f => f.toUpperCase()).join(', ');
       const calibreUrl = a.server_url && a.external_id ? `${a.server_url}/book/${a.external_id}` : null;
+      const calibreId = a.extra?.calibre_id ?? a.external_id;
+      const downloadBtns = formats.map(fmt =>
+        `<a href="/api/integrations/calibre/download/${encodeURIComponent(calibreId)}/${encodeURIComponent(fmt)}"
+            class="text-xs px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 rounded-lg transition-colors flex-shrink-0">
+            ↓ ${escHtml(fmt.toUpperCase())}
+          </a>`
+      ).join('');
       return `
-        <div class="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
-          <span class="text-2xl">📚</span>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-text">Calibre Library</p>
-            <p class="text-xs text-muted">In your ebook collection${formats ? ' · ' + formats : ''}${a.extra?.series ? ' · Series: ' + escHtml(a.extra.series) : ''}</p>
+        <div class="bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">📚</span>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-text">Calibre Library</p>
+              <p class="text-xs text-muted">In your ebook collection${formatsLabel ? ' · ' + formatsLabel : ''}${a.extra?.series ? ' · Series: ' + escHtml(a.extra.series) : ''}</p>
+            </div>
+            ${calibreUrl ? `<a href="${escHtml(calibreUrl)}" target="_blank" rel="noopener"
+                 class="text-xs px-3 py-1.5 bg-surface-3 hover:bg-border/40 text-muted rounded-lg transition-colors flex-shrink-0">
+                 Open →
+               </a>` : ''}
           </div>
-          ${calibreUrl ? `<a href="${escHtml(calibreUrl)}" target="_blank" rel="noopener"
-               class="text-xs px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg transition-colors flex-shrink-0">
-               Open in Calibre →
-             </a>` : ''}
+          ${downloadBtns ? `<div class="flex flex-wrap gap-2 mt-2.5">${downloadBtns}</div>` : ''}
         </div>`;
     }
     return '';

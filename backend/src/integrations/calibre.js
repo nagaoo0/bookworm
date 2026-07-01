@@ -22,7 +22,7 @@ function base(config) {
   return config.serverUrl.replace(/\/$/, '');
 }
 
-function opdsHeaders(config) {
+export function opdsHeaders(config) {
   const h = { Accept: 'application/atom+xml, application/xml, text/xml, */*' };
   if (config.username && config.password) {
     const creds = Buffer.from(`${config.username}:${config.password}`).toString('base64');

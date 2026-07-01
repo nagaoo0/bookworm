@@ -203,6 +203,8 @@ async function syncABS(userId, config) {
         abs_library_id: lib.id,
         abs_item_id: item.id,
         server_url: config.serverUrl,
+        progress_pct: progress ? Math.round((progress.progress ?? 0) * 100) : 0,
+        is_finished: progress?.isFinished ?? false,
       });
 
       if (progress?.isFinished) {

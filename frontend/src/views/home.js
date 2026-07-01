@@ -12,12 +12,17 @@ const sectionState = {
 };
 
 let libraryQuery = '';
+let availFilter = null; // null = all, 'audiobookshelf' = audio only, 'calibre' = ebook only
 const selectedLibIds = new Set();
 
 function filterBooks(books, q) {
-  if (!q) return books;
+  let result = books;
+  if (availFilter) {
+    result = result.filter(b => (b.availability ?? []).some(a => a.service === availFilter));
+  }
+  if (!q) return result;
   const lq = q.toLowerCase();
-  return books.filter(b =>
+  return result.filter(b =>
     b.title.toLowerCase().includes(lq) ||
     (b.authors ?? []).some(a => a.toLowerCase().includes(lq))
   );
@@ -115,6 +120,22 @@ export function renderHome(container) {
         <button id="bulk-cancel-btn" class="px-2 py-1.5 text-muted hover:text-text transition-colors">✕</button>
       </div>
 
+      <!-- Availability filter chips (only shown when integrations have books) -->
+      ${(() => {
+        const hasAbs = library.some(b => (b.availability ?? []).some(a => a.service === 'audiobookshelf'));
+        const hasCalibre = library.some(b => (b.availability ?? []).some(a => a.service === 'calibre'));
+        if (!hasAbs && !hasCalibre) return '';
+        const chip = (val, label, active) =>
+          `<button class="avail-filter-chip flex-shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
+                          ${active ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-border text-muted hover:border-border/80 hover:text-text'}"
+                   data-avail="${val}">${label}</button>`;
+        return `<div class="flex items-center gap-2 overflow-x-auto">
+          ${chip('', 'All', !availFilter)}
+          ${hasAbs ? chip('audiobookshelf', '🎧 Audio', availFilter === 'audiobookshelf') : ''}
+          ${hasCalibre ? chip('calibre', '📚 Ebook', availFilter === 'calibre') : ''}
+        </div>`;
+      })()}
+
       <!-- Shelf selector bar -->
       <div class="shelf-bar flex items-center gap-2 overflow-x-auto">
         <button class="shelf-chip ${selectedShelfId == null ? 'shelf-chip-active' : 'shelf-chip-idle'}"
@@ -159,6 +180,21 @@ export function renderHome(container) {
       renderShelfContent(contentEl, library, shelves, getState().selectedShelfId, container);
       attachCardHandlers(container, shelves, library);
     }
+  });
+
+  container.querySelectorAll('.avail-filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      availFilter = chip.dataset.avail || null;
+      container.querySelectorAll('.avail-filter-chip').forEach(c => {
+        const active = (c.dataset.avail || null) === availFilter;
+        c.className = `avail-filter-chip flex-shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-border text-muted hover:border-border/80 hover:text-text'}`;
+      });
+      const contentEl = container.querySelector('#shelf-content');
+      if (contentEl) {
+        renderShelfContent(contentEl, library, shelves, getState().selectedShelfId, container);
+        attachCardHandlers(container, shelves, library);
+      }
+    });
   });
 
   // Select mode toggle

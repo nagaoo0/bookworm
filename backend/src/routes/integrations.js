@@ -199,6 +199,48 @@ router.get('/book/:bookId/availability', async (req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/integrations/calibre/download/:calibreId/:format — proxy download
+// Fetches the file from Calibre-Web with stored credentials and streams it
+// back, so the browser never needs to handle Basic Auth directly.
+// ---------------------------------------------------------------------------
+router.get('/calibre/download/:calibreId/:format', async (req, res, next) => {
+  try {
+    const { calibreId, format } = req.params;
+    const { rows: [row] } = await pool.query(
+      'SELECT config FROM integrations WHERE user_id=$1 AND service=$2',
+      [req.user.id, 'calibre']
+    );
+    if (!row) return res.status(404).json({ error: 'Calibre not configured' });
+
+    const serverUrl = row.config.serverUrl.replace(/\/$/, '');
+    const downloadUrl = `${serverUrl}/opds/download/${calibreId}/${format}/`;
+
+    const upstream = await fetch(downloadUrl, {
+      headers: calibreClient.opdsHeaders(row.config),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({ error: `Calibre returned ${upstream.status}` });
+    }
+
+    res.setHeader('Content-Type', upstream.headers.get('Content-Type') ?? 'application/octet-stream');
+    const disposition = upstream.headers.get('Content-Disposition');
+    if (disposition) res.setHeader('Content-Disposition', disposition);
+    else res.setHeader('Content-Disposition', `attachment; filename="book.${format}"`);
+
+    const reader = upstream.body.getReader();
+    const pump = async () => {
+      const { done, value } = await reader.read();
+      if (done) { res.end(); return; }
+      res.write(Buffer.from(value));
+      await pump();
+    };
+    await pump();
+  } catch (err) { next(err); }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/integrations/sse — Server-Sent Events for real-time ABS progress
 // ---------------------------------------------------------------------------
 router.get('/sse', (req, res) => {
