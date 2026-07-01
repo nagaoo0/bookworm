@@ -63,9 +63,6 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
     ? `<div class="flex flex-wrap gap-1 mt-1.5">
         ${availability.map(a => {
           if (a.service === 'audiobookshelf') return `<span title="In Audiobookshelf" class="text-[10px] bg-blue-500/15 text-blue-300 ring-1 ring-blue-500/20 px-1 py-0.5 rounded-full">🎧 ABS</span>`;
-          if (a.service === 'audible') return a.extra?.is_wishlist
-            ? `<span title="On Audible wishlist" class="text-[10px] bg-orange-500/15 text-orange-300 ring-1 ring-orange-500/20 px-1 py-0.5 rounded-full">📖 Wishlist</span>`
-            : `<span title="Owned on Audible" class="text-[10px] bg-orange-500/15 text-orange-300 ring-1 ring-orange-500/20 px-1 py-0.5 rounded-full">📖 Audible</span>`;
           if (a.service === 'calibre') {
             const fmts = (a.formats ?? []).map(f => f.toUpperCase()).join(' · ');
             return `<span title="In Calibre library${fmts ? ': ' + fmts : ''}" class="text-[10px] bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20 px-1 py-0.5 rounded-full">📚${fmts ? ' ' + fmts : ''}</span>`;

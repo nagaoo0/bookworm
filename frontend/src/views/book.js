@@ -755,22 +755,6 @@ function renderAvailabilitySection(availability = []) {
              </a>` : ''}
         </div>`;
     }
-    if (a.service === 'audible') {
-      const isWishlist = a.extra?.is_wishlist;
-      const asin = a.extra?.asin;
-      return `
-        <div class="flex items-center gap-3 bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
-          <span class="text-2xl">📖</span>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-text">Audible</p>
-            <p class="text-xs text-muted">${isWishlist ? 'On your wishlist' : 'In your library'}${a.extra?.narrator ? ' · Narrated by ' + escHtml(a.extra.narrator) : ''}${a.extra?.duration_minutes ? ' · ' + Math.round(a.extra.duration_minutes / 60) + ' hrs' : ''}</p>
-          </div>
-          ${asin ? `<a href="https://www.audible.com/pd/${escHtml(asin)}" target="_blank" rel="noopener"
-               class="text-xs px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 rounded-lg transition-colors flex-shrink-0">
-               Open →
-             </a>` : ''}
-        </div>`;
-    }
     if (a.service === 'calibre') {
       const formats = (a.formats ?? []).map(f => f.toUpperCase()).join(', ');
       return `

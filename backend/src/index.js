@@ -187,9 +187,6 @@ app.get('/api/books/:bookId', async (req, res, next) => {
   }
 });
 
-// Audible OAuth callback must be public — Amazon redirects here without Bookworm session
-app.use('/api/integrations/audible/callback', integrationsRouter);
-
 // All routes below this require a valid session
 app.use(authMiddleware);
 

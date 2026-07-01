@@ -610,16 +610,9 @@ function attachImportExportHandlers(container) {
 
 // ── Integrations ──────────────────────────────────────────────────────────────
 
-const AUDIBLE_MARKETPLACES = [
-  ['us','United States'], ['uk','United Kingdom'], ['de','Germany'],
-  ['fr','France'], ['ca','Canada'], ['au','Australia'], ['jp','Japan'],
-  ['in','India'], ['es','Spain'], ['it','Italy'], ['br','Brazil'],
-];
-
 function renderIntegrationsSection(integrations = []) {
   const byService = Object.fromEntries(integrations.map(i => [i.service, i]));
   const abs = byService.audiobookshelf;
-  const aud = byService.audible;
   const cal = byService.calibre;
 
   const fmtDate = d => d ? new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
@@ -679,50 +672,6 @@ function renderIntegrationsSection(integrations = []) {
             </button>` : ''}
           </div>
           <p id="abs-msg" class="text-xs hidden"></p>
-        </div>
-      </details>
-
-      <hr class="border-border/40" />
-
-      <!-- Audible -->
-      <details class="group" ${aud ? 'open' : ''}>
-        <summary class="flex items-center justify-between cursor-pointer list-none select-none">
-          <div class="flex items-center gap-2">
-            <span class="text-lg">📖</span>
-            <span class="font-medium text-sm">Audible</span>
-            ${statusBadge(!!aud)}
-          </div>
-          <svg class="w-4 h-4 text-muted transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
-        </summary>
-        <div class="mt-4 space-y-3 pl-1">
-          <p class="text-xs text-muted">Import your Audible library and wishlist. Uses Amazon's login to authorize access.</p>
-          <div>
-            <label class="text-xs text-muted block mb-1">Marketplace</label>
-            <select id="audible-marketplace" class="field-input rounded-lg py-2">
-              ${AUDIBLE_MARKETPLACES.map(([v, l]) => `<option value="${v}"${aud?.marketplace === v || (!aud && v === 'us') ? ' selected' : ''}>${l}</option>`).join('')}
-            </select>
-          </div>
-          <div class="flex items-center gap-2 text-xs text-muted">
-            <input type="checkbox" id="audible-wishlist" class="rounded" checked />
-            <label for="audible-wishlist">Import wishlist as "Want to Read"</label>
-          </div>
-          ${aud ? `<p class="text-xs text-muted">Last synced: ${fmtDate(aud.last_synced_at)}</p>` : ''}
-          <div class="flex gap-2 flex-wrap">
-            <button id="audible-connect-btn"
-              class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-lg text-xs transition-all">
-              ${aud ? 'Re-authorize' : 'Connect Audible'}
-            </button>
-            ${aud ? `
-            <button id="audible-sync-btn"
-              class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-xs font-medium transition-all">
-              Sync now
-            </button>
-            <button id="audible-disconnect-btn"
-              class="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs transition-colors">
-              Disconnect
-            </button>` : ''}
-          </div>
-          <p id="audible-msg" class="text-xs hidden"></p>
         </div>
       </details>
 
@@ -842,53 +791,6 @@ function attachIntegrationsHandlers(container) {
       location.reload();
     } catch (err) {
       showIntMsg(container, 'abs-msg', err.message, true);
-    }
-  });
-
-  // ── Audible ──
-  container.querySelector('#audible-connect-btn')?.addEventListener('click', async () => {
-    const marketplace = container.querySelector('#audible-marketplace')?.value ?? 'us';
-    try {
-      const { url } = await api.getAudibleAuthUrl(marketplace);
-      const popup = window.open(url, 'audible_auth', 'width=500,height=700');
-      // Poll for redirect back (callback closes popup or navigates to /#settings)
-      const poll = setInterval(() => {
-        try {
-          if (popup.closed) {
-            clearInterval(poll);
-            showIntMsg(container, 'audible-msg', 'Authorization complete. Syncing library…');
-            api.syncIntegration('audible').then(() => {
-              showIntMsg(container, 'audible-msg', 'Audible library synced.');
-            }).catch(err => showIntMsg(container, 'audible-msg', err.message, true));
-          }
-        } catch { /* cross-origin, keep polling */ }
-      }, 500);
-    } catch (err) {
-      showIntMsg(container, 'audible-msg', err.message, true);
-    }
-  });
-
-  container.querySelector('#audible-sync-btn')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true; btn.textContent = 'Syncing…';
-    try {
-      await api.syncIntegration('audible');
-      showIntMsg(container, 'audible-msg', 'Sync complete.');
-    } catch (err) {
-      showIntMsg(container, 'audible-msg', err.message, true);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Sync now';
-    }
-  });
-
-  container.querySelector('#audible-disconnect-btn')?.addEventListener('click', async () => {
-    if (!confirm('Disconnect Audible? Availability data will be removed.')) return;
-    try {
-      await api.disconnectIntegration('audible');
-      showToast('Audible disconnected.');
-      location.reload();
-    } catch (err) {
-      showIntMsg(container, 'audible-msg', err.message, true);
     }
   });
 

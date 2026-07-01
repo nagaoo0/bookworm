@@ -1,7 +1,6 @@
 import { pool } from '../db.js';
 import { searchBooks } from '../googleBooks.js';
 import * as abs from './abs.js';
-import * as audible from './audible.js';
 import * as calibre from './calibre.js';
 
 // Active polling intervals keyed by `${userId}:${service}`
@@ -215,21 +214,6 @@ async function syncABS(userId, config) {
   }
 }
 
-async function syncAudible(userId, config) {
-  const [library, wishlist] = await Promise.all([
-    audible.fetchLibrary(config),
-    audible.fetchWishlist(config),
-  ]);
-
-  for (const item of [...library, ...wishlist]) {
-    const mapped = audible.mapItemToBook(item);
-    const { id: bookId, isNew } = await resolveBookId(userId, 'audible', mapped.extra.asin, mapped);
-    if (isNew) enrichBook(bookId, mapped).catch(() => {});
-    await upsertLibraryBook(userId, bookId, 'to_read');
-    await upsertAvailability(userId, bookId, 'audible', mapped.extra.asin, [], mapped.extra);
-  }
-}
-
 async function syncCalibre(userId, config) {
   const entries = await calibre.fetchBooks(config);
   for (const entry of entries) {
@@ -262,7 +246,6 @@ export async function syncService(userId, service) {
   console.log(`[sync] ${service} for user ${userId} starting`);
   try {
     if (service === 'audiobookshelf') await syncABS(userId, config);
-    else if (service === 'audible') await syncAudible(userId, config);
     else if (service === 'calibre') await syncCalibre(userId, config);
 
     await pool.query(
@@ -282,7 +265,6 @@ export async function syncService(userId, service) {
 
 const INTERVALS = {
   audiobookshelf: 2 * 60 * 1000,   // 2 min
-  audible: 15 * 60 * 1000,          // 15 min
   calibre: 15 * 60 * 1000,          // 15 min
 };
 

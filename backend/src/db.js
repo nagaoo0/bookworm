@@ -241,7 +241,7 @@ export async function migrate() {
     CREATE TABLE IF NOT EXISTS integrations (
       id             SERIAL PRIMARY KEY,
       user_id        INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      service        TEXT NOT NULL CHECK (service IN ('audiobookshelf','audible','calibre')),
+      service        TEXT NOT NULL CHECK (service IN ('audiobookshelf','calibre')),
       config         JSONB NOT NULL DEFAULT '{}',
       last_synced_at TIMESTAMPTZ,
       UNIQUE(user_id, service)
@@ -252,7 +252,7 @@ export async function migrate() {
       id          SERIAL PRIMARY KEY,
       user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       book_id     INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-      service     TEXT NOT NULL CHECK (service IN ('audiobookshelf','audible','calibre')),
+      service     TEXT NOT NULL CHECK (service IN ('audiobookshelf','calibre')),
       external_id TEXT,
       formats     TEXT[],
       extra       JSONB NOT NULL DEFAULT '{}',
@@ -262,7 +262,7 @@ export async function migrate() {
 
     -- Track which service created a reading session
     ALTER TABLE reading_sessions ADD COLUMN IF NOT EXISTS source TEXT
-      CHECK (source IN ('bookworm','audiobookshelf','audible','calibre'));
+      CHECK (source IN ('bookworm','audiobookshelf','calibre'));
   `);
   console.log('Database schema ready.');
 }

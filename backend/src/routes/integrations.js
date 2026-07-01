@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import * as absClient from '../integrations/abs.js';
-import * as audibleClient from '../integrations/audible.js';
 import * as calibreClient from '../integrations/calibre.js';
 import {
   syncService,
@@ -37,7 +36,7 @@ router.get('/', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.put('/:service', async (req, res, next) => {
   const { service } = req.params;
-  const VALID = ['audiobookshelf', 'audible', 'calibre'];
+  const VALID = ['audiobookshelf', 'calibre'];
   if (!VALID.includes(service)) return res.status(400).json({ error: 'Unknown service' });
 
   try {
@@ -48,7 +47,6 @@ router.put('/:service', async (req, res, next) => {
     if (service === 'calibre') {
       await calibreClient.testConnection(config);
     }
-    // audible is validated via the OAuth callback flow, not here
 
     await pool.query(
       `INSERT INTO integrations (user_id, service, config)
@@ -128,7 +126,6 @@ router.get('/:service/status', async (req, res, next) => {
     try {
       if (service === 'audiobookshelf') ok = !!(await absClient.testConnection(config));
       else if (service === 'calibre') ok = !!(await calibreClient.testConnection(config));
-      else if (service === 'audible') ok = !!config.accessToken;
     } catch { ok = false; }
 
     const { rows: [cnt] } = await pool.query(
@@ -137,73 +134,6 @@ router.get('/:service/status', async (req, res, next) => {
     );
 
     res.json({ connected: ok, itemCount: cnt.count, lastSynced: row.last_synced_at });
-  } catch (err) { next(err); }
-});
-
-// ---------------------------------------------------------------------------
-// Audible OAuth flow
-// ---------------------------------------------------------------------------
-
-// In-memory store for PKCE verifiers (keyed by userId, short-lived)
-const _pkceStore = new Map();
-
-router.get('/audible/auth-url', (req, res) => {
-  const { marketplace = 'us' } = req.query;
-  const pkce = audibleClient.generatePKCE();
-  _pkceStore.set(req.user.id, { pkce, marketplace });
-  // Clear after 10 minutes
-  setTimeout(() => _pkceStore.delete(req.user.id), 10 * 60 * 1000);
-
-  const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/audible/callback`;
-  const url = audibleClient.buildAuthUrl(marketplace, redirectUri, pkce);
-  res.json({ url });
-});
-
-router.get('/audible/callback', async (req, res, next) => {
-  try {
-    // Express parses dots as nested objects; parse the raw query string instead
-    const rawQuery = new URLSearchParams(req.url.split('?')[1] ?? '');
-    const code = rawQuery.get('openid.oa2.authorization_code');
-    if (!code) {
-      const err = rawQuery.get('openid.error') ?? 'no authorization code returned';
-      return res.status(400).send(`Audible authorization failed: ${err}`);
-    }
-
-    // We need user identity — check session cookie directly
-    const token = req.cookies?.bw_session;
-    if (!token) return res.status(401).send('Not logged in');
-    const { rows: [sess] } = await pool.query(
-      'SELECT user_id FROM sessions WHERE token=$1 AND expires_at>now()', [token]
-    );
-    if (!sess) return res.status(401).send('Invalid session');
-    const userId = sess.user_id;
-
-    const stored = _pkceStore.get(userId);
-    if (!stored) return res.status(400).send('No pending OAuth flow');
-    _pkceStore.delete(userId);
-
-    const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/audible/callback`;
-    const tokens = await audibleClient.exchangeCode(
-      code, stored.pkce.verifier, stored.marketplace, redirectUri
-    );
-
-    const config = {
-      marketplace: stored.marketplace,
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: Date.now() + (tokens.expires_in ?? 3600) * 1000,
-    };
-
-    await pool.query(
-      `INSERT INTO integrations (user_id, service, config)
-       VALUES ($1, 'audible', $2)
-       ON CONFLICT (user_id, service) DO UPDATE SET config = EXCLUDED.config`,
-      [userId, config]
-    );
-
-    startContinuousSync(userId, 'audible');
-    // Redirect back to frontend settings page
-    res.redirect('/#settings?tab=integrations&connected=audible');
   } catch (err) { next(err); }
 });
 

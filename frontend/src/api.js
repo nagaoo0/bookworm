@@ -148,7 +148,6 @@ export const api = {
   disconnectIntegration: (service) => request(`/integrations/${service}`, { method: 'DELETE' }),
   syncIntegration: (service) => request(`/integrations/${service}/sync`, { method: 'POST' }),
   getIntegrationStatus: (service) => request(`/integrations/${service}/status`),
-  getAudibleAuthUrl: (marketplace) => request(`/integrations/audible/auth-url?marketplace=${marketplace}`),
   getNowPlaying: () => request('/integrations/abs/now-playing'),
 
   // Library management
