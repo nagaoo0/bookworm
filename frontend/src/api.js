@@ -134,6 +134,11 @@ export const api = {
   likeSession: (id) => request(`/sessions/${id}/like`, { method: 'POST' }),
   unlikeSession: (id) => request(`/sessions/${id}/like`, { method: 'DELETE' }),
 
+  // Session comments (feed)
+  getSessionComments: (id) => request(`/sessions/${id}/comments`),
+  addSessionComment: (id, body) => request(`/sessions/${id}/comments`, { method: 'POST', body: { body } }),
+  deleteSessionComment: (id, commentId) => request(`/sessions/${id}/comments/${commentId}`, { method: 'DELETE' }),
+
   // Admin
   adminGetUsers: () => request('/admin/users'),
   adminDeleteUser: (id) => request(`/admin/users/${id}`, { method: 'DELETE' }),

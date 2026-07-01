@@ -941,21 +941,34 @@ async function initNowPlaying(container) {
   } catch { /* SSE not available */ }
 }
 
+const RECENTLY_ADDED_KEY = 'recentlyAddedDismissedAt';
+
 async function initRecentlyAdded(container) {
   const { user } = getState();
   if (!user) return;
   try {
     const books = await api.getRecentlyAdded();
     if (!books?.length) return;
+
+    // Only show books added after the last dismissal
+    const dismissedAt = localStorage.getItem(RECENTLY_ADDED_KEY);
+    const unseen = dismissedAt
+      ? books.filter(b => new Date(b.added_at) > new Date(dismissedAt))
+      : books;
+    if (!unseen.length) return;
+
     const el = container.querySelector('#recently-added-banner');
     if (!el) return;
 
     const SERVICE_LABEL = { audiobookshelf: '🎧', calibre: '📚' };
     el.innerHTML = `
       <section class="bg-surface-2/60 border border-border/30 rounded-2xl px-4 py-3">
-        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2.5">Recently added to your library</p>
+        <div class="flex items-center justify-between mb-2.5">
+          <p class="text-xs text-muted uppercase tracking-wider font-medium">Recently added to your library</p>
+          <button id="dismiss-recently-added" class="text-muted hover:text-text transition-colors text-xs px-2 py-0.5 rounded-lg hover:bg-border/40" title="Dismiss">✕ Dismiss</button>
+        </div>
         <div class="flex gap-3 overflow-x-auto pb-1">
-          ${books.map(b => {
+          ${unseen.map(b => {
             const icon = SERVICE_LABEL[b.service] ?? '';
             const cover = b.cover_url
               ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover">`
@@ -970,6 +983,11 @@ async function initRecentlyAdded(container) {
           }).join('')}
         </div>
       </section>`;
+
+    el.querySelector('#dismiss-recently-added')?.addEventListener('click', () => {
+      localStorage.setItem(RECENTLY_ADDED_KEY, new Date().toISOString());
+      el.innerHTML = '';
+    });
   } catch { /* integrations not configured */ }
 }
 

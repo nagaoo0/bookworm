@@ -780,9 +780,16 @@ function attachSessionDeleteHandlers(container, bookId, reload) {
 
 // ── Narrator browse ────────────────────────────────────────────────────────────
 
+function toSeriesName(s) {
+  if (!s) return null;
+  if (Array.isArray(s)) return s[0]?.name ?? null;
+  if (typeof s === 'object') return s.name ?? null;
+  return s;
+}
+
 function renderNarratorSection(availability, library, currentBookId) {
   const narrator = availability.find(a => a.service === 'audiobookshelf')?.extra?.narrator;
-  if (!narrator) return '';
+  if (!narrator || typeof narrator !== 'string') return '';
 
   const others = (library ?? []).filter(b =>
     String(b.book_id) !== String(currentBookId) &&
@@ -811,12 +818,12 @@ function renderNarratorSection(availability, library, currentBookId) {
 // ── Series in library ──────────────────────────────────────────────────────────
 
 function renderSeriesSection(availability, library, currentBookId) {
-  const series = availability.find(a => a.extra?.series)?.extra?.series;
+  const series = toSeriesName(availability.find(a => a.extra?.series)?.extra?.series);
   if (!series) return '';
 
   const others = (library ?? []).filter(b =>
     String(b.book_id) !== String(currentBookId) &&
-    (b.availability ?? []).some(a => a.extra?.series === series)
+    (b.availability ?? []).some(a => toSeriesName(a.extra?.series) === series)
   ).slice(0, 8);
 
   if (!others.length) return '';

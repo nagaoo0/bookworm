@@ -23,6 +23,7 @@ import challengesRouter from './routes/challenges.js';
 import groupsRouter from './routes/groups.js';
 import adminRouter from './routes/admin.js';
 import likesRouter from './routes/likes.js';
+import sessionCommentsRouter from './routes/sessionComments.js';
 import integrationsRouter from './routes/integrations.js';
 import { getBook } from './googleBooks.js';
 import { bootAllSyncs } from './integrations/syncEngine.js';
@@ -75,38 +76,45 @@ app.get('/api/feed', async (req, res, next) => {
 
     const followingOnly = req.query.filter === 'following' && currentUserId;
 
+    const FEED_SELECT = `
+      SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
+             u.username, u.avatar_url,
+             b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
+             (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
+             (SELECT COUNT(*) FROM session_comments sc WHERE sc.session_id = rs.id)::INT AS comment_count,
+             (SELECT COUNT(DISTINCT rs2.user_id) FROM reading_sessions rs2
+              WHERE rs2.book_id = b.id AND rs2.finished_at IS NOT NULL)::INT AS readers_count`;
+
     if (currentUserId) {
       const params = [currentUserId];
       const { rows } = await pool.query(
-        `SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
-                u.username, u.avatar_url,
-                b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
-                (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
-                EXISTS(SELECT 1 FROM session_likes sl WHERE sl.session_id = rs.id AND sl.user_id = $1) AS liked
+        `${FEED_SELECT},
+                EXISTS(SELECT 1 FROM session_likes sl WHERE sl.session_id = rs.id AND sl.user_id = $1) AS liked,
+                EXISTS(SELECT 1 FROM library_books lb WHERE lb.book_id = b.id AND lb.user_id = $1) AS is_in_library
          FROM reading_sessions rs
          JOIN users u ON u.id = rs.user_id
          JOIN books b ON b.id = rs.book_id
-         WHERE (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
+         WHERE rs.finished_at IS NOT NULL
+           AND (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
            ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1)` : ''}
-         ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
+         ORDER BY rs.finished_at DESC
          LIMIT 100`,
         params
       );
       return res.json(rows);
     }
 
-    // Anonymous viewer — no liked status
+    // Anonymous viewer — no liked/library status
     const { rows } = await pool.query(
-      `SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
-              u.username, u.avatar_url,
-              b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
-              (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
-              false AS liked
+      `${FEED_SELECT},
+              false AS liked,
+              false AS is_in_library
        FROM reading_sessions rs
        JOIN users u ON u.id = rs.user_id
        JOIN books b ON b.id = rs.book_id
-       WHERE (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
-       ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
+       WHERE rs.finished_at IS NOT NULL
+         AND (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
+       ORDER BY rs.finished_at DESC
        LIMIT 100`
     );
     res.json(rows);
@@ -187,6 +195,32 @@ app.get('/api/books/:bookId', async (req, res, next) => {
   }
 });
 
+// Public: get comments for a feed event (session)
+app.get('/api/sessions/:id/comments', async (req, res, next) => {
+  try {
+    const sessionId = parseInt(req.params.id, 10);
+    if (!sessionId) return res.status(400).json({ error: 'Invalid session id' });
+    let currentUserId = null;
+    const token = req.cookies?.bw_session;
+    if (token) {
+      const { rows: [sess] } = await pool.query(
+        `SELECT user_id FROM sessions WHERE token = $1 AND expires_at > now()`, [token]
+      );
+      if (sess) currentUserId = sess.user_id;
+    }
+    const { rows } = await pool.query(
+      `SELECT sc.id, sc.body, sc.created_at, u.username, u.avatar_url,
+              ($2::int IS NOT NULL AND sc.user_id = $2) AS is_own
+       FROM session_comments sc
+       JOIN users u ON u.id = sc.user_id
+       WHERE sc.session_id = $1
+       ORDER BY sc.created_at ASC`,
+      [sessionId, currentUserId]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 // All routes below this require a valid session
 app.use(authMiddleware);
 
@@ -200,6 +234,7 @@ app.use('/api/invites', invitesRouter);
 app.use('/api/import-export', importExportRouter);
 app.use('/api/follows', followsRouter);
 app.use('/api/sessions', likesRouter);
+app.use('/api/sessions', sessionCommentsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/goals', goalsRouter);
 app.use('/api/books/:bookId/comments', commentsRouter);

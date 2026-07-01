@@ -263,6 +263,20 @@ export async function migrate() {
     -- Track which service created a reading session
     ALTER TABLE reading_sessions ADD COLUMN IF NOT EXISTS source TEXT
       CHECK (source IN ('bookworm','audiobookshelf','calibre'));
+
+    -- Comments on individual feed events (reading sessions)
+    CREATE TABLE IF NOT EXISTS session_comments (
+      id         SERIAL PRIMARY KEY,
+      session_id INT NOT NULL REFERENCES reading_sessions(id) ON DELETE CASCADE,
+      user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body       TEXT NOT NULL CHECK (char_length(body) <= 1000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- Extend notification types to include session comments
+    ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+    ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+      CHECK (type IN ('follow','comment','like','mention','session_comment'));
   `);
   console.log('Database schema ready.');
 }

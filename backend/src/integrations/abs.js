@@ -60,7 +60,12 @@ export function mapItemToBook(item) {
   const media = item.media ?? {};
   const meta = media.metadata ?? {};
   const authors = meta.authors?.map(a => a.name) ?? (meta.authorName ? [meta.authorName] : []);
-  const narrator = meta.narrators?.map(n => n.name).join(', ') ?? meta.narratorName ?? null;
+  const narrator = meta.narrators?.map(n => n.name).filter(Boolean).join(', ') || meta.narratorName || null;
+  // series can be a string or array of {name, sequence} depending on ABS version — normalize to string
+  const rawSeries = meta.series;
+  const seriesName = Array.isArray(rawSeries)
+    ? (rawSeries[0]?.name ?? null)
+    : (typeof rawSeries === 'object' && rawSeries !== null ? rawSeries.name ?? null : rawSeries ?? null);
 
   return {
     title: meta.title ?? item.title ?? 'Unknown',
@@ -71,7 +76,7 @@ export function mapItemToBook(item) {
     extra: {
       narrator,
       duration_minutes: (() => { const d = media.duration ?? meta.duration ?? null; return d != null ? Math.round(d / 60) : null; })(),
-      series: meta.series ?? null,
+      series: seriesName,
       explicit: meta.explicit ?? false,
       publisher: meta.publisher ?? null,
       published_year: meta.publishedYear ?? null,

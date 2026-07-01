@@ -68,7 +68,7 @@ function render(container, users, feed, challenges, groups) {
 
   renderChallengesTab(container.querySelector('#tab-challenges'), challenges, container, users, feed, groups);
   renderGroupsTab(container.querySelector('#tab-groups'), groups, container, users, feed, challenges);
-  attachFeedLikes(container.querySelector('#feed-content'));
+  attachFeedInteractions(container.querySelector('#feed-content'));
 
   function setTab(tab) {
     activeTab = tab;
@@ -113,7 +113,7 @@ function render(container, users, feed, challenges, groups) {
       try {
         const newFeed = await api.getFeed(feedFilter === 'following' ? 'following' : undefined);
         feedContent.innerHTML = renderFeed(newFeed);
-        attachFeedLikes(feedContent);
+        attachFeedInteractions(feedContent);
       } catch {
         feedContent.innerHTML = `<p class="text-muted italic text-center py-10">Could not load feed.</p>`;
       }
@@ -135,6 +135,134 @@ function linkifyMentions(text) {
 
 // ── Feed ───────────────────────────────────────────────────────────────────────
 
+function timeAgo(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d`;
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function renderComment(c) {
+  return `
+    <div class="flex gap-2.5" data-comment-id="${c.id}">
+      ${avatarHTML({ username: c.username, avatarUrl: c.avatar_url }, { size: 22 })}
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <a href="#u/${escHtml(c.username)}"
+             class="text-xs font-semibold text-amber-400/90 hover:text-amber-400 transition-colors">${escHtml(c.username)}</a>
+          <time class="text-[11px] text-muted">${timeAgo(c.created_at)}</time>
+          ${c.is_own
+            ? `<button class="delete-comment-btn ml-auto text-[11px] text-muted hover:text-red-400 transition-colors"
+                        data-id="${c.id}">Delete</button>`
+            : ''}
+        </div>
+        <p class="text-sm text-text/80 leading-relaxed mt-0.5">${linkifyMentions(c.body)}</p>
+      </div>
+    </div>`;
+}
+
+function feedCard(s, user) {
+  const sid = s.session_id ?? s.id;
+  const date = new Date(s.finished_at).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+  });
+  const stars = s.rating
+    ? Array.from({ length: 5 }, (_, i) =>
+        `<span class="${i < s.rating ? 'text-amber-400' : 'text-border'}">★</span>`
+      ).join('')
+    : '';
+  const authors = Array.isArray(s.authors) ? s.authors.join(', ') : (s.authors ?? '');
+  const cover = s.cover_url
+    ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-16 h-24 object-cover rounded-lg shadow-md" loading="lazy" />`
+    : `<div class="w-16 h-24 bg-surface-2 rounded-lg flex-shrink-0"></div>`;
+
+  const likeCount = s.like_count ?? 0;
+  const liked = !!s.liked;
+  const commentCount = s.comment_count ?? 0;
+  const readersCount = s.readers_count ?? 0;
+
+  const likeBtn = user
+    ? `<button class="like-btn flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors hover:bg-surface-2/60 ${liked ? 'text-rose-400' : 'text-muted hover:text-rose-400'}"
+               data-session-id="${sid}" data-liked="${liked}" data-count="${likeCount}">
+         <span class="text-base leading-none">${liked ? '♥' : '♡'}</span>
+         <span class="like-count">${likeCount > 0 ? likeCount : ''}</span>
+       </button>`
+    : likeCount > 0
+    ? `<span class="flex items-center gap-1 text-xs text-muted px-2 py-1"><span class="text-base leading-none">♥</span> ${likeCount}</span>`
+    : '';
+
+  const commentToggle = `
+    <button class="comments-toggle-btn flex items-center gap-1 text-xs px-2 py-1 rounded-md text-muted hover:text-amber-400 transition-colors hover:bg-surface-2/60"
+            data-session-id="${sid}">
+      <span class="text-base leading-none">💬</span>
+      <span class="comment-count-label">${commentCount > 0 ? commentCount : ''}</span>
+    </button>`;
+
+  const readersChip = readersCount > 1
+    ? `<span class="text-xs text-muted px-1">· ${readersCount} read this</span>`
+    : '';
+
+  const addLibBtn = user && !s.is_in_library
+    ? `<button class="add-library-btn text-xs px-2.5 py-1 rounded-md border border-border/50 text-muted hover:border-amber-500/70 hover:text-amber-400 transition-colors whitespace-nowrap"
+               data-google-id="${escHtml(s.google_id ?? '')}"
+               data-title="${escHtml(s.title)}"
+               data-authors="${escHtml(JSON.stringify(s.authors ?? []))}"
+               data-cover="${escHtml(s.cover_url ?? '')}">
+         + Library
+       </button>`
+    : '';
+
+  return `
+    <div class="feed-card rounded-xl bg-surface border border-border/40" data-sid="${sid}">
+      <div class="flex items-center justify-between px-4 pt-3 pb-2.5">
+        <a href="#u/${escHtml(s.username)}" class="flex items-center gap-2 hover:opacity-80 transition-opacity group">
+          ${avatarHTML({ username: s.username, avatarUrl: s.avatar_url }, { size: 22 })}
+          <span class="text-sm font-medium text-amber-400/90 group-hover:text-amber-400 transition-colors">@${escHtml(s.username)}</span>
+        </a>
+        <time class="text-xs text-muted">${date}</time>
+      </div>
+
+      <div class="flex gap-4 px-4 pb-3">
+        <a href="#book/${s.book_id}" class="flex-shrink-0 hover:opacity-90 transition-opacity">${cover}</a>
+        <div class="flex-1 min-w-0">
+          <a href="#book/${s.book_id}"
+             class="font-semibold text-text hover:text-amber-400 transition-colors leading-snug line-clamp-2">${escHtml(s.title)}</a>
+          ${authors ? `<p class="text-xs text-muted mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
+          ${stars   ? `<p class="mt-1.5 leading-none">${stars}</p>` : ''}
+          ${s.review ? `<p class="text-sm text-text/80 mt-2 line-clamp-4 leading-relaxed">${linkifyMentions(s.review)}</p>` : ''}
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1 px-3 py-2 border-t border-border/20">
+        ${likeBtn}
+        ${commentToggle}
+        ${readersChip}
+        <div class="flex-1"></div>
+        ${addLibBtn}
+      </div>
+
+      <div class="comments-panel hidden border-t border-border/20 px-4 py-3"
+           data-sid="${sid}" data-loaded="false">
+        <div class="comments-list space-y-3"></div>
+        ${user ? `
+          <form class="comment-form flex gap-2 mt-3" data-session-id="${sid}">
+            <input type="text"
+              class="comment-input field-input flex-1 text-sm"
+              placeholder="Write a comment…" maxlength="1000" autocomplete="off" />
+            <button type="submit"
+              class="flex-shrink-0 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-xs transition-colors">
+              Post
+            </button>
+          </form>` : ''}
+      </div>
+    </div>`;
+}
+
 function renderFeed(feed) {
   if (!feed.length) {
     const msg = feedFilter === 'following'
@@ -143,69 +271,141 @@ function renderFeed(feed) {
     return `<div class="text-center py-16 text-muted italic">${msg}</div>`;
   }
   const { user } = getState();
-  return `<div class="space-y-3 stagger">
-    ${feed.map(s => {
-      const date = s.finished_at
-        ? new Date(s.finished_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-        : s.started_at
-        ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
-        : '';
-      const stars = s.rating ? Array.from({ length: 5 }, (_, i) =>
-        `<span style="color:${i < s.rating ? 'var(--color-accent)' : 'var(--color-border)'}">★</span>`).join('') : '';
-      const authors = Array.isArray(s.authors) ? s.authors.join(', ') : (s.authors ?? '');
-      const cover = s.cover_url
-        ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" />`
-        : `<div class="w-12 h-[4.5rem] bg-surface-2 rounded-lg flex-shrink-0"></div>`;
-      const likeCount = s.like_count ?? 0;
-      const liked = !!s.liked;
-      const sid = s.session_id ?? s.id;
-      const likeBtn = user ? `
-        <button class="like-btn flex items-center gap-1 text-xs transition-colors p-2 -m-2 touch-manipulation ${liked ? 'text-rose-400' : 'text-muted hover:text-rose-400'}"
-                data-session-id="${sid}" data-liked="${liked}" data-count="${likeCount}">
-          ${liked ? '♥' : '♡'} <span class="like-count">${likeCount > 0 ? likeCount : ''}</span>
-        </button>` : (likeCount > 0 ? `<span class="text-xs text-muted">♥ ${likeCount}</span>` : '');
-      return `
-        <div class="flex gap-4 rounded-xl p-4 transition-colors hover:bg-surface-2/40 bg-surface border border-border/40">
-          <a href="#book/${s.book_id}" class="flex-shrink-0 hover:opacity-90 transition-opacity">${cover}</a>
-          <div class="flex-1 min-w-0">
-            <div class="flex items-start justify-between gap-2 mb-1">
-              <a href="#book/${s.book_id}" class="font-semibold leading-tight line-clamp-2 hover:text-amber-400 transition-colors text-text">${escHtml(s.title)}</a>
-              <div class="flex items-center gap-1.5 flex-shrink-0">
-                ${avatarHTML({ username: s.username, avatarUrl: s.avatar_url }, { size: 20 })}
-                <a href="#u/${escHtml(s.username)}" class="text-xs text-amber-400/80 hover:text-amber-400 font-medium transition-colors">@${escHtml(s.username)}</a>
-              </div>
-            </div>
-            ${authors ? `<p class="text-xs text-muted mt-0.5">${escHtml(authors)}</p>` : ''}
-            ${date    ? `<p class="text-xs text-muted mt-1">${escHtml(date)}</p>` : ''}
-            ${stars   ? `<p class="text-sm mt-1 leading-none">${stars}</p>` : ''}
-            ${s.review ? `<p class="text-sm text-text mt-2 line-clamp-4 leading-relaxed">${linkifyMentions(s.review)}</p>` : ''}
-            <div class="mt-2 flex items-center gap-3">${likeBtn}</div>
-          </div>
-        </div>`;
-    }).join('')}
+  return `<div class="space-y-4 stagger">
+    ${feed.map(s => feedCard(s, user)).join('')}
   </div>`;
 }
 
-function attachFeedLikes(el) {
+function attachFeedInteractions(el) {
   if (!el) return;
-  el.querySelectorAll('.like-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const sid = btn.dataset.sessionId;
-      const wasLiked = btn.dataset.liked === 'true';
-      btn.disabled = true;
+
+  el.addEventListener('click', async e => {
+    // ── Like ──
+    const likeBtn = e.target.closest('.like-btn');
+    if (likeBtn && !likeBtn.disabled) {
+      const sid = likeBtn.dataset.sessionId;
+      const wasLiked = likeBtn.dataset.liked === 'true';
+      likeBtn.disabled = true;
       try {
         const result = wasLiked ? await api.unlikeSession(sid) : await api.likeSession(sid);
         const count = result.likeCount;
-        btn.dataset.liked = String(!wasLiked);
-        btn.dataset.count = count;
-        btn.innerHTML = `${!wasLiked ? '♥' : '♡'} <span class="like-count">${count > 0 ? count : ''}</span>`;
-        btn.className = `like-btn flex items-center gap-1 text-xs transition-colors ${!wasLiked ? 'text-rose-400' : 'text-muted hover:text-rose-400'}`;
+        const nowLiked = !wasLiked;
+        likeBtn.dataset.liked = String(nowLiked);
+        likeBtn.querySelector('.like-count').textContent = count > 0 ? count : '';
+        likeBtn.querySelector('span:first-child').textContent = nowLiked ? '♥' : '♡';
+        likeBtn.className = `like-btn flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors hover:bg-surface-2/60 ${nowLiked ? 'text-rose-400' : 'text-muted hover:text-rose-400'}`;
+      } catch (err) { showToast(err.message, 'error'); }
+      finally { likeBtn.disabled = false; }
+      return;
+    }
+
+    // ── Comments toggle ──
+    const toggleBtn = e.target.closest('.comments-toggle-btn');
+    if (toggleBtn) {
+      const card = toggleBtn.closest('.feed-card');
+      const panel = card?.querySelector('.comments-panel');
+      if (!panel) return;
+      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+      panel.classList.remove('hidden');
+      if (panel.dataset.loaded !== 'true') {
+        const sid = toggleBtn.dataset.sessionId;
+        const list = panel.querySelector('.comments-list');
+        list.innerHTML = `<div class="flex justify-center py-2"><div class="spinner"></div></div>`;
+        try {
+          const comments = await api.getSessionComments(sid);
+          panel.dataset.loaded = 'true';
+          list.innerHTML = comments.length
+            ? comments.map(renderComment).join('')
+            : `<p class="text-xs text-muted italic text-center py-1">No comments yet. Be the first!</p>`;
+        } catch {
+          list.innerHTML = `<p class="text-xs text-red-400 text-center py-1">Could not load comments.</p>`;
+        }
+      }
+      return;
+    }
+
+    // ── Add to library ──
+    const addBtn = e.target.closest('.add-library-btn');
+    if (addBtn && !addBtn.disabled) {
+      addBtn.disabled = true;
+      addBtn.textContent = '…';
+      try {
+        let authors = [];
+        try { authors = JSON.parse(addBtn.dataset.authors); } catch {}
+        await api.addToLibrary({
+          googleId: addBtn.dataset.googleId || undefined,
+          title: addBtn.dataset.title,
+          authors,
+          coverUrl: addBtn.dataset.cover || undefined,
+        });
+        addBtn.textContent = '✓ Added';
+        addBtn.className = 'add-library-btn text-xs px-2.5 py-1 rounded-md border border-green-700/40 text-green-400 cursor-default whitespace-nowrap';
+        showToast('Added to library', 'success');
+      } catch (err) {
+        addBtn.textContent = '+ Library';
+        addBtn.disabled = false;
+        showToast(err.message, 'error');
+      }
+      return;
+    }
+
+    // ── Delete comment ──
+    const delBtn = e.target.closest('.delete-comment-btn');
+    if (delBtn && !delBtn.disabled) {
+      const commentId = delBtn.dataset.id;
+      const panel = delBtn.closest('.comments-panel');
+      const sid = panel?.dataset.sid;
+      delBtn.disabled = true;
+      try {
+        await api.deleteSessionComment(sid, commentId);
+        delBtn.closest('[data-comment-id]')?.remove();
+        const card = panel?.closest('.feed-card');
+        const cntEl = card?.querySelector('.comment-count-label');
+        if (cntEl) {
+          const cur = parseInt(cntEl.textContent || '0', 10);
+          cntEl.textContent = cur > 1 ? cur - 1 : '';
+        }
       } catch (err) {
         showToast(err.message, 'error');
-      } finally {
-        btn.disabled = false;
+        delBtn.disabled = false;
       }
-    });
+    }
+  });
+
+  // ── Comment form submit ──
+  el.addEventListener('submit', async e => {
+    const form = e.target.closest('.comment-form');
+    if (!form) return;
+    e.preventDefault();
+    const sid = form.dataset.sessionId;
+    const input = form.querySelector('.comment-input');
+    const body = input.value.trim();
+    if (!body) return;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    input.disabled = true;
+    try {
+      const comment = await api.addSessionComment(sid, body);
+      input.value = '';
+      const panel = form.closest('.comments-panel');
+      const list = panel?.querySelector('.comments-list');
+      if (list) {
+        const emptyEl = list.querySelector('p.italic');
+        if (emptyEl) emptyEl.remove();
+        list.insertAdjacentHTML('beforeend', renderComment(comment));
+      }
+      const card = form.closest('.feed-card');
+      const cntEl = card?.querySelector('.comment-count-label');
+      if (cntEl) {
+        const cur = parseInt(cntEl.textContent || '0', 10);
+        cntEl.textContent = cur + 1;
+      }
+    } catch (err) { showToast(err.message, 'error'); }
+    finally {
+      submitBtn.disabled = false;
+      input.disabled = false;
+      input.focus();
+    }
   });
 }
 
