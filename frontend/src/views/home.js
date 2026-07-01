@@ -120,26 +120,20 @@ export function renderHome(container) {
         <button id="bulk-cancel-btn" class="px-2 py-1.5 text-muted hover:text-text transition-colors">✕</button>
       </div>
 
-      <!-- Availability filter chips (only shown when integrations have books) -->
-      ${(() => {
-        const hasAbs = library.some(b => (b.availability ?? []).some(a => a.service === 'audiobookshelf'));
-        const hasCalibre = library.some(b => (b.availability ?? []).some(a => a.service === 'calibre'));
-        if (!hasAbs && !hasCalibre) return '';
-        const chip = (val, label, active) =>
-          `<button class="avail-filter-chip flex-shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors
-                          ${active ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-border text-muted hover:border-border/80 hover:text-text'}"
-                   data-avail="${val}">${label}</button>`;
-        return `<div class="flex items-center gap-2 overflow-x-auto">
-          ${chip('', 'All', !availFilter)}
-          ${hasAbs ? chip('audiobookshelf', '🎧 Audio', availFilter === 'audiobookshelf') : ''}
-          ${hasCalibre ? chip('calibre', '📚 Ebook', availFilter === 'calibre') : ''}
-        </div>`;
-      })()}
-
       <!-- Shelf selector bar -->
       <div class="shelf-bar flex items-center gap-2 overflow-x-auto">
         <button class="shelf-chip ${selectedShelfId == null ? 'shelf-chip-active' : 'shelf-chip-idle'}"
                 data-shelf="all">All Books</button>
+        ${(() => {
+          const hasAbs = library.some(b => (b.availability ?? []).some(a => a.service === 'audiobookshelf'));
+          const hasCalibre = library.some(b => (b.availability ?? []).some(a => a.service === 'calibre'));
+          if (!hasAbs && !hasCalibre) return '';
+          const chip = (val, label, active) =>
+            `<button class="avail-filter-chip shelf-chip flex-shrink-0 ${active ? 'shelf-chip-active' : 'shelf-chip-idle'}"
+                     data-avail="${val}">${label}</button>`;
+          return (hasAbs ? chip('audiobookshelf', '🎧 Audio', availFilter === 'audiobookshelf') : '')
+               + (hasCalibre ? chip('calibre', '📚 Ebook', availFilter === 'calibre') : '');
+        })()}
         ${shelves.map(s => `
           <button class="shelf-chip ${selectedShelfId === s.id ? 'shelf-chip-active' : 'shelf-chip-idle'}"
                   data-shelf="${s.id}" style="${selectedShelfId === s.id ? `background:${escHtml(s.color)}22;border-color:${escHtml(s.color)};color:${escHtml(s.color)}` : ''}">
