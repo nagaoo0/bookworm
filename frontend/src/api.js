@@ -116,9 +116,13 @@ export const api = {
   // Challenges
   getChallenges: () => request('/challenges'),
   createChallenge: (data) => request('/challenges', { method: 'POST', body: data }),
+  editChallenge: (id, data) => request(`/challenges/${id}`, { method: 'PATCH', body: data }),
+  deleteChallenge: (id) => request(`/challenges/${id}`, { method: 'DELETE' }),
   joinChallenge: (id) => request(`/challenges/${id}/join`, { method: 'POST' }),
   leaveChallenge: (id) => request(`/challenges/${id}/join`, { method: 'DELETE' }),
   getChallengeLeaderboard: (id) => request(`/challenges/${id}/leaderboard`),
+  addChallengeBook: (id, bookId) => request(`/challenges/${id}/books`, { method: 'POST', body: { bookId } }),
+  removeChallengeBook: (id, bookId) => request(`/challenges/${id}/books/${bookId}`, { method: 'DELETE' }),
 
   // Groups
   getGroups: () => request('/groups'),

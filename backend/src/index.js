@@ -127,7 +127,7 @@ app.get('/api/feed', async (req, res, next) => {
 app.get('/api/users', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT u.username, u.avatar_url, u.accent,
+      `SELECT u.username, u.avatar_url, u.banner_url, u.accent,
               COUNT(DISTINCT lb.id)::INT AS book_count
        FROM users u
        LEFT JOIN library_books lb ON lb.user_id = u.id

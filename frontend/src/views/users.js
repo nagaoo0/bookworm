@@ -28,7 +28,6 @@ export async function renderUsers(container) {
 function render(container, users, feed, challenges, groups) {
   container.innerHTML = `
     <div class="max-w-2xl mx-auto fade-in">
-      <h1 class="font-serif text-2xl font-bold mb-6">Readers</h1>
 
       <div role="tablist" class="flex gap-0 mb-6 border-b border-border overflow-x-auto shelf-bar">
         <button role="tab" class="readers-tab relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-all duration-150" data-tab="feed">Feed</button>
@@ -415,20 +414,22 @@ function renderReadersList(users) {
   if (!users.length) {
     return `<div class="text-center py-16 text-muted italic">No readers yet.</div>`;
   }
-  return `<div class="space-y-2 stagger">
+  return `<div class="grid grid-cols-2 gap-3 stagger">
     ${users.map(u => `
         <a href="#u/${escHtml(u.username)}"
-           class="group flex items-center gap-4 rounded-xl px-5 py-3.5 transition-all duration-200 hover:translate-x-0.5 bg-surface border border-border/40 hover:border-accent/25">
-          <div class="transition-all duration-200 group-hover:scale-105">
-            ${avatarHTML({ username: u.username, avatarUrl: u.avatar_url }, { size: 40 })}
+           class="group block rounded-xl overflow-hidden bg-surface border border-border/40 hover:border-amber-400/30 transition-colors">
+          <div class="h-14 bg-surface-2 overflow-hidden relative">
+            ${u.banner_url
+              ? `<img src="${escHtml(u.banner_url)}" alt="" class="w-full h-full object-cover" />`
+              : `<div class="h-full w-full" style="background:linear-gradient(120deg,${u.accent ? `${escHtml(u.accent)}55` : 'var(--color-accent)'}33 0%,transparent 80%)"></div>`}
           </div>
-          <div class="flex-1 min-w-0">
-            <p class="font-semibold text-text group-hover:text-amber-400 transition-colors">${escHtml(u.username)}</p>
-            <p class="text-xs text-muted mt-0.5">${u.book_count} book${u.book_count !== 1 ? 's' : ''}</p>
+          <div class="flex items-center gap-2.5 px-3 py-2.5">
+            ${avatarHTML({ username: u.username, avatarUrl: u.avatar_url }, { size: 32 })}
+            <div class="flex-1 min-w-0">
+              <p class="font-semibold text-sm text-text group-hover:text-amber-400 transition-colors truncate">${escHtml(u.username)}</p>
+              <p class="text-xs text-muted">${u.book_count} book${u.book_count !== 1 ? 's' : ''}</p>
+            </div>
           </div>
-          <svg class="w-4 h-4 text-muted group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all duration-150 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-          </svg>
         </a>`).join('')}
   </div>`;
 }
@@ -437,9 +438,15 @@ function renderReadersList(users) {
 
 function renderChallengesTab(el, challenges, rootContainer, users, feed, groups) {
   const today = new Date().toISOString().slice(0, 10);
+  const active = challenges.filter(c => c.end_date >= today);
+  const past   = challenges.filter(c => c.end_date < today);
 
-  const active   = challenges.filter(c => c.end_date >= today);
-  const past     = challenges.filter(c => c.end_date < today);
+  async function reload() {
+    try {
+      const ch = await api.getChallenges();
+      renderChallengesTab(el, ch, rootContainer, users, feed, groups);
+    } catch { /* silent */ }
+  }
 
   el.innerHTML = `
     <div class="space-y-6">
@@ -451,21 +458,22 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
 
       <div id="challenge-form-wrap" class="hidden"></div>
 
-      ${active.length ? `
-      <section>
-        <h3 class="text-sm font-semibold text-muted uppercase tracking-wider mb-3">Active</h3>
-        <div class="space-y-3" id="active-challenges">
-          ${active.map(c => challengeCard(c)).join('')}
-        </div>
-      </section>` : `<p class="text-muted italic text-sm text-center py-6">No active challenges yet.</p>`}
+      ${active.length
+        ? `<section>
+            <h3 class="text-sm font-semibold text-muted uppercase tracking-wider mb-3">Active</h3>
+            <div class="space-y-4">${active.map(c => challengeCard(c)).join('')}</div>
+           </section>`
+        : `<p class="text-muted italic text-sm text-center py-6">No active challenges yet.</p>`}
 
-      ${past.length ? `
-      <section>
-        <h3 class="text-sm font-semibold text-muted uppercase tracking-wider mb-3">Past</h3>
-        <div class="space-y-3">${past.map(c => challengeCard(c, true)).join('')}</div>
-      </section>` : ''}
+      ${past.length
+        ? `<section>
+            <h3 class="text-sm font-semibold text-muted uppercase tracking-wider mb-3">Past</h3>
+            <div class="space-y-4">${past.map(c => challengeCard(c, true)).join('')}</div>
+           </section>`
+        : ''}
     </div>`;
 
+  // ── Create form ──
   el.querySelector('#new-challenge-btn')?.addEventListener('click', () => {
     const wrap = el.querySelector('#challenge-form-wrap');
     wrap.classList.toggle('hidden');
@@ -479,55 +487,162 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
           await api.createChallenge({
             title: fd.get('title'),
             description: fd.get('description'),
-            goal: fd.get('goal'),
             startDate: fd.get('startDate'),
             endDate: fd.get('endDate'),
           });
           showToast('Challenge created!', 'success');
-          renderUsers(rootContainer);
-        } catch (err) {
-          errEl.textContent = err.message; errEl.classList.remove('hidden');
-        }
+          await reload();
+        } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
       });
       wrap.querySelector('#cancel-challenge-btn')?.addEventListener('click', () => {
-        wrap.classList.add('hidden');
-        wrap.innerHTML = '';
+        wrap.classList.add('hidden'); wrap.innerHTML = '';
       });
     }
   });
 
+  // ── Join / Leave ──
   el.querySelectorAll('.join-challenge-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      const joined = btn.dataset.joined === 'true';
+      const { id, joined } = btn.dataset;
       try {
-        if (joined) { await api.leaveChallenge(id); }
-        else { await api.joinChallenge(id); }
-        renderUsers(rootContainer);
+        if (joined === 'true') await api.leaveChallenge(id);
+        else await api.joinChallenge(id);
+        await reload();
       } catch (err) { showToast(err.message, 'error'); }
     });
   });
 
+  // ── Edit (inline form toggle) ──
+  el.querySelectorAll('.edit-challenge-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('[data-challenge-id]');
+      card?.querySelector('.edit-challenge-form')?.classList.toggle('hidden');
+    });
+  });
+
+  el.querySelectorAll('.edit-challenge-form').forEach(form => {
+    form.querySelector('.cancel-edit-btn')?.addEventListener('click', () => {
+      form.classList.add('hidden');
+    });
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const id = form.dataset.challengeId;
+      try {
+        await api.editChallenge(id, {
+          title: fd.get('title'),
+          description: fd.get('description'),
+          startDate: fd.get('startDate'),
+          endDate: fd.get('endDate'),
+        });
+        showToast('Challenge updated', 'success');
+        await reload();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+  });
+
+  // ── Delete ──
+  el.querySelectorAll('.delete-challenge-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this challenge? This cannot be undone.')) return;
+      try {
+        await api.deleteChallenge(btn.dataset.id);
+        showToast('Challenge deleted', 'success');
+        await reload();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+  });
+
+  // ── Remove book ──
+  el.querySelectorAll('.remove-book-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api.removeChallengeBook(btn.dataset.challengeId, btn.dataset.bookId);
+        await reload();
+      } catch (err) { showToast(err.message, 'error'); }
+    });
+  });
+
+  // ── Book search (add books) ──
+  let bookSearchTimer;
+  el.querySelectorAll('.book-search-input').forEach(input => {
+    const cid = input.dataset.challengeId;
+    const resultsEl = el.querySelector(`.book-search-results[data-challenge-id="${cid}"]`);
+    input.addEventListener('input', () => {
+      clearTimeout(bookSearchTimer);
+      const q = input.value.trim();
+      if (!q) { resultsEl.classList.add('hidden'); return; }
+      bookSearchTimer = setTimeout(async () => {
+        resultsEl.innerHTML = `<p class="px-3 py-2 text-xs text-muted">Searching…</p>`;
+        resultsEl.classList.remove('hidden');
+        try {
+          const results = await api.search(q);
+          if (!results.length) {
+            resultsEl.innerHTML = `<p class="px-3 py-2 text-xs text-muted italic">No results.</p>`;
+            return;
+          }
+          resultsEl.innerHTML = results.slice(0, 6).map(r => `
+            <button class="add-book-result w-full text-left flex items-center gap-2.5 px-3 py-2 hover:bg-surface transition-colors"
+                    data-google-id="${escHtml(r.googleId ?? '')}" data-challenge-id="${cid}">
+              ${r.coverUrl
+                ? `<img src="${escHtml(r.coverUrl)}" alt="" class="w-7 h-10 object-cover rounded flex-shrink-0" />`
+                : `<div class="w-7 h-10 bg-surface rounded flex-shrink-0"></div>`}
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-medium text-text line-clamp-1">${escHtml(r.title ?? '')}</p>
+                <p class="text-[11px] text-muted line-clamp-1">${Array.isArray(r.authors) ? r.authors.join(', ') : ''}</p>
+              </div>
+            </button>`).join('');
+        } catch {
+          resultsEl.innerHTML = `<p class="px-3 py-2 text-xs text-red-400">Search failed.</p>`;
+        }
+      }, 350);
+    });
+    input.addEventListener('blur', () => {
+      setTimeout(() => { resultsEl.classList.add('hidden'); }, 200);
+    });
+    resultsEl.addEventListener('click', async e => {
+      const btn = e.target.closest('.add-book-result');
+      if (!btn) return;
+      const googleId = btn.dataset.googleId;
+      const cid2 = btn.dataset.challengeId;
+      btn.disabled = true;
+      try {
+        const book = await api.getBookByGoogleId(googleId);
+        await api.addChallengeBook(cid2, book.id);
+        input.value = '';
+        resultsEl.classList.add('hidden');
+        showToast('Book added to challenge', 'success');
+        await reload();
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // ── Leaderboard ──
   el.querySelectorAll('.leaderboard-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       const panel = el.querySelector(`#lb-${id}`);
       if (!panel) return;
       if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
-      panel.innerHTML = `<div class="flex justify-center py-4"><div class="spinner"></div></div>`;
+      panel.innerHTML = `<div class="flex justify-center py-3"><div class="spinner"></div></div>`;
       panel.classList.remove('hidden');
       try {
-        const { leaderboard } = await api.getChallengeLeaderboard(id);
+        const { leaderboard, total } = await api.getChallengeLeaderboard(id);
         panel.innerHTML = leaderboard.length
-          ? `<ol class="space-y-1.5 mt-2">
+          ? `<ol class="space-y-1.5 mt-2 pb-1">
               ${leaderboard.map((u, i) => `
                 <li class="flex items-center gap-3 text-sm">
                   <span class="w-5 text-right text-muted font-mono text-xs">${i + 1}</span>
                   <a href="#u/${escHtml(u.username)}" class="flex-1 text-text hover:text-amber-400">${escHtml(u.username)}</a>
-                  <span class="text-amber-400 font-semibold">${u.books_read}</span>
+                  <span class="text-xs font-semibold ${u.books_read === total && total > 0 ? 'text-green-400' : 'text-amber-400'}">
+                    ${u.books_read}${total ? `/${total}` : ''}
+                  </span>
                 </li>`).join('')}
              </ol>`
-          : `<p class="text-muted text-sm italic mt-2">No participants yet.</p>`;
+          : `<p class="text-muted text-sm italic mt-2 pb-1">No participants yet.</p>`;
       } catch { panel.innerHTML = `<p class="text-red-400 text-xs mt-2">Failed to load.</p>`; }
     });
   });
@@ -536,35 +651,108 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
 function challengeCard(c, isPast = false) {
   const start = new Date(c.start_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   const end   = new Date(c.end_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  const pct   = c.goal > 0 ? Math.min(100, Math.round((c.progress / c.goal) * 100)) : 0;
+  const books = c.books ?? [];
+  const goal  = c.goal ?? 0;
+  const pct   = goal > 0 ? Math.min(100, Math.round((c.progress / goal) * 100)) : 0;
+
   return `
-    <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20">
-      <div class="flex items-start justify-between gap-3 mb-2">
-        <div class="flex-1 min-w-0">
-          <p class="font-semibold text-text">${escHtml(c.title)}</p>
-          ${c.description ? `<p class="text-xs text-muted mt-0.5 line-clamp-2">${escHtml(c.description)}</p>` : ''}
-          <p class="text-xs text-muted mt-1">${start} – ${end} · ${c.goal} books · ${c.participant_count} participant${c.participant_count !== 1 ? 's' : ''}</p>
+    <div class="bg-surface rounded-xl ring-1 ring-border/20 overflow-hidden" data-challenge-id="${c.id}">
+
+      <!-- Header -->
+      <div class="p-4 pb-3">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-text">${escHtml(c.title)}</p>
+            ${c.description ? `<p class="text-xs text-muted mt-0.5 line-clamp-2">${escHtml(c.description)}</p>` : ''}
+            <p class="text-xs text-muted mt-1.5">${start} – ${end} · by @${escHtml(c.created_by)} · ${c.participant_count} joined</p>
+          </div>
+          <div class="flex items-center gap-0.5 flex-shrink-0 -mt-0.5">
+            ${!isPast ? `
+              <button class="join-challenge-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors
+                ${c.joined ? 'bg-surface-2 hover:bg-red-900/40 text-text hover:text-red-400' : 'bg-amber-500 hover:bg-amber-400 text-stone-950'}"
+                data-id="${c.id}" data-joined="${c.joined}">${c.joined ? 'Leave' : 'Join'}</button>` : ''}
+            ${c.is_creator ? `
+              <button class="edit-challenge-btn p-1.5 rounded text-muted hover:text-amber-400 transition-colors" data-id="${c.id}" title="Edit">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              </button>
+              <button class="delete-challenge-btn p-1.5 rounded text-muted hover:text-red-400 transition-colors" data-id="${c.id}" title="Delete">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>` : ''}
+          </div>
         </div>
-        ${!isPast ? `
-        <button class="join-challenge-btn flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
-          ${c.joined ? 'bg-surface-2 hover:bg-red-900/40 text-text hover:text-red-400' : 'bg-amber-500 hover:bg-amber-400 text-stone-950'}"
-          data-id="${c.id}" data-joined="${c.joined}">
-          ${c.joined ? 'Leave' : 'Join'}
-        </button>` : ''}
+
+        ${c.is_creator ? `
+          <form class="edit-challenge-form hidden mt-3 space-y-2 p-3 bg-surface-2 rounded-lg" data-challenge-id="${c.id}">
+            <input name="title" class="field-input w-full text-sm" value="${escHtml(c.title)}" required />
+            <textarea name="description" class="field-input w-full text-sm resize-none" rows="2">${escHtml(c.description ?? '')}</textarea>
+            <div class="flex gap-2">
+              <input name="startDate" type="date" class="field-input flex-1 text-sm" value="${c.start_date}" />
+              <input name="endDate"   type="date" class="field-input flex-1 text-sm" value="${c.end_date}" />
+            </div>
+            <div class="flex gap-2">
+              <button type="submit" class="flex-1 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-xs transition-colors">Save</button>
+              <button type="button" class="cancel-edit-btn px-3 py-1.5 text-muted hover:text-text text-xs rounded-lg">Cancel</button>
+            </div>
+          </form>` : ''}
       </div>
-      ${c.joined && !isPast ? `
-      <div class="mb-2">
-        <div class="flex items-center justify-between text-xs text-muted mb-1">
-          <span>Your progress</span><span>${c.progress} / ${c.goal}</span>
+
+      <!-- Books -->
+      <div class="border-t border-border/20 px-4 py-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold text-muted uppercase tracking-wide">
+            Books${goal > 0 ? ` · ${c.progress}/${goal} done` : ''}
+          </span>
+          ${goal > 0 && c.joined ? `
+            <span class="text-xs font-bold ${pct === 100 ? 'text-green-400' : 'text-amber-400'}">${pct}%</span>` : ''}
         </div>
-        <div class="w-full bg-surface-2 rounded-full h-1.5 overflow-hidden">
-          <div class="h-1.5 rounded-full bg-amber-400 transition-all" style="width:${pct}%"></div>
-        </div>
-      </div>` : ''}
-      <button class="leaderboard-btn text-xs text-muted hover:text-amber-400 transition-colors" data-id="${c.id}">
-        Leaderboard ▾
-      </button>
-      <div id="lb-${c.id}" class="hidden"></div>
+
+        ${goal > 0 && c.joined ? `
+          <div class="w-full bg-surface-2 rounded-full h-1 overflow-hidden mb-3">
+            <div class="h-1 rounded-full transition-all ${pct === 100 ? 'bg-green-400' : 'bg-amber-400'}" style="width:${pct}%"></div>
+          </div>` : ''}
+
+        ${books.length ? `
+          <div class="space-y-2 mb-3">
+            ${books.map(b => `
+              <div class="flex items-center gap-2.5">
+                <a href="#book/${b.book_id}" class="flex-shrink-0 hover:opacity-80 transition-opacity">
+                  ${b.cover_url
+                    ? `<img src="${escHtml(b.cover_url)}" alt="" class="w-8 h-11 object-cover rounded" />`
+                    : `<div class="w-8 h-11 bg-surface-2 rounded"></div>`}
+                </a>
+                <div class="flex-1 min-w-0">
+                  <a href="#book/${b.book_id}" class="text-xs font-medium text-text hover:text-amber-400 transition-colors line-clamp-1">${escHtml(b.title)}</a>
+                  <p class="text-[11px] text-muted line-clamp-1">${Array.isArray(b.authors) ? b.authors.slice(0, 2).join(', ') : (b.authors ?? '')}</p>
+                </div>
+                <span class="flex-shrink-0 text-sm ${b.done ? 'text-green-400' : b.in_library ? 'text-amber-400' : 'text-border'}"
+                      title="${b.done ? 'Finished' : b.in_library ? 'In your library' : 'Not in your library'}">
+                  ${b.done ? '✓' : b.in_library ? '⦿' : '○'}
+                </span>
+                ${c.is_creator ? `
+                  <button class="remove-book-btn flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted hover:text-red-400 transition-colors"
+                          data-challenge-id="${c.id}" data-book-id="${b.book_id}" title="Remove">×</button>` : ''}
+              </div>`).join('')}
+          </div>` : `
+          <p class="text-xs text-muted italic mb-3">${c.is_creator ? 'Search below to add books to this challenge.' : 'No books in this challenge yet.'}</p>`}
+
+        ${c.is_creator ? `
+          <div class="mt-1">
+            <input type="text"
+              class="book-search-input field-input w-full text-sm py-1.5"
+              placeholder="Search to add a book…" autocomplete="off"
+              data-challenge-id="${c.id}" />
+            <div class="book-search-results hidden mt-1 rounded-lg border border-border/40 bg-surface-2 divide-y divide-border/10 max-h-52 overflow-y-auto"
+                 data-challenge-id="${c.id}"></div>
+          </div>` : ''}
+      </div>
+
+      <!-- Leaderboard -->
+      <div class="px-4 py-2.5 border-t border-border/20">
+        <button class="leaderboard-btn text-xs text-muted hover:text-amber-400 transition-colors" data-id="${c.id}">
+          Leaderboard ▾
+        </button>
+        <div id="lb-${c.id}" class="hidden"></div>
+      </div>
     </div>`;
 }
 
@@ -575,7 +763,7 @@ function challengeCreateForm() {
       <p class="text-sm font-semibold">New challenge</p>
       <div>
         <label class="text-xs text-muted block mb-1">Title</label>
-        <input name="title" required placeholder="e.g. Read 5 sci-fi books in July"
+        <input name="title" required placeholder="e.g. Classic novels of 2025"
           class="field-input w-full" />
       </div>
       <div>
@@ -583,23 +771,17 @@ function challengeCreateForm() {
         <textarea name="description" rows="2" placeholder="What's the challenge about?"
           class="field-input w-full resize-none"></textarea>
       </div>
-      <div class="grid grid-cols-3 gap-3">
+      <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="text-xs text-muted block mb-1">Goal (books)</label>
-          <input name="goal" type="number" min="1" max="9999" required value="5"
-            class="field-input w-full" />
+          <label class="text-xs text-muted block mb-1">Start date</label>
+          <input name="startDate" type="date" required value="${today}" class="field-input w-full" />
         </div>
         <div>
-          <label class="text-xs text-muted block mb-1">Start</label>
-          <input name="startDate" type="date" required value="${today}"
-            class="field-input w-full" />
-        </div>
-        <div>
-          <label class="text-xs text-muted block mb-1">End</label>
-          <input name="endDate" type="date" required
-            class="field-input w-full" />
+          <label class="text-xs text-muted block mb-1">End date</label>
+          <input name="endDate" type="date" required class="field-input w-full" />
         </div>
       </div>
+      <p class="text-xs text-muted">After creating, add the specific books from the challenge card.</p>
       <p id="challenge-err" class="text-xs text-red-400 hidden"></p>
       <div class="flex gap-2">
         <button type="submit"

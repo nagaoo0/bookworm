@@ -277,6 +277,15 @@ export async function migrate() {
     ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
     ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
       CHECK (type IN ('follow','comment','like','mention','session_comment'));
+
+    -- Challenge redesign: book-list-based progress instead of numeric goal
+    ALTER TABLE challenges DROP CONSTRAINT IF EXISTS challenges_goal_check;
+
+    CREATE TABLE IF NOT EXISTS challenge_books (
+      challenge_id INT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+      book_id      INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      PRIMARY KEY (challenge_id, book_id)
+    );
   `);
   console.log('Database schema ready.');
 }
