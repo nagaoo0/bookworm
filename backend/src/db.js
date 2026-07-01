@@ -189,7 +189,7 @@ export async function migrate() {
     -- Extend notification types (idempotent swap)
     ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
     ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-      CHECK (type IN ('follow','comment','like','mention'));
+      CHECK (type IN ('follow','comment','like','mention','session_comment'));
 
     -- Reading challenges
     CREATE TABLE IF NOT EXISTS challenges (
