@@ -139,9 +139,7 @@ async function upsertAvailability(userId, bookId, service, externalId, formats, 
      ON CONFLICT (user_id, book_id, service)
      DO UPDATE SET external_id = EXCLUDED.external_id,
                    formats     = EXCLUDED.formats,
-                   -- merge: fresh keys win, but keys only present in the old
-                   -- extra (e.g. cached kobo_content_id) survive the sync
-                   extra       = book_availability.extra || EXCLUDED.extra,
+                   extra       = EXCLUDED.extra,
                    last_seen_at = now()`,
     [userId, bookId, service, externalId ?? null, formats ?? [], extra ?? {}]
   );
@@ -225,23 +223,6 @@ async function syncABS(userId, config) {
 // This is called after the OPDS book list sync so book_availability exists.
 // ---------------------------------------------------------------------------
 
-// Author names arrive in different shapes ("Frank Herbert" vs "Herbert, Frank"):
-// compare as sorted letter-only word tokens so both forms produce the same key.
-function authorKey(name) {
-  return (name ?? '').toLowerCase().split(/[^a-z]+/).filter(Boolean).sort().join('');
-}
-
-// Title candidates: full normalized title plus the subtitle-stripped variant,
-// so "Dune: Deluxe Edition" still matches a library row titled "Dune".
-function titleKeys(title) {
-  const keys = new Set();
-  const full = normalize(title);
-  if (full) keys.add(full);
-  const main = normalize(String(title ?? '').split(':')[0]);
-  if (main) keys.add(main);
-  return [...keys];
-}
-
 async function syncCalibreKoboProgress(userId, config) {
   if (!config.koboToken) return;
 
@@ -252,108 +233,91 @@ async function syncCalibreKoboProgress(userId, config) {
     console.warn(`[sync] Kobo progress fetch for user ${userId} failed: ${err.message}`);
     return;
   }
-  if (!items.length) return;
-
-  // Build lookup maps once so per-item matching happens in memory — this lets
-  // the fallbacks be more flexible than SQL equality allows.
-
-  // contentId → book_id via book_availability. calibre_uuid (captured from the
-  // OPDS <id> tag) is the same UUID Calibre-Web's Kobo endpoints use, so this
-  // is the deterministic path; kobo_content_id covers rows matched by fallback
-  // on earlier runs, before calibre_uuid existed.
-  const { rows: avail } = await pool.query(
-    `SELECT book_id, external_id,
-            extra->>'calibre_uuid'    AS calibre_uuid,
-            extra->>'kobo_content_id' AS kobo_content_id
-     FROM book_availability WHERE user_id=$1 AND service='calibre'`,
-    [userId]
-  );
-  const byContentId = new Map();
-  for (const a of avail) {
-    if (a.external_id)     byContentId.set(a.external_id.toLowerCase(), a.book_id);
-    if (a.kobo_content_id) byContentId.set(a.kobo_content_id.toLowerCase(), a.book_id);
-    if (a.calibre_uuid)    byContentId.set(a.calibre_uuid.toLowerCase(), a.book_id);
-  }
-
-  // ISBN and title maps across the user's whole library (not just calibre rows,
-  // so books added manually or via ABS still pick up Kobo progress).
-  const { rows: libRows } = await pool.query(
-    `SELECT lb.book_id, b.isbn13, b.isbn10, b.title, b.authors
-     FROM library_books lb JOIN books b ON b.id = lb.book_id
-     WHERE lb.user_id=$1`,
-    [userId]
-  );
-  const byIsbn = new Map();
-  const byTitle = new Map(); // normalized title → [{ bookId, authorKeys }]
-  for (const r of libRows) {
-    if (r.isbn13) byIsbn.set(r.isbn13, r.book_id);
-    if (r.isbn10) byIsbn.set(r.isbn10, r.book_id);
-    const candidate = { bookId: r.book_id, authorKeys: (r.authors ?? []).map(authorKey).filter(Boolean) };
-    for (const key of titleKeys(r.title)) {
-      if (!byTitle.has(key)) byTitle.set(key, []);
-      byTitle.get(key).push(candidate);
-    }
-  }
-
-  const matchByTitle = (title, authors) => {
-    const itemAuthorKeys = (authors ?? []).map(authorKey).filter(Boolean);
-    let authorlessHit = null;
-    for (const key of titleKeys(title)) {
-      for (const c of byTitle.get(key) ?? []) {
-        if (itemAuthorKeys.length && c.authorKeys.length) {
-          if (c.authorKeys.some(a => itemAuthorKeys.includes(a))) return c.bookId;
-        } else {
-          // one side has no author info — remember it, but prefer a real author match
-          authorlessHit ??= c.bookId;
-        }
-      }
-    }
-    return authorlessHit;
-  };
-
-  let applied = 0;
-  const unmatched = [];
 
   for (const item of items) {
     const { contentId, status, progressPct, title, authors, isbn } = item;
     if (!status && progressPct === null) continue;
 
-    const bookId =
-      (contentId ? byContentId.get(String(contentId).toLowerCase()) : null) ??
-      (isbn ? byIsbn.get(isbn) : null) ??
-      (title ? matchByTitle(title, authors) : null);
+    let bookId = null;
 
-    if (!bookId) {
-      unmatched.push(title ?? String(contentId ?? 'unknown'));
-      continue;
+    // 1) UUID match via book_availability (exact, fast)
+    if (contentId) {
+      const { rows: [avail] } = await pool.query(
+        `SELECT book_id FROM book_availability
+         WHERE user_id=$1 AND service='calibre'
+           AND (external_id=$2 OR extra->>'kobo_content_id'=$2)
+         LIMIT 1`,
+        [userId, String(contentId)]
+      );
+      if (avail) bookId = avail.book_id;
     }
 
-    // Cache the contentId so ChangedReadingState entries (which carry no
-    // metadata, only the UUID) match directly on future syncs.
-    if (contentId && byContentId.get(String(contentId).toLowerCase()) !== bookId) {
-      byContentId.set(String(contentId).toLowerCase(), bookId);
+    // 2) ISBN fallback — look for any book the user has in their library with this ISBN
+    if (!bookId && isbn) {
+      const { rows: [row] } = await pool.query(
+        `SELECT lb.book_id FROM library_books lb
+         JOIN books b ON b.id = lb.book_id
+         WHERE lb.user_id=$1 AND (b.isbn13=$2 OR b.isbn10=$2)
+         LIMIT 1`,
+        [userId, isbn]
+      );
+      if (row) bookId = row.book_id;
+    }
+
+    // 3) Normalized title + first author fallback
+    if (!bookId && title) {
+      const normTitle  = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normAuthor = (authors?.[0] ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const q = normAuthor
+        ? `SELECT lb.book_id FROM library_books lb
+           JOIN books b ON b.id = lb.book_id
+           WHERE lb.user_id=$1
+             AND lower(regexp_replace(b.title,'[^a-zA-Z0-9]','','g'))   = $2
+             AND lower(regexp_replace(b.authors[1],'[^a-zA-Z0-9]','','g')) = $3
+           LIMIT 1`
+        : `SELECT lb.book_id FROM library_books lb
+           JOIN books b ON b.id = lb.book_id
+           WHERE lb.user_id=$1
+             AND lower(regexp_replace(b.title,'[^a-zA-Z0-9]','','g')) = $2
+           LIMIT 1`;
+      const params = normAuthor ? [userId, normTitle, normAuthor] : [userId, normTitle];
+      const { rows: [row] } = await pool.query(q, params);
+      if (row) bookId = row.book_id;
+    }
+
+    if (!bookId) continue;
+
+    // Cache the contentId UUID on book_availability so future syncs skip fallback
+    if (contentId) {
       await pool.query(
         `UPDATE book_availability
          SET extra = jsonb_set(extra, '{kobo_content_id}', $3::jsonb)
-         WHERE user_id=$1 AND service='calibre' AND book_id=$2`,
+         WHERE user_id=$1 AND service='calibre' AND book_id=$2
+           AND extra->>'kobo_content_id' IS NULL`,
         [userId, bookId, JSON.stringify(String(contentId))]
       );
     }
 
     // Update status (only promote: to_read→reading→done, never demote done)
-    // and progress percentage in one shot.
-    await pool.query(
-      `UPDATE library_books SET
-         status = CASE
-           WHEN $3 = 'done'                           THEN 'done'
-           WHEN $3 = 'reading' AND status = 'to_read' THEN 'reading'
+    if (status) {
+      await pool.query(
+        `UPDATE library_books SET status = CASE
+           WHEN $3 = 'done'                                     THEN 'done'
+           WHEN $3 = 'reading' AND status = 'to_read'           THEN 'reading'
            ELSE status
-         END,
-         progress_pct = COALESCE($4, progress_pct)
-       WHERE user_id=$1 AND book_id=$2`,
-      [userId, bookId, status ?? null, progressPct]
-    );
-    applied++;
+         END
+         WHERE user_id=$1 AND book_id=$2`,
+        [userId, bookId, status]
+      );
+    }
+
+    // Update progress percentage
+    if (progressPct !== null) {
+      await pool.query(
+        `UPDATE library_books SET progress_pct=$3 WHERE user_id=$1 AND book_id=$2`,
+        [userId, bookId, progressPct]
+      );
+    }
 
     // Auto-create a finished reading session if needed
     if (status === 'done') {
@@ -362,10 +326,7 @@ async function syncCalibreKoboProgress(userId, config) {
     }
   }
 
-  console.log(
-    `[sync] Kobo progress for user ${userId}: ${items.length} entries, ${applied} applied, ${unmatched.length} unmatched` +
-    (unmatched.length ? ` (${unmatched.slice(0, 5).join('; ')}${unmatched.length > 5 ? '; …' : ''})` : '')
-  );
+  console.log(`[sync] Kobo progress applied for user ${userId}: ${items.length} entries`);
 }
 
 async function syncCalibre(userId, config) {

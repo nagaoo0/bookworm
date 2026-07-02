@@ -154,11 +154,6 @@ export function mapBookToBookworm(entry) {
   const idMatch = (acqLink?.['@_href'] ?? '').match(/\/download\/(\d+)\//);
   const calibreId = idMatch?.[1] ?? String(entry.id ?? '');
 
-  // Book UUID from <id>urn:uuid:…</id> — Calibre-Web's Kobo sync endpoints
-  // identify books by this same UUID, so it is the join key for progress sync.
-  const uuidMatch = String(entry.id ?? '').match(/urn:uuid:([0-9a-f-]{36})/i);
-  const calibreUuid = uuidMatch?.[1]?.toLowerCase() ?? null;
-
   return {
     title,
     authors,
@@ -166,6 +161,6 @@ export function mapBookToBookworm(entry) {
     cover_url: null, // resolved by caller via getCoverUrl()
     description: typeof entry.summary === 'string' ? entry.summary : null,
     _calibreId: calibreId,
-    extra: { calibre_id: calibreId, calibre_uuid: calibreUuid, formats },
+    extra: { calibre_id: calibreId, formats },
   };
 }

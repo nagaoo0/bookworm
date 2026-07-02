@@ -81,10 +81,7 @@ export async function fetchKoboProgress(config) {
       const authors = meta?.Authors
         ? meta.Authors.map(a => (typeof a === 'object' ? (a.Name ?? '') : String(a))).filter(Boolean)
         : null;
-      // Kobo metadata ISBNs often contain dashes — strip to bare digits
-      const isbn = meta?.ISBN
-        ? String(meta.ISBN).replace(/[^0-9Xx]/g, '').toUpperCase() || null
-        : null;
+      const isbn = meta?.ISBN ?? null;
 
       results.push({
         contentId,
