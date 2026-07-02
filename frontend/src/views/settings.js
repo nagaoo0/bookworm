@@ -614,6 +614,7 @@ function renderIntegrationsSection(integrations = []) {
   const byService = Object.fromEntries(integrations.map(i => [i.service, i]));
   const abs = byService.audiobookshelf;
   const cal = byService.calibre;
+  const calKobo = cal?.kobo_connected;
 
   const fmtDate = d => d ? new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -717,6 +718,19 @@ function renderIntegrationsSection(integrations = []) {
                 class="field-input w-full" />
             </div>
           </details>
+
+          <hr class="border-border/40" />
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <label class="text-xs text-muted">Kobo sync token <span class="text-muted">(optional)</span></label>
+              ${calKobo ? statusBadge(true) : ''}
+            </div>
+            <input id="calibre-kobo-token" type="password" placeholder="Paste token from Calibre-Web → Connect to Kobo"
+              value="${calKobo ? '••••••••' : ''}"
+              class="field-input w-full" />
+            <p class="text-xs text-muted mt-1">Syncs reading progress and status from your Kobo device via Calibre-Web. Get the token in Calibre-Web under <strong>Settings → Connect to Kobo</strong>.</p>
+          </div>
+
           ${cal ? `<p class="text-xs text-muted">Last synced: ${fmtDate(cal.last_synced_at)}</p>` : ''}
           <div class="flex gap-2 flex-wrap">
             <button id="calibre-save-btn"
@@ -804,12 +818,14 @@ function attachIntegrationsHandlers(container) {
       return;
     }
     const opdsPath = container.querySelector('#calibre-opds-path')?.value.trim();
+    const rawKoboToken = container.querySelector('#calibre-kobo-token')?.value.trim();
     try {
       await api.saveIntegration('calibre', {
         serverUrl: url,
         ...(username && username !== '••' ? { username } : {}),
         ...(password ? { password } : {}),
         ...(opdsPath ? { opdsStartPath: opdsPath } : {}),
+        ...(rawKoboToken && rawKoboToken !== '••••••••' ? { koboToken: rawKoboToken } : {}),
       });
       showIntMsg(container, 'calibre-msg', 'Connected! Initial sync starting in the background.');
       api.syncIntegration('calibre').catch(() => {});

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db.js';
 import * as absClient from '../integrations/abs.js';
 import * as calibreClient from '../integrations/calibre.js';
+import * as koboClient from '../integrations/koboSync.js';
 import {
   syncService,
   startContinuousSync,
@@ -23,7 +24,9 @@ router.get('/', async (req, res, next) => {
               config->>'serverUrl' AS server_url,
               CASE WHEN config->>'accessToken' IS NOT NULL THEN true
                    WHEN config->>'token' IS NOT NULL THEN true
-                   ELSE false END AS connected
+                   ELSE false END AS connected,
+              CASE WHEN config->>'koboToken' IS NOT NULL THEN true
+                   ELSE false END AS kobo_connected
        FROM integrations WHERE user_id=$1`,
       [req.user.id]
     );
@@ -46,6 +49,7 @@ router.put('/:service', async (req, res, next) => {
     if (service === 'audiobookshelf') await absClient.testConnection(config);
     if (service === 'calibre') {
       await calibreClient.testConnection(config);
+      if (config.koboToken) await koboClient.testKoboToken(config);
     }
 
     await pool.query(
