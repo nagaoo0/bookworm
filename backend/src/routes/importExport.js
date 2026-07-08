@@ -221,15 +221,17 @@ router.post('/import', async (req, res) => {
 
 async function backfillCovers() {
   const { rows } = await pool.query(
-    `SELECT id, google_id, open_library_id FROM books
-     WHERE (google_id IS NOT NULL OR open_library_id IS NOT NULL) AND cover_url IS NULL
+    `SELECT id, google_id, open_library_id, apple_id FROM books
+     WHERE (google_id IS NOT NULL OR open_library_id IS NOT NULL OR apple_id IS NOT NULL) AND cover_url IS NULL
      LIMIT 50`
   );
   for (const book of rows) {
     try {
       const meta = book.google_id
         ? await getExternalBook('google', book.google_id)
-        : await getExternalBook('openlibrary', book.open_library_id);
+        : book.open_library_id
+          ? await getExternalBook('openlibrary', book.open_library_id)
+          : await getExternalBook('apple', book.apple_id);
       if (meta.coverUrl || meta.categories) {
         await pool.query(
           `UPDATE books SET

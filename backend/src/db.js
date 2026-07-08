@@ -55,6 +55,10 @@ export async function migrate() {
     ALTER TABLE books ADD COLUMN IF NOT EXISTS open_library_id TEXT;
     CREATE UNIQUE INDEX IF NOT EXISTS books_open_library_id_key ON books (open_library_id);
 
+    -- Third metadata source: Apple Books (iTunes) track id
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS apple_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS books_apple_id_key ON books (apple_id);
+
     -- Users
     CREATE TABLE IF NOT EXISTS users (
       id            SERIAL PRIMARY KEY,

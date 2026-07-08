@@ -52,8 +52,9 @@ index.js          Express app, mounts all routers, runs migration on boot
 db.js             pg Pool, connection retry loop, schema migration SQL
 googleBooks.js    Google Books API proxy — search and single-book fetch
 openLibrary.js    Open Library API proxy — same normalized shape as googleBooks.js
-bookProviders.js  Aggregator: queries both sources in parallel, interleaves +
-                  dedupes results; one source failing never hides the other
+appleBooks.js     Apple Books (iTunes Search API) proxy — same normalized shape
+bookProviders.js  Aggregator: queries all sources in parallel, interleaves +
+                  dedupes results; one source failing never hides the others
 
 routes/
   shelves.js      CRUD for shelves table
@@ -70,6 +71,7 @@ routes/
 ```sql
 books
   id, google_id (unique, nullable), open_library_id (unique, nullable),
+  apple_id (unique, nullable),
   title, authors[], cover_url, page_count, published_date, description, created_at
 
 shelves
@@ -84,7 +86,7 @@ reading_sessions
 
 **Key design decisions:**
 
-- `books` holds canonical metadata — one row per unique title. `google_id` / `open_library_id` are used for upsert on re-add; manual books have both `= NULL` and always insert a new row.
+- `books` holds canonical metadata — one row per unique title. `google_id` / `open_library_id` / `apple_id` are used for upsert on re-add; manual books have all three `= NULL` and always insert a new row.
 - `library_books` is the join between a user's library and a shelf. One row per shelf placement.
 - `reading_sessions` enables re-reading: each read-through is a separate row. Stats count `finished_at IS NOT NULL` sessions, so a book read three times counts three times.
 - Built-in shelves (`is_builtin = true`) cannot be renamed or deleted via the API.
@@ -106,8 +108,8 @@ reading_sessions
 | POST | `/api/books/:id/sessions` | Log a session `{startedAt?, finishedAt?, rating?, review?}` |
 | PATCH | `/api/books/:id/sessions/:sid` | Update a session |
 | DELETE | `/api/books/:id/sessions/:sid` | Delete a session |
-| GET | `/api/search?q=&title=&author=&subject=&publisher=&isbn=` | Search Google Books + Open Library |
-| GET | `/api/books/by-external/:source/:externalId` | Resolve/upsert a book by external id (`google` or `openlibrary`) |
+| GET | `/api/search?q=&title=&author=&subject=&publisher=&isbn=` | Search Google Books + Open Library + Apple Books |
+| GET | `/api/books/by-external/:source/:externalId` | Resolve/upsert a book by external id (`google`, `openlibrary` or `apple`) |
 | GET | `/api/stats` | Aggregated reading stats |
 
 Google Books search supports these query params (any combination):

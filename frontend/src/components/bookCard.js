@@ -87,6 +87,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
              data-lib-id="${book.id ?? ''}"
              data-google-id="${escHtml(book.googleId ?? '')}"
              data-open-library-id="${escHtml(book.openLibraryId ?? '')}"
+             data-apple-id="${escHtml(book.appleId ?? '')}"
              data-notes="${escHtml(book.notes ?? '')}"
              data-progress-pct="${pct ?? ''}">
       <div class="relative w-full aspect-[2/3] rounded-lg overflow-hidden bg-surface-2

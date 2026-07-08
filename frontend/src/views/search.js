@@ -256,7 +256,7 @@ function renderResults(container, results) {
   // works whichever source the result came from
   const libraryByExternalId = {};
   for (const lb of library) {
-    for (const key of [lb.google_id && `g:${lb.google_id}`, lb.open_library_id && `ol:${lb.open_library_id}`]) {
+    for (const key of [lb.google_id && `g:${lb.google_id}`, lb.open_library_id && `ol:${lb.open_library_id}`, lb.apple_id && `a:${lb.apple_id}`]) {
       if (!key) continue;
       if (!libraryByExternalId[key]) libraryByExternalId[key] = [];
       libraryByExternalId[key].push(lb);
@@ -271,7 +271,8 @@ function renderResults(container, results) {
     if (!book) return;
 
     const detailHash = book.googleId ? `#book/g:${book.googleId}`
-                     : book.openLibraryId ? `#book/ol:${book.openLibraryId}` : null;
+                     : book.openLibraryId ? `#book/ol:${book.openLibraryId}`
+                     : book.appleId ? `#book/a:${book.appleId}` : null;
 
     // Clicking the card body navigates to the detail page; add-area handles its own clicks
     if (detailHash) {
@@ -282,7 +283,11 @@ function renderResults(container, results) {
       });
     }
 
-    const existing = libraryByExternalId[book.googleId ? `g:${book.googleId}` : `ol:${book.openLibraryId}`] ?? [];
+    const existing = libraryByExternalId[
+      book.googleId ? `g:${book.googleId}`
+      : book.openLibraryId ? `ol:${book.openLibraryId}`
+      : `a:${book.appleId}`
+    ] ?? [];
 
     if (existing.length) {
       addArea.innerHTML = `
@@ -323,6 +328,7 @@ function renderResults(container, results) {
         const result = await api.addToLibrary({
           googleId:      book.googleId,
           openLibraryId: book.openLibraryId,
+          appleId:       book.appleId,
           title:         book.title,
           authors:       book.authors,
           coverUrl:      book.coverUrl,

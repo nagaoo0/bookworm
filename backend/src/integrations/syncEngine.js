@@ -87,19 +87,21 @@ async function enrichBook(bookId, { title, authors, isbn13 }) {
       `UPDATE books SET
          google_id       = COALESCE(google_id, $1),
          open_library_id = COALESCE(open_library_id, $2),
-         cover_url       = COALESCE(NULLIF(cover_url, ''), $3),
-         description     = COALESCE(NULLIF(description, ''), $4),
-         page_count      = COALESCE(page_count, $5),
-         categories      = COALESCE(categories, $6),
-         published_date  = COALESCE(published_date, $7)
-       WHERE id = $8`,
+         apple_id        = COALESCE(apple_id, $3),
+         cover_url       = COALESCE(NULLIF(cover_url, ''), $4),
+         description     = COALESCE(NULLIF(description, ''), $5),
+         page_count      = COALESCE(page_count, $6),
+         categories      = COALESCE(categories, $7),
+         published_date  = COALESCE(published_date, $8)
+       WHERE id = $9`,
       [
-        m.googleId  ?? null, m.openLibraryId ?? null, m.coverUrl   ?? null,
-        m.description ?? null, m.pageCount   ?? null, m.categories ?? null,
-        m.publishedDate ?? null, bookId,
+        m.googleId  ?? null, m.openLibraryId ?? null, m.appleId ?? null,
+        m.coverUrl  ?? null, m.description   ?? null, m.pageCount ?? null,
+        m.categories ?? null, m.publishedDate ?? null, bookId,
       ]
     );
-    console.log(`[sync] enriched book ${bookId} "${title}" via ${m.source === 'google' ? 'Google Books' : 'Open Library'}`);
+    const sourceNames = { google: 'Google Books', openlibrary: 'Open Library', apple: 'Apple Books' };
+    console.log(`[sync] enriched book ${bookId} "${title}" via ${sourceNames[m.source] ?? m.source}`);
   } catch (err) {
     console.warn(`[sync] enrichBook ${bookId} failed: ${err.message}`);
   }

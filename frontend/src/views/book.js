@@ -13,6 +13,7 @@ function recHref(b) {
   if (b.id) return '#book/' + b.id;
   if (b.google_id) return '#book/g:' + b.google_id;
   if (b.open_library_id) return '#book/ol:' + b.open_library_id;
+  if (b.apple_id) return '#book/a:' + b.apple_id;
   return null;
 }
 
@@ -46,11 +47,12 @@ export async function renderBook(container, bookId) {
   try {
     const { library, shelves, user } = getState();
 
-    // Support #book/g:<googleId> and #book/ol:<openLibraryId> — resolve to a
-    // DB record first, then rewrite URL
+    // Support #book/g:<googleId>, #book/ol:<openLibraryId> and #book/a:<appleId>
+    // — resolve to a DB record first, then rewrite URL
     let resolvedId = bookId;
     const external = bookId.startsWith('g:') ? ['google', bookId.slice(2)]
                    : bookId.startsWith('ol:') ? ['openlibrary', bookId.slice(3)]
+                   : bookId.startsWith('a:') ? ['apple', bookId.slice(2)]
                    : null;
     if (external) {
       const resolved = await api.getBookByExternalId(external[0], external[1]);
@@ -333,6 +335,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
       await api.addToLibrary({
         googleId:      book.google_id,
         openLibraryId: book.open_library_id,
+        appleId:       book.apple_id,
         title:         book.title,
         authors:       book.authors,
         coverUrl:      book.cover_url,
@@ -1087,6 +1090,7 @@ async function runMetaSearch(container, q, libId, onAttached) {
           await api.updateMetadata(libId, {
             googleId:      b.googleId,
             openLibraryId: b.openLibraryId,
+            appleId:       b.appleId,
             coverUrl:      b.coverUrl,
             categories:    b.categories,
             pageCount:     b.pageCount,

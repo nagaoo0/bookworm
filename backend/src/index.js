@@ -151,7 +151,7 @@ async function resolveExternalBook(source, externalId, res, next) {
     }
     // Try the DB first
     const { rows: [existing] } = await pool.query(
-      `SELECT id, google_id, open_library_id, title, authors, cover_url, page_count,
+      `SELECT id, google_id, open_library_id, apple_id, title, authors, cover_url, page_count,
               published_date, description, categories, publisher
        FROM books WHERE ${column} = $1`,
       [externalId]
@@ -171,7 +171,7 @@ async function resolveExternalBook(source, externalId, res, next) {
              published_date = EXCLUDED.published_date,
              description    = EXCLUDED.description,
              categories     = EXCLUDED.categories
-       RETURNING id, google_id, open_library_id, title, authors, cover_url, page_count,
+       RETURNING id, google_id, open_library_id, apple_id, title, authors, cover_url, page_count,
                  published_date, description, categories, publisher`,
       [externalId, b.title, b.authors, b.coverUrl, b.pageCount, b.publishedDate, b.description, b.categories]
     );
@@ -192,7 +192,7 @@ app.get('/api/books/by-google/:googleId', (req, res, next) =>
 app.get('/api/books/:bookId', async (req, res, next) => {
   try {
     const { rows: [book] } = await pool.query(
-      `SELECT id, google_id, open_library_id, title, authors, cover_url, page_count,
+      `SELECT id, google_id, open_library_id, apple_id, title, authors, cover_url, page_count,
               published_date, description, categories, publisher
        FROM books WHERE id = $1`,
       [req.params.bookId]

@@ -245,6 +245,7 @@ async function runMetaSearch(q, libId) {
           await api.updateMetadata(libId, {
             googleId:      b.googleId,
             openLibraryId: b.openLibraryId,
+            appleId:       b.appleId,
             coverUrl:      b.coverUrl,
             categories:    b.categories,
             pageCount:     b.pageCount,
