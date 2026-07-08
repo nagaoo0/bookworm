@@ -36,3 +36,6 @@ desktop.ini
 # ── Misc ───────────────────────────────────────────────────────────────────────
 .claude/
 coverage/
+
+# ── Cover image cache (backend, local dev) ─────────────────────────────────────
+backend/data/

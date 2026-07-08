@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { pickIsbns } from './isbn.js';
 
 const SEARCH_URL = 'https://openlibrary.org/search.json';
 const WORKS_URL  = 'https://openlibrary.org/works';
@@ -9,7 +10,7 @@ const FETCH_TIMEOUT_MS = 8000;
 const HEADERS = { 'User-Agent': 'Bookworm/1.0 (self-hosted reading tracker)' };
 
 // Restrict the search response to the fields we actually normalize
-const SEARCH_FIELDS = 'key,title,author_name,cover_i,first_publish_year,number_of_pages_median,subject,language';
+const SEARCH_FIELDS = 'key,title,author_name,cover_i,first_publish_year,number_of_pages_median,subject,language,isbn';
 
 function fetchWithTimeout(url) {
   const controller = new AbortController();
@@ -18,8 +19,13 @@ function fetchWithTimeout(url) {
 }
 
 function normalizeDoc(doc) {
+  // doc.isbn lists every edition's ISBN — any one identifies the work well
+  // enough for dedup, so take the first valid 13 and 10
+  const { isbn13, isbn10 } = pickIsbns(doc.isbn);
   return {
     openLibraryId: doc.key?.replace('/works/', '') ?? null,
+    isbn13,
+    isbn10,
     title: doc.title ?? 'Unknown Title',
     authors: doc.author_name ?? [],
     coverUrl: doc.cover_i ? `${COVERS_URL}/${doc.cover_i}-L.jpg` : null,

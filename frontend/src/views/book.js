@@ -3,7 +3,7 @@ import { getState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from '../components/starRating.js';
 import { showToast } from '../components/toast.js';
 import { loadLibrary } from './home.js';
-import { escHtml, sourceBadgeHTML } from '../utils.js';
+import { escHtml, sourceBadgeHTML, coverProxySrc } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
 
 // SSE connection for live ABS progress on the currently viewed book
@@ -21,7 +21,7 @@ function recCard(b) {
   const href = recHref(b);
   if (!href) return '';
   const cover = b.cover_url
-    ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
+    ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
     : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2">
          <span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span>
        </div>`;
@@ -130,7 +130,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
   const effectiveCategories  = libEntry?.categories      ?? book.categories;
 
   const coverImg = effectiveCover
-    ? `<img src="${escHtml(effectiveCover)}" alt="${escHtml(book.title)}"
+    ? `<img src="${escHtml(coverProxySrc(effectiveCover, book.id))}" alt="${escHtml(book.title)}"
             id="book-cover-img"
             class="w-full object-cover rounded-xl shadow-2xl cursor-zoom-in" />`
     : `<div class="w-full aspect-[2/3] bg-border/40 rounded-xl flex items-center justify-center">
@@ -280,7 +280,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
             <a href="${href}" class="group flex flex-col flex-shrink-0" style="width:7rem">
               <div class="relative w-full rounded overflow-hidden bg-surface-2 shadow ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all" style="aspect-ratio:2/3">
                 ${b.cover_url
-                  ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
+                  ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
                   : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2"><span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span></div>`}
               </div>
               <p class="mt-1.5 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
@@ -818,7 +818,7 @@ function renderNarratorSection(availability, library, currentBookId) {
       <div class="flex gap-3 overflow-x-auto pb-1">
         ${others.map(b => {
           const cover = b.cover_url
-            ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
+            ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.book_id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
             : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-1 text-[10px] text-center text-muted font-serif">${escHtml(b.title)}</div>`;
           return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-16 group">
             <div class="w-16 h-24 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">${cover}</div>
@@ -848,7 +848,7 @@ function renderSeriesSection(availability, library, currentBookId) {
       <div class="flex gap-3 overflow-x-auto pb-1">
         ${others.map(b => {
           const cover = b.cover_url
-            ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
+            ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.book_id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
             : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-1 text-[10px] text-center text-muted font-serif">${escHtml(b.title)}</div>`;
           return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-16 group">
             <div class="w-16 h-24 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">${cover}</div>

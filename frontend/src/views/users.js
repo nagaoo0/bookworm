@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { getState } from '../store.js';
 import { showToast } from '../components/toast.js';
 import { avatarHTML } from '../components/avatar.js';
-import { escHtml } from '../utils.js';
+import { escHtml, coverProxySrc } from '../utils.js';
 
 let feedFilter = 'all'; // 'all' | 'following'
 let feedFilterSetByUser = false;
@@ -177,7 +177,7 @@ function feedCard(s, user) {
     : '';
   const authors = Array.isArray(s.authors) ? s.authors.join(', ') : (s.authors ?? '');
   const cover = s.cover_url
-    ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-16 h-24 object-cover rounded-lg shadow-md" loading="lazy" />`
+    ? `<img src="${escHtml(coverProxySrc(s.cover_url, s.book_id))}" alt="" class="w-16 h-24 object-cover rounded-lg shadow-md" loading="lazy" />`
     : `<div class="w-16 h-24 bg-surface-2 rounded-lg flex-shrink-0"></div>`;
 
   const likeCount = s.like_count ?? 0;
@@ -901,7 +901,7 @@ function renderGroupsTab(el, groups, rootContainer, _users, _feed, _challenges) 
               ${feed.map(s => {
                 const stars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
                 const cover = s.cover_url
-                  ? `<img src="${escHtml(s.cover_url)}" alt="" class="w-10 h-14 object-cover rounded flex-shrink-0" />`
+                  ? `<img src="${escHtml(coverProxySrc(s.cover_url, s.book_id))}" alt="" class="w-10 h-14 object-cover rounded flex-shrink-0" />`
                   : `<div class="w-10 h-14 bg-surface-2 rounded flex-shrink-0"></div>`;
                 return `
                   <div class="flex gap-3 bg-surface-2 rounded-xl p-3">

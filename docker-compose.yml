@@ -30,6 +30,9 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-1}
       NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
+      COVERS_DIR: /app/data/covers
+    volumes:
+      - covers:/app/data/covers
     depends_on:
       db:
         condition: service_healthy
@@ -44,3 +47,4 @@ services:
 
 volumes:
   pgdata:
+  covers:

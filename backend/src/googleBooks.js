@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { pickIsbns } from './isbn.js';
 
 const BASE = 'https://www.googleapis.com/books/v1/volumes';
 const FETCH_TIMEOUT_MS = 8000;
@@ -15,8 +16,13 @@ function normalize(item) {
     v.imageLinks?.thumbnail?.replace('http://', 'https://') ??
     v.imageLinks?.smallThumbnail?.replace('http://', 'https://') ??
     null;
+  const { isbn13, isbn10 } = pickIsbns(
+    (v.industryIdentifiers ?? []).map(id => id.identifier)
+  );
   return {
     googleId: item.id,
+    isbn13,
+    isbn10,
     title: v.title ?? 'Unknown Title',
     authors: v.authors ?? [],
     coverUrl: cover,

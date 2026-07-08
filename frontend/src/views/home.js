@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
-import { escHtml } from '../utils.js';
+import { escHtml, coverProxySrc } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
 
 // Persists collapse/sort state across re-renders
@@ -971,7 +971,7 @@ async function initRecentlyAdded(container) {
           ${unseen.map(b => {
             const icon = SERVICE_LABEL[b.service] ?? '';
             const cover = b.cover_url
-              ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover">`
+              ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.book_id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover">`
               : `<div class="w-full h-full bg-border/40 flex items-center justify-center text-base">${icon}</div>`;
             return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-14 group">
               <div class="relative w-14 h-20 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">

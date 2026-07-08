@@ -1,8 +1,11 @@
 import { starRatingHTML } from './starRating.js';
-import { escHtml, sourceBadgeHTML } from '../utils.js';
+import { escHtml, sourceBadgeHTML, coverProxySrc } from '../utils.js';
 
 export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false, readOnly = false, alsoRead = false } = {}) {
-  const coverSrc = book.cover_url ?? book.coverUrl ?? null;
+  const coverSrc = coverProxySrc(
+    book.cover_url ?? book.coverUrl ?? null,
+    book.book_id ?? (searchMode ? null : book.id)
+  );
   const coverImg = coverSrc
     ? `<img src="${coverSrc}" alt="${escHtml(book.title)}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />`
     : `<div class="cover-placeholder w-full h-full font-serif text-xs">${escHtml(book.title)}</div>`;

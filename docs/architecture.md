@@ -53,8 +53,10 @@ db.js             pg Pool, connection retry loop, schema migration SQL
 googleBooks.js    Google Books API proxy — search and single-book fetch
 openLibrary.js    Open Library API proxy — same normalized shape as googleBooks.js
 appleBooks.js     Apple Books (iTunes Search API) proxy — same normalized shape
+isbn.js           Shared ISBN normalization + checksum validation helpers
 bookProviders.js  Aggregator: queries all sources in parallel, interleaves +
-                  dedupes results; one source failing never hides the others
+                  dedupes results; one source failing never hides the others.
+                  Aggregated searches are cached in-memory for 10 min
 
 routes/
   shelves.js      CRUD for shelves table
@@ -110,6 +112,7 @@ reading_sessions
 | DELETE | `/api/books/:id/sessions/:sid` | Delete a session |
 | GET | `/api/search?q=&title=&author=&subject=&publisher=&isbn=` | Search Google Books + Open Library + Apple Books |
 | GET | `/api/books/by-external/:source/:externalId` | Resolve/upsert a book by external id (`google`, `openlibrary` or `apple`) |
+| GET | `/api/covers/:bookId?src=` | Cover image proxy — fetches once, caches on disk (`COVERS_DIR`), serves with long-lived cache headers |
 | GET | `/api/stats` | Aggregated reading stats |
 
 Google Books search supports these query params (any combination):

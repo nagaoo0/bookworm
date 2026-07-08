@@ -88,7 +88,7 @@ router.get('/status', async (req, res, next) => {
 // Body: { googleId?, openLibraryId?, appleId?, title, authors, coverUrl, ..., categories?, shelfId?, status? }
 router.post('/', async (req, res) => {
   let { googleId, openLibraryId, appleId, title, authors, coverUrl, pageCount, publishedDate,
-        description, categories, shelfId, status } = req.body;
+        description, categories, isbn13, isbn10, shelfId, status } = req.body;
 
   const source = googleId ? 'google' : openLibraryId ? 'openlibrary' : appleId ? 'apple' : null;
   const externalId = googleId ?? openLibraryId ?? appleId;
@@ -96,7 +96,7 @@ router.post('/', async (req, res) => {
   if (source && !title) {
     try {
       const meta = await getExternalBook(source, externalId);
-      ({ title, authors, coverUrl, pageCount, publishedDate, description, categories } = meta);
+      ({ title, authors, coverUrl, pageCount, publishedDate, description, categories, isbn13, isbn10 } = meta);
     } catch {
       return res.status(502).json({ error: 'Could not fetch book metadata' });
     }
@@ -112,24 +112,28 @@ router.post('/', async (req, res) => {
     if (source) {
       const column = googleId ? 'google_id' : openLibraryId ? 'open_library_id' : 'apple_id';
       const { rows } = await client.query(
-        `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories, isbn13, isbn10)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (${column}) DO UPDATE SET
            title      = EXCLUDED.title,
            authors    = EXCLUDED.authors,
            cover_url  = EXCLUDED.cover_url,
-           categories = COALESCE(EXCLUDED.categories, books.categories)
+           categories = COALESCE(EXCLUDED.categories, books.categories),
+           isbn13     = COALESCE(books.isbn13, EXCLUDED.isbn13),
+           isbn10     = COALESCE(books.isbn10, EXCLUDED.isbn10)
          RETURNING id`,
         [externalId, title, authors ?? [], coverUrl ?? null, pageCount ?? null,
-         publishedDate ?? null, description ?? null, categories ?? null]
+         publishedDate ?? null, description ?? null, categories ?? null,
+         isbn13 ?? null, isbn10 ?? null]
       );
       bookId = rows[0].id;
     } else {
       const { rows } = await client.query(
-        `INSERT INTO books (title, authors, cover_url, page_count, published_date, description, categories)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        `INSERT INTO books (title, authors, cover_url, page_count, published_date, description, categories, isbn13, isbn10)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
         [title, authors ?? [], coverUrl ?? null, pageCount ?? null,
-         publishedDate ?? null, description ?? null, categories ?? null]
+         publishedDate ?? null, description ?? null, categories ?? null,
+         isbn13 ?? null, isbn10 ?? null]
       );
       bookId = rows[0].id;
     }
@@ -504,6 +508,7 @@ router.post('/merge', async (req, res, next) => {
          apple_id        = COALESCE(b_keep.apple_id,        $5),
          cover_url      = COALESCE(b_keep.cover_url,      b_rem.cover_url),
          isbn13         = COALESCE(b_keep.isbn13,         b_rem.isbn13),
+         isbn10         = COALESCE(b_keep.isbn10,         b_rem.isbn10),
          description    = COALESCE(b_keep.description,    b_rem.description),
          page_count     = COALESCE(b_keep.page_count,     b_rem.page_count),
          categories     = COALESCE(b_keep.categories,     b_rem.categories),
@@ -598,10 +603,12 @@ router.post('/fetch-covers', async (req, res, next) => {
              description     = COALESCE(description, $5),
              page_count      = COALESCE(page_count, $6),
              categories      = COALESCE(categories, $7),
-             published_date  = COALESCE(published_date, $8)
-           WHERE id = $9`,
+             published_date  = COALESCE(published_date, $8),
+             isbn13          = COALESCE(isbn13, $9),
+             isbn10          = COALESCE(isbn10, $10)
+           WHERE id = $11`,
           [m.coverUrl, m.googleId, m.openLibraryId, m.appleId, m.description, m.pageCount,
-           m.categories, m.publishedDate, book.id]
+           m.categories, m.publishedDate, m.isbn13, m.isbn10, book.id]
         );
         updated++;
       } catch { /* skip this book, non-fatal */ }

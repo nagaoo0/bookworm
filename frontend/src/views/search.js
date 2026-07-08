@@ -336,6 +336,8 @@ function renderResults(container, results) {
           publishedDate: book.publishedDate,
           description:   book.description,
           categories:    book.categories,
+          isbn13:        book.isbn13,
+          isbn10:        book.isbn10,
           shelfId:       shelfId || undefined,
           status,
         });

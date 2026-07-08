@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { isValidIsbn13 } from './isbn.js';
 
 const SEARCH_URL = 'https://itunes.apple.com/search';
 const LOOKUP_URL = 'https://itunes.apple.com/lookup';
@@ -21,9 +22,21 @@ function stripHtml(html) {
     .trim();
 }
 
+// The lookup payload has no ISBN field, but publishers name the cover asset
+// after the ebook's ISBN-13 (…/9781101658055.d.jpg/…) — checksum-validate so
+// a lookalike 13-digit sequence never slips through.
+function isbnFromArtwork(url) {
+  for (const candidate of String(url ?? '').match(/97[89]\d{10}/g) ?? []) {
+    if (isValidIsbn13(candidate)) return candidate;
+  }
+  return null;
+}
+
 function normalize(item) {
   return {
     appleId: item.trackId != null ? String(item.trackId) : null,
+    isbn13: isbnFromArtwork(item.artworkUrl100),
+    isbn10: null,
     title: item.trackName ?? 'Unknown Title',
     authors: item.artistName ? [item.artistName] : [],
     // artworkUrl100 is a 100x100 thumbnail; the CDN serves any size on request

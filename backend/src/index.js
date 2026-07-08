@@ -25,6 +25,7 @@ import adminRouter from './routes/admin.js';
 import likesRouter from './routes/likes.js';
 import sessionCommentsRouter from './routes/sessionComments.js';
 import integrationsRouter from './routes/integrations.js';
+import coversRouter from './routes/covers.js';
 import { getExternalBook, EXTERNAL_ID_COLUMNS } from './bookProviders.js';
 import { bootAllSyncs } from './integrations/syncEngine.js';
 
@@ -49,6 +50,31 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
+// CSRF protection: browsers attach an Origin (or at least Referer) header to
+// cross-site mutating requests, so one that doesn't match our own host or the
+// CORS allowlist is rejected. Requests with neither header come from
+// non-browser clients (Android app, curl, integrations) that can't be CSRF'd
+// — cookies there are attached deliberately, not ambiently.
+function requestHost(req) {
+  const h = req.headers['x-forwarded-host'] ?? req.headers.host ?? '';
+  return String(h).split(',')[0].trim().toLowerCase();
+}
+const ALLOWED_ORIGIN_HOSTS = ALLOWED_ORIGINS.flatMap(o => {
+  try { return [new URL(o).host.toLowerCase()]; } catch { return []; }
+});
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const source = req.headers.origin ?? req.headers.referer;
+  if (!source) return next();
+
+  let sourceHost;
+  try { sourceHost = new URL(source).host.toLowerCase(); } catch {
+    return res.status(403).json({ error: 'Cross-origin request rejected' });
+  }
+  if (sourceHost === requestHost(req) || ALLOWED_ORIGIN_HOSTS.includes(sourceHost)) return next();
+  return res.status(403).json({ error: 'Cross-origin request rejected' });
+});
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -60,6 +86,7 @@ const authLimiter = rateLimit({
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/profile-shelf', profileShelfRouter);
+app.use('/api/covers', coversRouter); // public — covers render on public pages
 
 // Feed — public, but supports ?filter=following (requires session cookie if provided)
 app.get('/api/feed', async (req, res, next) => {
@@ -161,8 +188,8 @@ async function resolveExternalBook(source, externalId, res, next) {
     // Not in DB yet — fetch from the provider and insert
     const b = await getExternalBook(source, externalId);
     const { rows: [inserted] } = await pool.query(
-      `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories, isbn13, isbn10)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (${column}) DO UPDATE
          SET title          = EXCLUDED.title,
              authors        = EXCLUDED.authors,
@@ -170,10 +197,13 @@ async function resolveExternalBook(source, externalId, res, next) {
              page_count     = EXCLUDED.page_count,
              published_date = EXCLUDED.published_date,
              description    = EXCLUDED.description,
-             categories     = EXCLUDED.categories
+             categories     = EXCLUDED.categories,
+             isbn13         = COALESCE(books.isbn13, EXCLUDED.isbn13),
+             isbn10         = COALESCE(books.isbn10, EXCLUDED.isbn10)
        RETURNING id, google_id, open_library_id, apple_id, title, authors, cover_url, page_count,
                  published_date, description, categories, publisher`,
-      [externalId, b.title, b.authors, b.coverUrl, b.pageCount, b.publishedDate, b.description, b.categories]
+      [externalId, b.title, b.authors, b.coverUrl, b.pageCount, b.publishedDate, b.description, b.categories,
+       b.isbn13, b.isbn10]
     );
     res.json(inserted);
   } catch (err) {
