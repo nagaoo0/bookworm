@@ -3,15 +3,22 @@ import { getState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from '../components/starRating.js';
 import { showToast } from '../components/toast.js';
 import { loadLibrary } from './home.js';
-import { escHtml } from '../utils.js';
+import { escHtml, sourceBadgeHTML } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
 
 // SSE connection for live ABS progress on the currently viewed book
 let _bookSse = null;
 
+function recHref(b) {
+  if (b.id) return '#book/' + b.id;
+  if (b.google_id) return '#book/g:' + b.google_id;
+  if (b.open_library_id) return '#book/ol:' + b.open_library_id;
+  return null;
+}
+
 function recCard(b) {
-  if (!b.id && !b.google_id) return '';
-  const href = b.id ? '#book/' + b.id : '#book/g:' + b.google_id;
+  const href = recHref(b);
+  if (!href) return '';
   const cover = b.cover_url
     ? `<img src="${escHtml(b.cover_url)}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
     : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2">
@@ -39,11 +46,14 @@ export async function renderBook(container, bookId) {
   try {
     const { library, shelves, user } = getState();
 
-    // Support #book/g:<googleId> — resolve to a DB record first, then rewrite URL
+    // Support #book/g:<googleId> and #book/ol:<openLibraryId> — resolve to a
+    // DB record first, then rewrite URL
     let resolvedId = bookId;
-    if (bookId.startsWith('g:')) {
-      const googleId = bookId.slice(2);
-      const resolved = await api.getBookByGoogleId(googleId);
+    const external = bookId.startsWith('g:') ? ['google', bookId.slice(2)]
+                   : bookId.startsWith('ol:') ? ['openlibrary', bookId.slice(3)]
+                   : null;
+    if (external) {
+      const resolved = await api.getBookByExternalId(external[0], external[1]);
       resolvedId = resolved.id;
       // Rewrite hash without triggering another navigation
       history.replaceState(null, '', `#book/${resolvedId}`);
@@ -262,8 +272,8 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
 
         <!-- Mobile: horizontal scroll -->
         <div class="flex gap-3 overflow-x-auto sm:hidden reading-carousel pb-1">
-          ${recs.filter(b => b.id || b.google_id).map(b => {
-            const href = b.id ? '#book/' + b.id : '#book/g:' + b.google_id;
+          ${recs.filter(b => recHref(b)).map(b => {
+            const href = recHref(b);
             return `
             <a href="${href}" class="group flex flex-col flex-shrink-0" style="width:7rem">
               <div class="relative w-full rounded overflow-hidden bg-surface-2 shadow ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all" style="aspect-ratio:2/3">
@@ -322,6 +332,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
     try {
       await api.addToLibrary({
         googleId:      book.google_id,
+        openLibraryId: book.open_library_id,
         title:         book.title,
         authors:       book.authors,
         coverUrl:      book.cover_url,
@@ -543,9 +554,9 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
 
           <hr class="border-border/40" />
 
-          <!-- Metadata search (Google Books) -->
+          <!-- Metadata search (Google Books + Open Library) -->
           <div>
-            <label class="text-xs text-muted block mb-1">Import metadata from Google Books</label>
+            <label class="text-xs text-muted block mb-1">Import metadata from Google Books &amp; Open Library</label>
             <div class="flex gap-2">
               <input id="meta-search-input" type="text" value="${escHtml(book.title)}" placeholder="Search title or ISBN…"
                 class="field-input flex-1 text-xs" />
@@ -670,7 +681,7 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
     if (msg) setTimeout(() => msg.classList.add('hidden'), 2500);
   });
 
-  // Metadata search (Google Books)
+  // Metadata search (Google Books + Open Library)
   const metaSearchBtn = container.querySelector('#meta-search-btn');
   const metaSearchInput = container.querySelector('#meta-search-input');
   metaSearchBtn?.addEventListener('click', () => {
@@ -1050,7 +1061,7 @@ async function runMetaSearch(container, q, libId, onAttached) {
       el.innerHTML = `<p class="text-muted text-xs italic">No results.</p>`;
       return;
     }
-    el.innerHTML = results.slice(0, 5).map((b, i) => `
+    el.innerHTML = results.slice(0, 8).map((b, i) => `
       <div class="flex gap-2 items-center bg-surface-2 rounded-lg px-3 py-2">
         ${b.coverUrl
           ? `<img src="${escHtml(b.coverUrl)}" class="w-8 h-11 object-cover rounded flex-shrink-0" />`
@@ -1058,7 +1069,10 @@ async function runMetaSearch(container, q, libId, onAttached) {
         <div class="flex-1 min-w-0">
           <p class="text-xs font-medium line-clamp-1">${escHtml(b.title)}</p>
           <p class="text-[10px] text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
-          ${b.publishedDate ? `<p class="text-[10px] text-muted">${escHtml(b.publishedDate)}</p>` : ''}
+          <div class="flex items-center gap-1.5">
+            ${b.publishedDate ? `<p class="text-[10px] text-muted">${escHtml(b.publishedDate)}</p>` : ''}
+            ${sourceBadgeHTML(b.source)}
+          </div>
         </div>
         <button class="attach-meta-btn text-[10px] px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/40 transition-colors flex-shrink-0"
                 data-idx="${i}">Attach</button>
@@ -1072,6 +1086,7 @@ async function runMetaSearch(container, q, libId, onAttached) {
         try {
           await api.updateMetadata(libId, {
             googleId:      b.googleId,
+            openLibraryId: b.openLibraryId,
             coverUrl:      b.coverUrl,
             categories:    b.categories,
             pageCount:     b.pageCount,

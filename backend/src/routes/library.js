@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
-import { getBook, searchBooks } from '../googleBooks.js';
+import { getExternalBook, findBestMatch } from '../bookProviders.js';
 
 const router = Router();
 
@@ -11,7 +11,7 @@ const LIBRARY_SELECT = `
            array_agg(sm.shelf_id ORDER BY sm.shelf_id) FILTER (WHERE sm.shelf_id IS NOT NULL),
            '{}'::INT[]
          ) AS shelf_ids,
-         b.id AS book_id, b.google_id, b.title, b.authors,
+         b.id AS book_id, b.google_id, b.open_library_id, b.title, b.authors,
          COALESCE(lb.cover_url_override,      b.cover_url)      AS cover_url,
          COALESCE(lb.page_count_override,     b.page_count)     AS page_count,
          COALESCE(lb.published_date_override, b.published_date) AS published_date,
@@ -85,14 +85,14 @@ router.get('/status', async (req, res, next) => {
 });
 
 // ── POST /api/library ─────────────────────────────────────────────────────────
-// Body: { googleId?, title, authors, coverUrl, ..., categories?, shelfId?, status? }
+// Body: { googleId?, openLibraryId?, title, authors, coverUrl, ..., categories?, shelfId?, status? }
 router.post('/', async (req, res) => {
-  let { googleId, title, authors, coverUrl, pageCount, publishedDate,
+  let { googleId, openLibraryId, title, authors, coverUrl, pageCount, publishedDate,
         description, categories, shelfId, status } = req.body;
 
-  if (googleId && !title) {
+  if ((googleId || openLibraryId) && !title) {
     try {
-      const meta = await getBook(googleId);
+      const meta = await getExternalBook(googleId ? 'google' : 'openlibrary', googleId ?? openLibraryId);
       ({ title, authors, coverUrl, pageCount, publishedDate, description, categories } = meta);
     } catch {
       return res.status(502).json({ error: 'Could not fetch book metadata' });
@@ -104,19 +104,20 @@ router.post('/', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Upsert book
+    // Upsert book — keyed on whichever external id the result came with
     let bookId;
-    if (googleId) {
+    if (googleId || openLibraryId) {
+      const column = googleId ? 'google_id' : 'open_library_id';
       const { rows } = await client.query(
-        `INSERT INTO books (google_id, title, authors, cover_url, page_count, published_date, description, categories)
+        `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (google_id) DO UPDATE SET
+         ON CONFLICT (${column}) DO UPDATE SET
            title      = EXCLUDED.title,
            authors    = EXCLUDED.authors,
            cover_url  = EXCLUDED.cover_url,
            categories = COALESCE(EXCLUDED.categories, books.categories)
          RETURNING id`,
-        [googleId, title, authors ?? [], coverUrl ?? null, pageCount ?? null,
+        [googleId ?? openLibraryId, title, authors ?? [], coverUrl ?? null, pageCount ?? null,
          publishedDate ?? null, description ?? null, categories ?? null]
       );
       bookId = rows[0].id;
@@ -218,7 +219,7 @@ router.patch('/:id/metadata', async (req, res, next) => {
     );
     if (!lb) return res.status(404).json({ error: 'Not found' });
 
-    const { googleId, coverUrl, categories, pageCount, publishedDate, description, title, authors } = req.body;
+    const { googleId, openLibraryId, coverUrl, categories, pageCount, publishedDate, description, title, authors } = req.body;
 
     // Title and authors are written to the shared books record (no per-user override columns)
     if (title !== undefined || authors !== undefined) {
@@ -244,12 +245,18 @@ router.patch('/:id/metadata', async (req, res, next) => {
       }
     }
 
-    // If a googleId is being attached, link it on the shared books record only
+    // If an external id is being attached, link it on the shared books record only
     // (this is a structural link, not display data — does not leak display changes)
     if (googleId) {
       await pool.query(
         `UPDATE books SET google_id = $1 WHERE id = $2 AND google_id IS NULL`,
         [googleId, lb.book_id]
+      );
+    }
+    if (openLibraryId) {
+      await pool.query(
+        `UPDATE books SET open_library_id = $1 WHERE id = $2 AND open_library_id IS NULL`,
+        [openLibraryId, lb.book_id]
       );
     }
 
@@ -273,11 +280,11 @@ router.patch('/:id/metadata', async (req, res, next) => {
       ]
     );
 
-    // If a googleId was attached, also pull down Google Books metadata as the
-    // user's personal overrides (so they immediately see the enriched data)
-    if (googleId) {
+    // If an external id was attached, also pull down that provider's metadata
+    // as the user's personal overrides (so they immediately see the enriched data)
+    if (googleId || openLibraryId) {
       try {
-        const meta = await getBook(googleId);
+        const meta = await getExternalBook(googleId ? 'google' : 'openlibrary', googleId ?? openLibraryId);
         await pool.query(
           `UPDATE library_books SET
              cover_url_override      = COALESCE($1, cover_url_override),
@@ -470,10 +477,20 @@ router.post('/merge', async (req, res, next) => {
       return res.status(404).json({ error: 'One or both books not found in your library' });
     }
 
+    // Detach external ids from the duplicate first — they are unique columns,
+    // so they must leave the remove row before they can land on the keep row
+    const { rows: [remIds] } = await client.query(
+      `SELECT google_id, open_library_id FROM books WHERE id = $1`, [removeId]
+    );
+    await client.query(
+      `UPDATE books SET google_id = NULL, open_library_id = NULL WHERE id = $1`, [removeId]
+    );
+
     // Enrich keep book with any metadata the remove book has that keep is missing
     await client.query(
       `UPDATE books SET
-         google_id      = COALESCE(b_keep.google_id,      b_rem.google_id),
+         google_id       = COALESCE(b_keep.google_id,       $3),
+         open_library_id = COALESCE(b_keep.open_library_id, $4),
          cover_url      = COALESCE(b_keep.cover_url,      b_rem.cover_url),
          isbn13         = COALESCE(b_keep.isbn13,         b_rem.isbn13),
          description    = COALESCE(b_keep.description,    b_rem.description),
@@ -482,7 +499,7 @@ router.post('/merge', async (req, res, next) => {
          published_date = COALESCE(b_keep.published_date, b_rem.published_date)
        FROM books b_keep, books b_rem
        WHERE books.id = $1 AND b_keep.id = $1 AND b_rem.id = $2`,
-      [keepId, removeId]
+      [keepId, removeId, remIds?.google_id ?? null, remIds?.open_library_id ?? null]
     );
 
     // Move shelf memberships: lbRemove → lbKeep (skip shelves already present on keep)
@@ -539,8 +556,8 @@ router.post('/merge', async (req, res, next) => {
 });
 
 // ── POST /api/library/fetch-covers ────────────────────────────────────────────
-// Search Google Books for cover art for up to 50 books that have no cover.
-// Updates books.cover_url and backfills other metadata via COALESCE.
+// Search Google Books and Open Library for cover art for up to 50 books that
+// have no cover. Updates books.cover_url and backfills other metadata via COALESCE.
 router.post('/fetch-covers', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
@@ -556,26 +573,23 @@ router.post('/fetch-covers', async (req, res, next) => {
     let updated = 0;
     for (const book of rows) {
       try {
-        let results = [];
-        if (book.isbn13) {
-          results = await searchBooks({ isbn: book.isbn13 }, 1);
-        }
-        if (!results.length && book.title) {
-          results = await searchBooks({ title: book.title, author: book.authors?.[0] ?? '' }, 1);
-        }
-        if (!results.length || !results[0].coverUrl) continue;
+        const m = await findBestMatch({
+          isbn13: book.isbn13, title: book.title, authors: book.authors, requireCover: true,
+        });
+        if (!m) continue;
 
-        const g = results[0];
         await pool.query(
           `UPDATE books SET
-             cover_url      = COALESCE(cover_url, $1),
-             google_id      = COALESCE(google_id, $2),
-             description    = COALESCE(description, $3),
-             page_count     = COALESCE(page_count, $4),
-             categories     = COALESCE(categories, $5),
-             published_date = COALESCE(published_date, $6)
-           WHERE id = $7`,
-          [g.coverUrl, g.googleId, g.description, g.pageCount, g.categories, g.publishedDate, book.id]
+             cover_url       = COALESCE(cover_url, $1),
+             google_id       = COALESCE(google_id, $2),
+             open_library_id = COALESCE(open_library_id, $3),
+             description     = COALESCE(description, $4),
+             page_count      = COALESCE(page_count, $5),
+             categories      = COALESCE(categories, $6),
+             published_date  = COALESCE(published_date, $7)
+           WHERE id = $8`,
+          [m.coverUrl, m.googleId, m.openLibraryId, m.description, m.pageCount,
+           m.categories, m.publishedDate, book.id]
         );
         updated++;
       } catch { /* skip this book, non-fatal */ }

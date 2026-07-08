@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { searchBooks } from '../googleBooks.js';
+import { searchAll } from '../bookProviders.js';
 
 const router = Router();
 
@@ -19,10 +19,10 @@ router.get('/', async (req, res, next) => {
   const effectiveLang = language || langFromAcceptHeader(req.headers['accept-language']);
 
   try {
-    const results = await searchBooks({ q, title, author, subject, publisher, isbn, language: effectiveLang });
+    const results = await searchAll({ q, title, author, subject, publisher, isbn, language: effectiveLang });
     res.json(results);
   } catch (err) {
-    if (err.name === 'AbortError') return res.status(504).json({ error: 'Google Books request timed out' });
+    if (err.name === 'AbortError') return res.status(504).json({ error: 'Book search timed out' });
     next(err);
   }
 });

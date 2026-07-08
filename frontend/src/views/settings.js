@@ -344,7 +344,7 @@ function renderLibraryManagementSection() {
       <div class="flex items-start justify-between gap-4">
         <div>
           <p class="text-sm font-medium">Fetch missing covers</p>
-          <p class="text-xs text-muted mt-0.5">Search Google Books for cover art on books that have none.</p>
+          <p class="text-xs text-muted mt-0.5">Search Google Books and Open Library for cover art on books that have none.</p>
         </div>
         <button id="fetch-covers-btn"
           class="shrink-0 px-3 py-1.5 bg-surface-2 hover:bg-border/60 active:scale-[0.98] rounded-lg text-xs font-medium transition-all">

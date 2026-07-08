@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { setState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from './starRating.js';
-import { escHtml } from '../utils.js';
+import { escHtml, sourceBadgeHTML } from '../utils.js';
 
 let _onSessionSaved = () => {};
 export function setOnSessionSaved(fn) { _onSessionSaved = fn; }
@@ -105,10 +105,10 @@ async function renderModal(bookId, bookTitle, libId, notes) {
             <p id="cover-msg" class="text-xs hidden"></p>
           </div>
 
-          <!-- Find metadata from Google Books -->
+          <!-- Find metadata from Google Books & Open Library -->
           <details class="group">
             <summary class="text-xs text-muted hover:text-amber-400 transition-colors cursor-pointer list-none flex items-center gap-1 mb-2">
-              <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Find metadata (Google Books)
+              <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Find metadata (Google Books &amp; Open Library)
             </summary>
             <div class="mt-2 space-y-2">
               <div class="flex gap-2">
@@ -216,7 +216,7 @@ async function runMetaSearch(q, libId) {
       el.innerHTML = `<p class="text-muted text-xs italic">No results found.</p>`;
       return;
     }
-    el.innerHTML = results.slice(0, 5).map((b, i) => `
+    el.innerHTML = results.slice(0, 8).map((b, i) => `
       <div class="flex gap-2 items-center bg-surface-2 rounded-lg px-3 py-2 cursor-pointer
                   hover:bg-border/60 transition-colors meta-result" data-idx="${i}">
         ${b.coverUrl
@@ -225,7 +225,10 @@ async function runMetaSearch(q, libId) {
         <div class="flex-1 min-w-0">
           <p class="text-xs font-medium line-clamp-1">${escHtml(b.title)}</p>
           <p class="text-[10px] text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
-          ${b.publishedDate ? `<p class="text-[10px] text-muted">${escHtml(b.publishedDate)}</p>` : ''}
+          <div class="flex items-center gap-1.5">
+            ${b.publishedDate ? `<p class="text-[10px] text-muted">${escHtml(b.publishedDate)}</p>` : ''}
+            ${sourceBadgeHTML(b.source)}
+          </div>
         </div>
         <button class="text-[10px] px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/40 transition-colors flex-shrink-0 attach-meta-btn"
                 data-idx="${i}">Attach</button>
@@ -241,6 +244,7 @@ async function runMetaSearch(q, libId) {
         try {
           await api.updateMetadata(libId, {
             googleId:      b.googleId,
+            openLibraryId: b.openLibraryId,
             coverUrl:      b.coverUrl,
             categories:    b.categories,
             pageCount:     b.pageCount,

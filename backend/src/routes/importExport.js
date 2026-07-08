@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { parse } from 'csv-parse/sync';
 import { pool } from '../db.js';
-import { getBook } from '../googleBooks.js';
+import { getExternalBook } from '../bookProviders.js';
 
 const router = Router();
 
@@ -221,11 +221,15 @@ router.post('/import', async (req, res) => {
 
 async function backfillCovers() {
   const { rows } = await pool.query(
-    `SELECT id, google_id FROM books WHERE google_id IS NOT NULL AND cover_url IS NULL LIMIT 50`
+    `SELECT id, google_id, open_library_id FROM books
+     WHERE (google_id IS NOT NULL OR open_library_id IS NOT NULL) AND cover_url IS NULL
+     LIMIT 50`
   );
   for (const book of rows) {
     try {
-      const meta = await getBook(book.google_id);
+      const meta = book.google_id
+        ? await getExternalBook('google', book.google_id)
+        : await getExternalBook('openlibrary', book.open_library_id);
       if (meta.coverUrl || meta.categories) {
         await pool.query(
           `UPDATE books SET

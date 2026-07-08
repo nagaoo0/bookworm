@@ -2,7 +2,7 @@
 
 # Bookworm
 
-A self-hosted personal reading tracker. Track what you're reading, what you want to read, and what you've finished. Log multiple reads of the same book with individual ratings and reviews. Organise books into custom shelves. Search Google Books or add books manually.
+A self-hosted personal reading tracker. Track what you're reading, what you want to read, and what you've finished. Log multiple reads of the same book with individual ratings and reviews. Organise books into custom shelves. Search Google Books and Open Library (both queried side by side for redundancy), or add books manually.
 
 ## Stack
 

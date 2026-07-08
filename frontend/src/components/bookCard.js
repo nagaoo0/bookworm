@@ -1,5 +1,5 @@
 import { starRatingHTML } from './starRating.js';
-import { escHtml } from '../utils.js';
+import { escHtml, sourceBadgeHTML } from '../utils.js';
 
 export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false, readOnly = false, alsoRead = false } = {}) {
   const coverSrc = book.cover_url ?? book.coverUrl ?? null;
@@ -86,6 +86,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
              data-book-id="${book.book_id ?? ''}"
              data-lib-id="${book.id ?? ''}"
              data-google-id="${escHtml(book.googleId ?? '')}"
+             data-open-library-id="${escHtml(book.openLibraryId ?? '')}"
              data-notes="${escHtml(book.notes ?? '')}"
              data-progress-pct="${pct ?? ''}">
       <div class="relative w-full aspect-[2/3] rounded-lg overflow-hidden bg-surface-2
@@ -105,6 +106,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
           : `<h3 class="font-serif text-sm font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors duration-150">${escHtml(book.title)}</h3>`
         }
         ${authors ? `<p class="text-xs text-muted mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
+        ${searchMode && book.source ? `<div class="mt-1">${sourceBadgeHTML(book.source)}</div>` : ''}
         ${rating}
         ${statusBadge}
         ${availabilityBadges}

@@ -51,6 +51,10 @@ export async function migrate() {
     ALTER TABLE books ADD COLUMN IF NOT EXISTS publisher   TEXT;
     ALTER TABLE books ADD COLUMN IF NOT EXISTS categories  TEXT[];
 
+    -- Second metadata source: Open Library work id (e.g. OL45883W)
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS open_library_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS books_open_library_id_key ON books (open_library_id);
+
     -- Users
     CREATE TABLE IF NOT EXISTS users (
       id            SERIAL PRIMARY KEY,

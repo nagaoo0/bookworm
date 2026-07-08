@@ -25,7 +25,7 @@ import adminRouter from './routes/admin.js';
 import likesRouter from './routes/likes.js';
 import sessionCommentsRouter from './routes/sessionComments.js';
 import integrationsRouter from './routes/integrations.js';
-import { getBook } from './googleBooks.js';
+import { getExternalBook, EXTERNAL_ID_COLUMNS } from './bookProviders.js';
 import { bootAllSyncs } from './integrations/syncEngine.js';
 
 const app = express();
@@ -140,28 +140,30 @@ app.get('/api/users', async (_req, res, next) => {
   }
 });
 
-// Public: look up (or upsert) a book by Google ID — used when navigating to a search result
-app.get('/api/books/by-google/:googleId', async (req, res, next) => {
+// Public: look up (or upsert) a book by external provider id — used when
+// navigating to a search result that isn't in the DB yet.
+async function resolveExternalBook(source, externalId, res, next) {
   try {
-    const { googleId } = req.params;
-    if (!googleId || googleId === 'null' || googleId === 'undefined') {
-      return res.status(400).json({ error: 'Invalid Google Book ID' });
+    const column = EXTERNAL_ID_COLUMNS[source];
+    if (!column) return res.status(400).json({ error: 'Unknown book source' });
+    if (!externalId || externalId === 'null' || externalId === 'undefined') {
+      return res.status(400).json({ error: 'Invalid book ID' });
     }
     // Try the DB first
     const { rows: [existing] } = await pool.query(
-      `SELECT id, google_id, title, authors, cover_url, page_count,
+      `SELECT id, google_id, open_library_id, title, authors, cover_url, page_count,
               published_date, description, categories, publisher
-       FROM books WHERE google_id = $1`,
-      [googleId]
+       FROM books WHERE ${column} = $1`,
+      [externalId]
     );
     if (existing) return res.json(existing);
 
-    // Not in DB yet — fetch from Google Books and insert
-    const g = await getBook(googleId);
+    // Not in DB yet — fetch from the provider and insert
+    const b = await getExternalBook(source, externalId);
     const { rows: [inserted] } = await pool.query(
-      `INSERT INTO books (google_id, title, authors, cover_url, page_count, published_date, description, categories)
+      `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (google_id) DO UPDATE
+       ON CONFLICT (${column}) DO UPDATE
          SET title          = EXCLUDED.title,
              authors        = EXCLUDED.authors,
              cover_url      = EXCLUDED.cover_url,
@@ -169,21 +171,28 @@ app.get('/api/books/by-google/:googleId', async (req, res, next) => {
              published_date = EXCLUDED.published_date,
              description    = EXCLUDED.description,
              categories     = EXCLUDED.categories
-       RETURNING id, google_id, title, authors, cover_url, page_count,
+       RETURNING id, google_id, open_library_id, title, authors, cover_url, page_count,
                  published_date, description, categories, publisher`,
-      [g.googleId, g.title, g.authors, g.coverUrl, g.pageCount, g.publishedDate, g.description, g.categories]
+      [externalId, b.title, b.authors, b.coverUrl, b.pageCount, b.publishedDate, b.description, b.categories]
     );
     res.json(inserted);
   } catch (err) {
     next(err);
   }
-});
+}
+
+app.get('/api/books/by-external/:source/:externalId', (req, res, next) =>
+  resolveExternalBook(req.params.source, req.params.externalId, res, next));
+
+// Legacy alias for old links
+app.get('/api/books/by-google/:googleId', (req, res, next) =>
+  resolveExternalBook('google', req.params.googleId, res, next));
 
 // Public book detail endpoint (no auth required)
 app.get('/api/books/:bookId', async (req, res, next) => {
   try {
     const { rows: [book] } = await pool.query(
-      `SELECT id, google_id, title, authors, cover_url, page_count,
+      `SELECT id, google_id, open_library_id, title, authors, cover_url, page_count,
               published_date, description, categories, publisher
        FROM books WHERE id = $1`,
       [req.params.bookId]

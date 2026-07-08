@@ -231,7 +231,7 @@ async function runSearch(params, container) {
     resultsEl.innerHTML = `
       <div class="text-center py-8 space-y-2">
         <p class="text-red-400 text-sm">${escHtml(err.message)}</p>
-        <p class="text-muted text-xs">Google Books unavailable — use the manual form above.</p>
+        <p class="text-muted text-xs">Book search unavailable — use the manual form above.</p>
       </div>`;
   }
 }
@@ -252,30 +252,37 @@ function renderResults(container, results) {
 
   const { shelves, library } = getState();
 
-  const libraryByGoogleId = {};
+  // Index library entries by both external ids so "already in library"
+  // works whichever source the result came from
+  const libraryByExternalId = {};
   for (const lb of library) {
-    if (lb.google_id) {
-      if (!libraryByGoogleId[lb.google_id]) libraryByGoogleId[lb.google_id] = [];
-      libraryByGoogleId[lb.google_id].push(lb);
+    for (const key of [lb.google_id && `g:${lb.google_id}`, lb.open_library_id && `ol:${lb.open_library_id}`]) {
+      if (!key) continue;
+      if (!libraryByExternalId[key]) libraryByExternalId[key] = [];
+      libraryByExternalId[key].push(lb);
     }
   }
 
-  el.querySelectorAll('.book-card').forEach(card => {
+  // Cards render in the same order as results — match by index
+  el.querySelectorAll('.book-card').forEach((card, idx) => {
     const addArea = card.querySelector('.add-area');
     if (!addArea) return;
-    const book = results.find(b => b.googleId === card.dataset.googleId);
+    const book = results[idx];
     if (!book) return;
 
+    const detailHash = book.googleId ? `#book/g:${book.googleId}`
+                     : book.openLibraryId ? `#book/ol:${book.openLibraryId}` : null;
+
     // Clicking the card body navigates to the detail page; add-area handles its own clicks
-    if (book.googleId) {
+    if (detailHash) {
       card.style.cursor = 'pointer';
       addArea.addEventListener('click', e => e.stopPropagation());
       card.addEventListener('click', () => {
-        location.hash = `#book/g:${book.googleId}`;
+        location.hash = detailHash;
       });
     }
 
-    const existing = book.googleId ? (libraryByGoogleId[book.googleId] ?? []) : [];
+    const existing = libraryByExternalId[book.googleId ? `g:${book.googleId}` : `ol:${book.openLibraryId}`] ?? [];
 
     if (existing.length) {
       addArea.innerHTML = `
@@ -315,6 +322,7 @@ function renderResults(container, results) {
       try {
         const result = await api.addToLibrary({
           googleId:      book.googleId,
+          openLibraryId: book.openLibraryId,
           title:         book.title,
           authors:       book.authors,
           coverUrl:      book.coverUrl,

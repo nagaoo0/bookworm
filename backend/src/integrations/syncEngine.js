@@ -1,5 +1,5 @@
 import { pool } from '../db.js';
-import { searchBooks } from '../googleBooks.js';
+import { findBestMatch } from '../bookProviders.js';
 import * as abs from './abs.js';
 import * as calibre from './calibre.js';
 import * as koboSync from './koboSync.js';
@@ -73,39 +73,33 @@ async function resolveBookId(userId, service, externalId, bookData) {
 }
 
 // ---------------------------------------------------------------------------
-// Enrich a newly created book with Google Books metadata (non-blocking).
+// Enrich a newly created book with external metadata (non-blocking).
+// Tries Google Books first, then Open Library.
 // Uses COALESCE so it never overwrites data that already exists.
 // ---------------------------------------------------------------------------
 
 async function enrichBook(bookId, { title, authors, isbn13 }) {
   try {
-    let results = [];
-    if (isbn13) {
-      results = await searchBooks({ isbn: isbn13 }, 1);
-    }
-    if (!results.length && title) {
-      results = await searchBooks({ title, author: authors?.[0] ?? '' }, 1);
-    }
-    if (!results.length) return;
+    const m = await findBestMatch({ isbn13, title, authors });
+    if (!m) return;
 
-    const g = results[0];
     await pool.query(
       `UPDATE books SET
-         google_id      = COALESCE(google_id, $1),
-         cover_url      = COALESCE(NULLIF(cover_url, ''), $2),
-         description    = COALESCE(NULLIF(description, ''), $3),
-         page_count     = COALESCE(page_count, $4),
-         categories     = COALESCE(categories, $5),
-         isbn13         = COALESCE(isbn13, $6),
-         published_date = COALESCE(published_date, $7)
+         google_id       = COALESCE(google_id, $1),
+         open_library_id = COALESCE(open_library_id, $2),
+         cover_url       = COALESCE(NULLIF(cover_url, ''), $3),
+         description     = COALESCE(NULLIF(description, ''), $4),
+         page_count      = COALESCE(page_count, $5),
+         categories      = COALESCE(categories, $6),
+         published_date  = COALESCE(published_date, $7)
        WHERE id = $8`,
       [
-        g.googleId    ?? null, g.coverUrl     ?? null, g.description ?? null,
-        g.pageCount   ?? null, g.categories   ?? null, g.isbn13      ?? null,
-        g.publishedDate ?? null, bookId,
+        m.googleId  ?? null, m.openLibraryId ?? null, m.coverUrl   ?? null,
+        m.description ?? null, m.pageCount   ?? null, m.categories ?? null,
+        m.publishedDate ?? null, bookId,
       ]
     );
-    console.log(`[sync] enriched book ${bookId} "${title}" via Google Books`);
+    console.log(`[sync] enriched book ${bookId} "${title}" via ${m.source === 'google' ? 'Google Books' : 'Open Library'}`);
   } catch (err) {
     console.warn(`[sync] enrichBook ${bookId} failed: ${err.message}`);
   }

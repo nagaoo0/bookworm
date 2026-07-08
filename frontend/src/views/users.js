@@ -591,9 +591,12 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
 
           // External results, deduplicated against library
           const extResults = await api.search(q);
-          const libGoogleIds = new Set(libMatches.map(b => b.google_id).filter(Boolean));
+          const libExternalIds = new Set(libMatches.flatMap(b =>
+            [b.google_id && `g:${b.google_id}`, b.open_library_id && `ol:${b.open_library_id}`].filter(Boolean)
+          ));
           const extMatches = extResults
-            .filter(r => !libGoogleIds.has(r.googleId))
+            .filter(r => (r.googleId || r.openLibraryId)
+              && !libExternalIds.has(r.googleId ? `g:${r.googleId}` : `ol:${r.openLibraryId}`))
             .slice(0, Math.max(2, 6 - libMatches.length));
 
           if (!libMatches.length && !extMatches.length) {
@@ -616,7 +619,8 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
               </button>`),
             ...extMatches.map(r => `
               <button class="add-book-result w-full text-left flex items-center gap-2.5 px-3 py-2 hover:bg-surface transition-colors"
-                      data-google-id="${escHtml(r.googleId ?? '')}" data-challenge-id="${cid}">
+                      data-google-id="${escHtml(r.googleId ?? '')}"
+                      data-open-library-id="${escHtml(r.openLibraryId ?? '')}" data-challenge-id="${cid}">
                 ${r.coverUrl
                   ? `<img src="${escHtml(r.coverUrl)}" alt="" class="w-7 h-10 object-cover rounded flex-shrink-0" />`
                   : `<div class="w-7 h-10 bg-surface rounded flex-shrink-0"></div>`}
@@ -637,13 +641,17 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
     resultsEl.addEventListener('click', async e => {
       const btn = e.target.closest('.add-book-result');
       if (!btn) return;
-      const bookId   = btn.dataset.bookId;
-      const googleId = btn.dataset.googleId;
+      const bookId        = btn.dataset.bookId;
+      const googleId      = btn.dataset.googleId;
+      const openLibraryId = btn.dataset.openLibraryId;
       const cid2 = btn.dataset.challengeId;
       btn.disabled = true;
       try {
         // Library books already have an internal id — no extra fetch needed
-        const finalBookId = bookId ?? (await api.getBookByGoogleId(googleId)).id;
+        const finalBookId = bookId
+          ?? (googleId
+            ? (await api.getBookByExternalId('google', googleId)).id
+            : (await api.getBookByExternalId('openlibrary', openLibraryId)).id);
         await api.addChallengeBook(cid2, finalBookId);
         input.value = '';
         resultsEl.classList.add('hidden');

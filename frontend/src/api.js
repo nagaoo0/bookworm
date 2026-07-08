@@ -73,7 +73,7 @@ export const api = {
     request(`/library/${libId}/metadata`, { method: 'PATCH', body: data }),
 
   getBookDetail: (bookId) => request(`/books/${bookId}`),
-  getBookByGoogleId: (googleId) => request(`/books/by-google/${encodeURIComponent(googleId)}`),
+  getBookByExternalId: (source, id) => request(`/books/by-external/${encodeURIComponent(source)}/${encodeURIComponent(id)}`),
   getSessions: (bookId) => request(`/books/${bookId}/sessions`),
   addSession: (bookId, data) => request(`/books/${bookId}/sessions`, { method: 'POST', body: data }),
   updateSession: (bookId, sessionId, data) => request(`/books/${bookId}/sessions/${sessionId}`, { method: 'PATCH', body: data }),
