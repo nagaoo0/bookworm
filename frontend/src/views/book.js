@@ -112,7 +112,12 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
     attachSessionDeleteHandlers(container, book.id, reloadSessions);
   };
 
-  const openReadModal = () => openLogReadModal(book, reloadSessions);
+  // Look up the freshest library entry at call time so a "Reading → Done" flow
+  // within this visit still picks up the started_reading_at set moments ago
+  const openReadModal = () => {
+    const entry = (getState().library ?? []).find(b => String(b.book_id) === String(book.id)) ?? libEntry;
+    openLogReadModal({ ...book, startedAt: entry?.started_reading_at }, reloadSessions);
+  };
 
   const softReload = async () => {
     await loadLibrary();
@@ -159,7 +164,12 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
 
           ${libEntry
             ? `<button id="log-read-btn"
-                class="w-full px-3 py-2 bg-surface-2 hover:bg-border/40 text-sm rounded-lg transition-colors text-center font-medium">
+                class="w-full px-3 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950
+                       text-sm font-semibold rounded-lg transition-all shadow-lg shadow-amber-500/20
+                       inline-flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                </svg>
                 Log a read
               </button>`
             : `<button id="add-to-library-btn"
@@ -223,6 +233,12 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
       <section class="mt-10">
         <div class="flex items-center justify-between mb-4">
           <h2 class="font-serif text-xl font-semibold">Reading history</h2>
+          ${user && libEntry ? `
+          <button id="log-read-btn-2"
+            class="text-sm px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30
+                   hover:bg-amber-500/25 transition-colors font-medium">
+            + Log a read
+          </button>` : ''}
         </div>
 
         <div id="session-list" class="space-y-3 mb-5">
@@ -324,8 +340,9 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
   // Back button
   container.querySelector('#back-btn')?.addEventListener('click', () => history.back());
 
-  // Log a read button opens the modal
-  container.querySelector('#log-read-btn')?.addEventListener('click', () => openLogReadModal(book, reloadSessions));
+  // Log a read buttons open the modal (dates prefilled from the library entry)
+  container.querySelector('#log-read-btn')?.addEventListener('click', openReadModal);
+  container.querySelector('#log-read-btn-2')?.addEventListener('click', openReadModal);
 
   // Add to library
   container.querySelector('#add-to-library-btn')?.addEventListener('click', async () => {
@@ -601,7 +618,8 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
     btn.addEventListener('click', async () => {
       const newStatus = btn.dataset.status;
       await api.setStatus(libEntry.id, newStatus);
-      softReload();
+      // await so the log-read modal sees the refreshed entry (started_reading_at)
+      await softReload();
       if (newStatus === 'done' && onMarkDone) onMarkDone();
     });
   });

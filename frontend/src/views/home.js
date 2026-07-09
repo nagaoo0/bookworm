@@ -618,7 +618,7 @@ function attachCardHandlers(container, shelves, library, bulk = {}) {
       await api.setStatus(libId, 'done');
       await loadLibrary();
       const entry = (getState().library ?? []).find(b => String(b.book_id) === String(bookId));
-      openLogReadModal({ id: bookId, title: entry?.title ?? '' }, null);
+      openLogReadModal({ id: bookId, title: entry?.title ?? '', startedAt: entry?.started_reading_at }, null);
     });
 
     // ⋯ button → context menu
@@ -724,7 +724,7 @@ function showContextMenu(x, y, card, shelves, library) {
       await api.setStatus(libId, newStatus);
       loadLibrary();
       if (newStatus === 'done') {
-        openLogReadModal({ id: libEntry.book_id, title: libEntry.title }, null);
+        openLogReadModal({ id: libEntry.book_id, title: libEntry.title, startedAt: libEntry.started_reading_at }, null);
       }
     });
   });

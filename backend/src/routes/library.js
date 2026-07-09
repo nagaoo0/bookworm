@@ -7,6 +7,7 @@ const router = Router();
 // ── Shared SELECT helper ───────────────────────────────────────────────────────
 const LIBRARY_SELECT = `
   SELECT lb.id, lb.status, lb.notes, lb.added_at, lb.progress_page, lb.progress_pct,
+         lb.started_reading_at,
          COALESCE(
            array_agg(sm.shelf_id ORDER BY sm.shelf_id) FILTER (WHERE sm.shelf_id IS NOT NULL),
            '{}'::INT[]
@@ -140,8 +141,8 @@ router.post('/', async (req, res) => {
 
     // Upsert library entry (ignore if already in library)
     const { rows: [lb] } = await client.query(
-      `INSERT INTO library_books (user_id, book_id, status)
-       VALUES ($1, $2, $3)
+      `INSERT INTO library_books (user_id, book_id, status, started_reading_at)
+       VALUES ($1, $2, $3, CASE WHEN $3 = 'reading' THEN now() END)
        ON CONFLICT (user_id, book_id) DO UPDATE SET status = library_books.status
        RETURNING *`,
       [req.user.id, bookId, status ?? 'to_read']
@@ -194,6 +195,9 @@ router.patch('/:id', async (req, res, next) => {
     const { rows } = await pool.query(
       `UPDATE library_books
        SET status        = CASE WHEN $1::text IS NOT NULL THEN $1 ELSE status END,
+           -- remember when the book was picked up, to prefill logged reads
+           started_reading_at = CASE WHEN $1::text = 'reading' AND status <> 'reading'
+                                     THEN now() ELSE started_reading_at END,
            notes         = CASE WHEN $2::boolean THEN $3 ELSE notes END,
            progress_page = CASE WHEN $4::boolean THEN $5 ELSE progress_page END,
            progress_pct  = CASE WHEN $6::boolean THEN $7 ELSE progress_pct END

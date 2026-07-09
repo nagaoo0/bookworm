@@ -116,13 +116,19 @@ async function enrichBook(bookId, { title, authors, isbn13 }) {
 
 async function upsertLibraryBook(userId, bookId, status = 'to_read') {
   await pool.query(
-    `INSERT INTO library_books (user_id, book_id, status)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (user_id, book_id) DO UPDATE SET status = CASE
-       WHEN EXCLUDED.status = 'done'                                     THEN 'done'
-       WHEN EXCLUDED.status = 'reading' AND library_books.status = 'to_read' THEN 'reading'
-       ELSE library_books.status
-     END`,
+    `INSERT INTO library_books (user_id, book_id, status, started_reading_at)
+     VALUES ($1, $2, $3, CASE WHEN $3 = 'reading' THEN now() END)
+     ON CONFLICT (user_id, book_id) DO UPDATE SET
+       status = CASE
+         WHEN EXCLUDED.status = 'done'                                     THEN 'done'
+         WHEN EXCLUDED.status = 'reading' AND library_books.status = 'to_read' THEN 'reading'
+         ELSE library_books.status
+       END,
+       started_reading_at = CASE
+         WHEN EXCLUDED.status = 'reading' AND library_books.status = 'to_read'
+           THEN COALESCE(library_books.started_reading_at, now())
+         ELSE library_books.started_reading_at
+       END`,
     [userId, bookId, status]
   );
 }
@@ -347,6 +353,11 @@ async function syncCalibreKoboProgress(userId, config) {
            WHEN $3 = 'done'                           THEN 'done'
            WHEN $3 = 'reading' AND status = 'to_read' THEN 'reading'
            ELSE status
+         END,
+         started_reading_at = CASE
+           WHEN $3 = 'reading' AND status = 'to_read'
+             THEN COALESCE(started_reading_at, now())
+           ELSE started_reading_at
          END,
          progress_pct = COALESCE($4, progress_pct)
        WHERE user_id=$1 AND book_id=$2`,

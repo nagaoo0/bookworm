@@ -2,9 +2,12 @@ import { api } from '../api.js';
 import { starRatingHTML, attachStarHandlers } from './starRating.js';
 import { escHtml, trapFocus } from '../utils.js';
 
+// book: { id, title, startedAt? } — startedAt (the library entry's
+// started_reading_at) prefills the Started field; Finished defaults to today.
 export function openLogReadModal(book, onSuccess) {
   document.getElementById('log-read-modal')?.remove();
   const today = new Date().toISOString().slice(0, 10);
+  const started = book.startedAt ? String(book.startedAt).slice(0, 10) : '';
   const modal = document.createElement('div');
   modal.id = 'log-read-modal';
   modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4';
@@ -27,7 +30,7 @@ export function openLogReadModal(book, onSuccess) {
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-muted block mb-1">Started</label>
-              <input type="date" name="startedAt" class="field-input w-full" />
+              <input type="date" name="startedAt" value="${escHtml(started)}" class="field-input w-full" />
             </div>
             <div>
               <label class="text-xs text-muted block mb-1">Finished</label>

@@ -50,6 +50,15 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
+// Baseline security headers (nginx adds the same for the frontend origin;
+// these cover direct API access)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  next();
+});
+
 // CSRF protection: browsers attach an Origin (or at least Referer) header to
 // cross-site mutating requests, so one that doesn't match our own host or the
 // CORS allowlist is rejected. Requests with neither header come from
@@ -294,9 +303,21 @@ app.use((err, _req, res, _next) => {
 
 const PORT = process.env.PORT ?? 3000;
 
+// Purge expired login sessions — they only accumulate otherwise
+async function purgeExpiredSessions() {
+  try {
+    const { rowCount } = await pool.query('DELETE FROM sessions WHERE expires_at < now()');
+    if (rowCount) console.log(`Purged ${rowCount} expired sessions`);
+  } catch (err) {
+    console.warn('Session purge failed:', err.message);
+  }
+}
+
 migrate()
   .then(() => {
     app.listen(PORT, () => console.log(`API listening on :${PORT}`));
     bootAllSyncs().catch(err => console.warn('bootAllSyncs error:', err.message));
+    purgeExpiredSessions();
+    setInterval(purgeExpiredSessions, 24 * 60 * 60 * 1000);
   })
   .catch(err => { console.error('Startup failed:', err); process.exit(1); });

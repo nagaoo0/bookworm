@@ -294,6 +294,29 @@ export async function migrate() {
       book_id      INT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
       PRIMARY KEY (challenge_id, book_id)
     );
+
+    -- When the book was last moved to 'reading' — used to prefill the
+    -- started date when a finished read is logged
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS started_reading_at TIMESTAMPTZ;
+
+    -- Postgres does not index FK columns automatically; these cover the hot
+    -- per-user lookups (library loads, stats, feed, availability badges)
+    CREATE INDEX IF NOT EXISTS library_books_user_id_idx        ON library_books (user_id);
+    CREATE INDEX IF NOT EXISTS library_books_book_id_idx        ON library_books (book_id);
+    CREATE INDEX IF NOT EXISTS reading_sessions_user_book_idx   ON reading_sessions (user_id, book_id);
+    CREATE INDEX IF NOT EXISTS reading_sessions_book_id_idx     ON reading_sessions (book_id);
+    CREATE INDEX IF NOT EXISTS reading_sessions_finished_at_idx ON reading_sessions (finished_at) WHERE finished_at IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS shelf_memberships_lb_idx         ON shelf_memberships (library_book_id);
+    CREATE INDEX IF NOT EXISTS shelf_memberships_shelf_idx      ON shelf_memberships (shelf_id);
+    CREATE INDEX IF NOT EXISTS book_availability_user_book_idx  ON book_availability (user_id, book_id);
+    CREATE INDEX IF NOT EXISTS sessions_user_id_idx             ON sessions (user_id);
+    CREATE INDEX IF NOT EXISTS sessions_expires_at_idx          ON sessions (expires_at);
+    CREATE INDEX IF NOT EXISTS follows_following_id_idx         ON follows (following_id);
+    CREATE INDEX IF NOT EXISTS notifications_user_id_idx        ON notifications (user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS session_likes_session_id_idx     ON session_likes (session_id);
+    CREATE INDEX IF NOT EXISTS session_comments_session_id_idx  ON session_comments (session_id);
+    CREATE INDEX IF NOT EXISTS comments_book_id_idx             ON comments (book_id);
+    CREATE INDEX IF NOT EXISTS books_isbn13_idx                 ON books (isbn13) WHERE isbn13 IS NOT NULL;
   `);
   console.log('Database schema ready.');
 }
