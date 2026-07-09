@@ -3,6 +3,7 @@ import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
 import { escHtml, coverProxySrc } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
+import { showUndoToast } from '../components/toast.js';
 
 // Persists collapse/sort state across re-renders
 const sectionState = {
@@ -14,6 +15,29 @@ const sectionState = {
 let libraryQuery = '';
 let availFilter = null; // null = all, 'audiobookshelf' = audio only, 'calibre' = ebook only
 const selectedLibIds = new Set();
+
+// Library entries hidden behind a pending undo toast. Removal is destructive
+// (it also deletes the book's reading sessions server-side), so the DELETE is
+// only sent after the toast expires; until then the card is just filtered out.
+const pendingRemovals = new Set();
+
+function queueRemoval(libIds, message) {
+  const ids = libIds.map(String);
+  ids.forEach(id => pendingRemovals.add(id));
+  setState({}); // re-render without the queued cards
+
+  showUndoToast(message, {
+    onUndo: () => {
+      ids.forEach(id => pendingRemovals.delete(id));
+      setState({});
+    },
+    onCommit: async () => {
+      await Promise.all(ids.map(id => api.removeFromLibrary(id).catch(() => {})));
+      ids.forEach(id => pendingRemovals.delete(id));
+      loadLibrary();
+    },
+  });
+}
 
 function filterBooks(books, q) {
   let result = books;
@@ -47,7 +71,10 @@ export async function loadLibrary() {
 
 // ── Main render ────────────────────────────────────────────────────────────────
 export function renderHome(container) {
-  const { shelves, library, loading, error } = getState();
+  const { shelves, library: fullLibrary, loading, error } = getState();
+  const library = pendingRemovals.size
+    ? fullLibrary.filter(b => !pendingRemovals.has(String(b.id)))
+    : fullLibrary;
 
   if (loading) {
     const count = 12;
@@ -195,8 +222,9 @@ export function renderHome(container) {
     });
   });
 
-  // Select mode toggle
-  let selectMode = false;
+  // Select mode toggle — state lives in module-level bulkState so the
+  // bound-once card handlers always see the current value
+  bulkState.selectMode = false; // fresh render always starts un-selected
   const selectBtn = container.querySelector('#select-mode-btn');
   const bulkBar   = container.querySelector('#bulk-bar');
   const bulkCount = container.querySelector('#bulk-count');
@@ -210,21 +238,22 @@ export function renderHome(container) {
       bulkBar.classList.add('hidden');
     }
   }
+  bulkState.updateBulkBar = updateBulkBar;
 
   selectBtn?.addEventListener('click', () => {
-    selectMode = !selectMode;
+    const selectMode = !bulkState.selectMode;
     selectedLibIds.clear();
     selectBtn.textContent = selectMode ? 'Done' : 'Select';
     selectBtn.className = selectMode
       ? 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-amber-500 text-xs text-amber-400 transition-colors'
       : 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted hover:border-amber-500 hover:text-amber-400 transition-colors';
     bulkBar.classList.add('hidden');
-    // Re-attach to toggle checkbox visibility
-    attachCardHandlers(container, shelves, library, { selectMode, selectedLibIds, updateBulkBar });
+    // Re-attach to toggle checkbox visibility (existing cards stay bound)
+    attachCardHandlers(container, shelves, library, { selectMode, updateBulkBar });
   });
 
   bulkBar?.querySelector('#bulk-cancel-btn')?.addEventListener('click', () => {
-    selectMode = false;
+    bulkState.selectMode = false;
     selectedLibIds.clear();
     selectBtn.textContent = 'Select';
     selectBtn.className = 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted hover:border-amber-500 hover:text-amber-400 transition-colors';
@@ -232,12 +261,12 @@ export function renderHome(container) {
     container.querySelectorAll('.book-card').forEach(c => c.querySelector('.bulk-check')?.classList.add('hidden'));
   });
 
-  bulkBar?.querySelector('#bulk-remove-btn')?.addEventListener('click', async () => {
+  bulkBar?.querySelector('#bulk-remove-btn')?.addEventListener('click', () => {
     const ids = [...selectedLibIds];
+    if (!ids.length) return;
     selectedLibIds.clear();
     bulkBar.classList.add('hidden');
-    await Promise.all(ids.map(id => api.removeFromLibrary(id).catch(() => {})));
-    loadLibrary();
+    queueRemoval(ids, ids.length === 1 ? 'Removed 1 book' : `Removed ${ids.length} books`);
   });
 
   bulkBar?.querySelector('#bulk-status-btn')?.addEventListener('click', () => {
@@ -326,22 +355,55 @@ function showInlineShelfCreate(container) {
 }
 
 // ── Content area ──────────────────────────────────────────────────────────────
+// ── Incremental grid rendering ────────────────────────────────────────────────
+// Large libraries (1000+ books after a Calibre sync) would otherwise render
+// every card in one innerHTML pass. Only the first chunk is rendered; a
+// sentinel below each grid appends the rest as it scrolls into view.
+const GRID_CHUNK = 48;
+let _gridObservers = [];
+
+function resetGridPagers() {
+  _gridObservers.forEach(io => io.disconnect());
+  _gridObservers = [];
+}
+
+function paginateGrid(gridEl, books, cardOpts, onAppend) {
+  if (books.length <= GRID_CHUNK) return;
+  let index = GRID_CHUNK;
+  const sentinel = document.createElement('div');
+  sentinel.className = 'grid-sentinel h-6';
+  gridEl.after(sentinel);
+  const io = new IntersectionObserver(entries => {
+    if (!entries.some(en => en.isIntersecting)) return;
+    gridEl.insertAdjacentHTML('beforeend',
+      books.slice(index, index + GRID_CHUNK).map(b => bookCardHTML(b, cardOpts)).join(''));
+    index += GRID_CHUNK;
+    onAppend?.();
+    if (index >= books.length) { io.disconnect(); sentinel.remove(); }
+  }, { rootMargin: '800px' });
+  io.observe(sentinel);
+  _gridObservers.push(io);
+}
+
 function renderShelfContent(el, library, shelves, selectedShelfId, container) {
+  resetGridPagers();
   const filtered = filterBooks(library, libraryQuery);
+  const onAppend = () => attachCardHandlers(container, shelves, library);
   if (selectedShelfId == null) {
-    renderAllBooks(el, filtered, container, shelves);
+    renderAllBooks(el, filtered, container, shelves, onAppend);
   } else {
     const shelf = shelves.find(s => s.id === selectedShelfId);
     const books = filtered.filter(b => b.shelf_ids?.includes(selectedShelfId));
-    renderShelfGrid(el, shelf, books);
+    renderShelfGrid(el, shelf, books, onAppend);
   }
 }
 
-function renderAllBooks(el, library, container, shelves) {
+function renderAllBooks(el, library, container, shelves, onAppend) {
   const byStatus = { reading: [], to_read: [], done: [] };
   for (const b of library) {
     if (byStatus[b.status]) byStatus[b.status].push(b);
   }
+  const sortedByKey = {};
 
   const STATUS_META = [
     { key: 'reading', label: 'Currently Reading', color: '#f59e0b' },
@@ -360,6 +422,7 @@ function renderAllBooks(el, library, container, shelves) {
     if (!books.length) return '';
     const { open, sort } = sectionState[key];
     const sorted = sortBooks(books, sort);
+    sortedByKey[key] = sorted;
     const isReading = key === 'reading';
     const chevron = `
       <svg class="w-4 h-4 text-muted flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -386,7 +449,7 @@ function renderAllBooks(el, library, container, shelves) {
           ${open ? sortSelect : ''}
         </div>
         ${open ? `<div class="book-grid stagger">
-          ${sorted.map(b => bookCardHTML(b, { isReading: isReading })).join('')}
+          ${sorted.slice(0, GRID_CHUNK).map(b => bookCardHTML(b, { isReading: isReading })).join('')}
         </div>` : ''}
       </section>`;
   }).join('');
@@ -416,15 +479,33 @@ function renderAllBooks(el, library, container, shelves) {
            class="inline-block px-6 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-stone-950 font-semibold rounded-xl text-sm transition-all duration-150 shadow-lg shadow-amber-500/20">
           Search for a book
         </a>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-6 text-sm">
+          <a href="#settings" class="text-muted hover:text-amber-400 transition-colors inline-flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4"/></svg>
+            Import a Goodreads / StoryGraph CSV
+          </a>
+          <a href="#settings" class="text-muted hover:text-amber-400 transition-colors inline-flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 11-5.656-5.656l1.5-1.5m7.5-1.5l1.5-1.5a4 4 0 115.656 5.656l-3 3"/></svg>
+            Connect Calibre or Audiobookshelf
+          </a>
+        </div>
        </div>`;
   el.innerHTML = sections || emptyHtml;
+
+  // Sentinel-driven append for sections with more than one chunk
+  el.querySelectorAll('[data-status-section]').forEach(section => {
+    const key = section.dataset.statusSection;
+    const grid = section.querySelector('.book-grid');
+    if (grid) paginateGrid(grid, sortedByKey[key] ?? [], { isReading: key === 'reading' }, onAppend);
+  });
 
   // Collapse toggles
   el.querySelectorAll('.section-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.toggleSection;
       sectionState[key].open = !sectionState[key].open;
-      renderAllBooks(el, library, container, shelves);
+      resetGridPagers();
+      renderAllBooks(el, library, container, shelves, onAppend);
       attachCardHandlers(container, shelves, library);
     });
   });
@@ -434,13 +515,14 @@ function renderAllBooks(el, library, container, shelves) {
     select.addEventListener('change', () => {
       const key = select.dataset.sortSection;
       sectionState[key].sort = select.value;
-      renderAllBooks(el, library, container, shelves);
+      resetGridPagers();
+      renderAllBooks(el, library, container, shelves, onAppend);
       attachCardHandlers(container, shelves, library);
     });
   });
 }
 
-function renderShelfGrid(el, shelf, books) {
+function renderShelfGrid(el, shelf, books, onAppend) {
   const dot = shelf ? `<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${escHtml(shelf.color)}"></span>` : '';
   const title = shelf?.name ?? 'Unknown shelf';
 
@@ -453,73 +535,83 @@ function renderShelfGrid(el, shelf, books) {
       </div>
       ${books.length
         ? `<div class="book-grid stagger">
-             ${books.map(b => bookCardHTML(b, { showStatus: true })).join('')}
+             ${books.slice(0, GRID_CHUNK).map(b => bookCardHTML(b, { showStatus: true })).join('')}
            </div>`
         : `<p class="text-muted italic text-sm py-3">No books on this shelf yet.</p>`}
     </section>`;
+
+  const grid = el.querySelector('.book-grid');
+  if (grid) paginateGrid(grid, books, { showStatus: true }, onAppend);
 }
 
 // ── Card event handlers ───────────────────────────────────────────────────────
+// Live bulk-select state, read by the bound-once card handlers at event time.
+// (Closures over a local selectMode caused stacked stale handlers before.)
+const bulkState = { selectMode: false, updateBulkBar: () => {} };
+
+// Listeners are bound exactly once per card (data-bound guard), so this is
+// safe to call repeatedly on the same DOM — select-mode toggles and
+// incrementally appended grid chunks included. The checkbox-visibility pass
+// runs every call.
 function attachCardHandlers(container, shelves, library, bulk = {}) {
-  const { selectMode = false, selectedLibIds: selIds = new Set(), updateBulkBar = () => {} } = bulk;
+  if (bulk.updateBulkBar) bulkState.updateBulkBar = bulk.updateBulkBar;
+  if ('selectMode' in bulk) bulkState.selectMode = bulk.selectMode;
 
   container.querySelectorAll('.book-card').forEach(card => {
-    // Add checkbox overlay if not present
+    // Checkbox overlay + visibility — every call, so toggling select mode
+    // updates already-bound cards
     if (!card.querySelector('.bulk-check')) {
       const chk = document.createElement('div');
       chk.className = `bulk-check absolute top-1.5 left-1.5 z-20 w-5 h-5 rounded-full border-2
                        flex items-center justify-center text-xs font-bold transition-all
-                       ${selectMode ? '' : 'hidden'}
-                       ${selIds.has(card.dataset.libId) ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-white/60 bg-black/30'}`;
+                       ${bulkState.selectMode ? '' : 'hidden'}
+                       ${selectedLibIds.has(card.dataset.libId) ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-white/60 bg-black/30'}`;
       card.querySelector('.relative.w-full')?.appendChild(chk);
     }
     const chk = card.querySelector('.bulk-check');
-    if (chk) chk.classList.toggle('hidden', !selectMode);
-  });
+    if (chk) chk.classList.toggle('hidden', !bulkState.selectMode);
 
-  // Click → modal OR selection
-  container.querySelectorAll('.book-card').forEach(card => {
+    if (card.dataset.bound) return;
+    card.dataset.bound = '1';
+
+    // Click → selection (in select mode) or navigate to the book page
     card.addEventListener('click', e => {
       if (e.target.closest('button') && !e.target.closest('.bulk-check')) return;
-      if (selectMode) {
+      if (bulkState.selectMode) {
         const libId = card.dataset.libId;
         if (!libId) return;
-        const chk = card.querySelector('.bulk-check');
-        if (selIds.has(libId)) {
-          selIds.delete(libId);
-          chk?.classList.remove('bg-amber-500', 'border-amber-500', 'text-stone-950');
-          chk?.classList.add('border-white/60', 'bg-black/30');
-          if (chk) chk.textContent = '';
+        const box = card.querySelector('.bulk-check');
+        if (selectedLibIds.has(libId)) {
+          selectedLibIds.delete(libId);
+          box?.classList.remove('bg-amber-500', 'border-amber-500', 'text-stone-950');
+          box?.classList.add('border-white/60', 'bg-black/30');
+          if (box) box.textContent = '';
         } else {
-          selIds.add(libId);
-          chk?.classList.add('bg-amber-500', 'border-amber-500', 'text-stone-950');
-          chk?.classList.remove('border-white/60', 'bg-black/30');
-          if (chk) chk.textContent = '✓';
+          selectedLibIds.add(libId);
+          box?.classList.add('bg-amber-500', 'border-amber-500', 'text-stone-950');
+          box?.classList.remove('border-white/60', 'bg-black/30');
+          if (box) box.textContent = '✓';
         }
-        updateBulkBar();
+        bulkState.updateBulkBar();
         return;
       }
       const bookId = card.dataset.bookId;
       if (bookId) location.hash = `#book/${bookId}`;
     });
-  });
 
-  // Hover × remove — no confirm, undo is re-add from search
-  container.querySelectorAll('.remove-card-btn').forEach(btn => {
-    btn.addEventListener('click', async e => {
+    // Hover × remove — optimistic with an undo toast (removal also deletes the
+    // book's reading sessions, so it must be reversible)
+    card.querySelector('.remove-card-btn')?.addEventListener('click', e => {
       e.stopPropagation();
-      const libId = btn.closest('.book-card').dataset.libId;
+      const libId = card.dataset.libId;
       if (!libId) return;
-      await api.removeFromLibrary(libId);
-      loadLibrary();
+      const entry = library.find(b => String(b.id) === String(libId));
+      queueRemoval([libId], `Removed “${entry?.title ?? 'book'}”`);
     });
-  });
 
-  // ✓ Finish → set status done
-  container.querySelectorAll('.finish-reading-btn').forEach(btn => {
-    btn.addEventListener('click', async e => {
+    // ✓ Finish → set status done
+    card.querySelector('.finish-reading-btn')?.addEventListener('click', async e => {
       e.stopPropagation();
-      const card   = btn.closest('.book-card');
       const libId  = card.dataset.libId;
       const bookId = card.dataset.bookId;
       if (!libId) return;
@@ -528,25 +620,19 @@ function attachCardHandlers(container, shelves, library, bulk = {}) {
       const entry = (getState().library ?? []).find(b => String(b.book_id) === String(bookId));
       openLogReadModal({ id: bookId, title: entry?.title ?? '' }, null);
     });
-  });
 
-  // ⋯ button → context menu
-  container.querySelectorAll('.card-menu-btn').forEach(btn => {
-    btn.addEventListener('click', e => {
+    // ⋯ button → context menu
+    card.querySelector('.card-menu-btn')?.addEventListener('click', e => {
       e.stopPropagation();
-      const rect = btn.getBoundingClientRect();
-      showContextMenu(rect.left, rect.bottom + 4, btn.closest('.book-card'), shelves, library);
+      const rect = e.currentTarget.getBoundingClientRect();
+      showContextMenu(rect.left, rect.bottom + 4, card, shelves, library);
     });
-  });
 
-  // Right-click / long-press → context menu
-  container.querySelectorAll('.book-card').forEach(card => {
+    // Right-click / long-press → context menu
     card.addEventListener('contextmenu', e => {
       e.preventDefault();
       showContextMenu(e.clientX, e.clientY, card, shelves, library);
     });
-
-    // Long-press for touch
     let pressTimer;
     card.addEventListener('touchstart', e => {
       pressTimer = setTimeout(() => {
@@ -658,21 +744,10 @@ function showContextMenu(x, y, card, shelves, library) {
     });
   });
 
-  // Remove — show inline confirm inside menu instead of native confirm()
+  // Remove — optimistic, reversible via the undo toast (no confirm needed)
   menu.querySelector('.ctx-remove').addEventListener('click', () => {
-    const removeBtn = menu.querySelector('.ctx-remove');
-    removeBtn.outerHTML = `
-      <div class="ctx-remove-confirm flex items-center gap-2 px-3 py-2">
-        <span class="text-text text-xs flex-1">Remove from library?</span>
-        <button class="ctx-remove-yes px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white text-xs rounded font-medium">Yes</button>
-        <button class="ctx-remove-no px-2 py-0.5 text-muted hover:text-text text-xs">No</button>
-      </div>`;
-    menu.querySelector('.ctx-remove-yes').addEventListener('click', async () => {
-      menu.remove();
-      await api.removeFromLibrary(libId);
-      loadLibrary();
-    });
-    menu.querySelector('.ctx-remove-no').addEventListener('click', () => menu.remove());
+    menu.remove();
+    queueRemoval([libId], `Removed “${libEntry.title}”`);
   });
 
   // Progress slider
@@ -971,7 +1046,7 @@ async function initRecentlyAdded(container) {
           ${unseen.map(b => {
             const icon = SERVICE_LABEL[b.service] ?? '';
             const cover = b.cover_url
-              ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.book_id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover">`
+              ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.book_id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
               : `<div class="w-full h-full bg-border/40 flex items-center justify-center text-base">${icon}</div>`;
             return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-14 group">
               <div class="relative w-14 h-20 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">

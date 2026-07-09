@@ -10,6 +10,32 @@ export function coverProxySrc(url, bookId) {
   return `/api/covers/${bookId}?src=${encodeURIComponent(url)}`;
 }
 
+// Keep Tab cycling inside an open modal and focus its first control. Returns a
+// cleanup function that removes the listener and restores focus to whatever
+// was focused before the modal opened.
+export function trapFocus(root) {
+  const previouslyFocused = document.activeElement;
+  const SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const focusables = () => [...root.querySelectorAll(SELECTOR)].filter(el => el.getClientRects().length > 0);
+
+  const onKeyDown = e => {
+    if (e.key !== 'Tab') return;
+    const els = focusables();
+    if (!els.length) return;
+    const first = els[0];
+    const last = els[els.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+
+  root.addEventListener('keydown', onKeyDown);
+  focusables()[0]?.focus();
+  return () => {
+    root.removeEventListener('keydown', onKeyDown);
+    previouslyFocused?.focus?.();
+  };
+}
+
 // Small pill identifying which metadata source a search result came from
 export function sourceBadgeHTML(source) {
   if (source === 'google')

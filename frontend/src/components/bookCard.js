@@ -32,22 +32,22 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
   const removeBtn = !searchMode && !readOnly
     ? `<button class="remove-card-btn absolute top-1.5 right-1.5 z-10
                       w-6 h-6 rounded-full bg-black/70 backdrop-blur-sm text-white text-xs
-                      opacity-0 group-hover:opacity-100 transition-all duration-150
+                      opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all duration-150
                       flex items-center justify-center hover:bg-red-600 hover:scale-110"
-               title="Remove from library">✕</button>
+               title="Remove from library" aria-label="Remove ${escHtml(book.title)} from library">✕</button>
        <button class="card-menu-btn absolute bottom-1.5 right-1.5 z-10
                       w-6 h-6 rounded-full bg-black/60 backdrop-blur-sm text-white text-xs
-                      opacity-0 group-hover:opacity-100 transition-all duration-150
+                      opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all duration-150
                       flex items-center justify-center hover:bg-stone-600 hover:scale-110"
-               title="More options">⋯</button>`
+               title="More options" aria-label="More options for ${escHtml(book.title)}" aria-haspopup="menu">⋯</button>`
     : '';
 
   const finishBtn = isReading && !readOnly
     ? `<button class="finish-reading-btn absolute top-1.5 left-1.5 z-10
                       w-6 h-6 rounded-full bg-green-700/80 backdrop-blur-sm text-white text-xs
-                      opacity-0 group-hover:opacity-100 transition-all duration-150
+                      opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all duration-150
                       flex items-center justify-center hover:bg-green-500 hover:scale-110"
-               title="Mark as finished">✓</button>`
+               title="Mark as finished" aria-label="Mark ${escHtml(book.title)} as finished">✓</button>`
     : '';
 
   const pct = book.progress_pct ?? null;

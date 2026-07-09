@@ -1,9 +1,19 @@
 const KEY = 'bw_prefs';
 const DEFAULTS = { theme: 'dark', cardSize: 'medium', accent: 'amber', searchLanguage: '' };
 
+// Until the user explicitly picks a theme, follow the OS preference
+function systemTheme() {
+  try { return matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; }
+  catch { return 'dark'; }
+}
+
 export function loadPrefs() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; }
-  catch { return { ...DEFAULTS }; }
+  try {
+    const stored = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    const prefs = { ...DEFAULTS, ...stored };
+    if (!stored.theme) prefs.theme = systemTheme();
+    return prefs;
+  } catch { return { ...DEFAULTS, theme: systemTheme() }; }
 }
 
 export function savePrefs(patch) {
@@ -28,6 +38,10 @@ export function applyPrefs(prefs = loadPrefs()) {
   // Theme class on <html> — CSS overrides cascade to all children
   html.classList.remove('theme-light');
   if (prefs.theme === 'light') html.classList.add('theme-light');
+
+  // Keep the browser/OS chrome (Android status bar, PWA title bar) in sync
+  document.querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', prefs.theme === 'light' ? '#f8f7f4' : '#0c0a09');
 
   // Card size via CSS variable consumed by .book-grid
   html.style.setProperty('--grid-min-col', CARD_SIZES[prefs.cardSize] ?? CARD_SIZES.medium);

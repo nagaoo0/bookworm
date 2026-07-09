@@ -901,7 +901,7 @@ function renderGroupsTab(el, groups, rootContainer, _users, _feed, _challenges) 
               ${feed.map(s => {
                 const stars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
                 const cover = s.cover_url
-                  ? `<img src="${escHtml(coverProxySrc(s.cover_url, s.book_id))}" alt="" class="w-10 h-14 object-cover rounded flex-shrink-0" />`
+                  ? `<img src="${escHtml(coverProxySrc(s.cover_url, s.book_id))}" alt="" class="w-10 h-14 object-cover rounded flex-shrink-0" loading="lazy" />`
                   : `<div class="w-10 h-14 bg-surface-2 rounded flex-shrink-0"></div>`;
                 return `
                   <div class="flex gap-3 bg-surface-2 rounded-xl p-3">

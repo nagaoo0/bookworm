@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { starRatingHTML, attachStarHandlers } from './starRating.js';
-import { escHtml } from '../utils.js';
+import { escHtml, trapFocus } from '../utils.js';
 
 export function openLogReadModal(book, onSuccess) {
   document.getElementById('log-read-modal')?.remove();
@@ -8,6 +8,9 @@ export function openLogReadModal(book, onSuccess) {
   const modal = document.createElement('div');
   modal.id = 'log-read-modal';
   modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', `Log a read of ${book.title}`);
   modal.innerHTML = `
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="log-modal-backdrop"></div>
     <div class="relative w-full max-w-md rounded-2xl shadow-2xl"
@@ -56,9 +59,14 @@ export function openLogReadModal(book, onSuccess) {
     </div>`;
   document.body.appendChild(modal);
 
-  const closeModal = () => modal.remove();
+  const untrap = trapFocus(modal);
+  const closeModal = () => {
+    document.removeEventListener('keydown', onKeyDown);
+    untrap();
+    modal.remove();
+  };
   const onKeyDown = e => { if (e.key === 'Escape') closeModal(); };
-  document.addEventListener('keydown', onKeyDown, { once: true });
+  document.addEventListener('keydown', onKeyDown);
   modal.querySelector('#log-modal-backdrop')?.addEventListener('click', closeModal);
   modal.querySelector('#log-modal-close')?.addEventListener('click', closeModal);
   modal.querySelector('#log-modal-skip')?.addEventListener('click', closeModal);
@@ -81,7 +89,6 @@ export function openLogReadModal(book, onSuccess) {
         rating:     modalRating || null,
         review:     fd.get('review')     || null,
       });
-      document.removeEventListener('keydown', onKeyDown);
       closeModal();
       onSuccess?.();
     } catch (err) {

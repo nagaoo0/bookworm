@@ -142,6 +142,13 @@ export function renderSearch(container) {
   input.addEventListener('focus', () => { if (!input.value.trim()) showRecentDropdown(); });
   input.addEventListener('blur', () => setTimeout(() => recentDropdown.classList.add('hidden'), 150));
 
+  // ArrowDown from the search box moves focus into the results grid
+  input.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowDown') return;
+    const first = container.querySelector('#search-results .book-card');
+    if (first) { e.preventDefault(); first.focus(); }
+  });
+
   input.addEventListener('input', e => {
     clearTimeout(debounceTimer);
     const q = e.target.value.trim();
@@ -351,6 +358,21 @@ function renderResults(container, results) {
         btn.textContent = '✗ Error';
         btn.disabled = false;
       }
+    });
+  });
+
+  // Keyboard navigation: results are tabbable, Enter opens, arrow keys move focus
+  const cards = [...el.querySelectorAll('.book-card')];
+  cards.forEach((card, i) => {
+    card.tabIndex = 0;
+    card.addEventListener('keydown', e => {
+      if (e.target !== card) return; // don't hijack keys inside the add-area controls
+      if (e.key === 'Enter') { card.click(); return; }
+      const delta = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1
+                  : (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   ? -1 : 0;
+      if (!delta) return;
+      e.preventDefault();
+      cards[i + delta]?.focus();
     });
   });
 }

@@ -520,3 +520,41 @@ window.addEventListener('hashchange', () => {
     }
   }
 })();
+
+// ── Global keyboard shortcuts ───────────────────────────────────────────────────
+// "/" focuses the nearest search input (library filter on home, search box on
+// the search view) or jumps to the search view from anywhere else.
+document.addEventListener('keydown', e => {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if (!getState().user) return;
+  e.preventDefault();
+  const input = document.getElementById('search-input') ?? document.getElementById('library-search');
+  if (input) input.focus();
+  else location.hash = '#search';
+});
+
+// Escape clears the library filter (and re-filters) when it has text
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const input = e.target.closest('#library-search, #search-input');
+  if (!input || !input.value) return;
+  input.value = '';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+});
+
+// ── Offline awareness ───────────────────────────────────────────────────────────
+function offlineBanner() {
+  let el = document.getElementById('offline-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'offline-banner';
+    el.setAttribute('role', 'status');
+    el.textContent = "You're offline — changes won't be saved until the connection returns.";
+    document.body.appendChild(el);
+  }
+  return el;
+}
+window.addEventListener('offline', () => offlineBanner().classList.add('offline-visible'));
+window.addEventListener('online', () => offlineBanner().classList.remove('offline-visible'));
+if (!navigator.onLine) offlineBanner().classList.add('offline-visible');

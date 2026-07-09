@@ -1,10 +1,13 @@
 import { api } from '../api.js';
 import { setState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from './starRating.js';
-import { escHtml, sourceBadgeHTML } from '../utils.js';
+import { escHtml, sourceBadgeHTML, trapFocus } from '../utils.js';
 
 let _onSessionSaved = () => {};
 export function setOnSessionSaved(fn) { _onSessionSaved = fn; }
+
+let _untrap = null;
+const _onEscape = e => { if (e.key === 'Escape') closeModal(); };
 
 export function openModal(bookId, bookTitle, libId, notes) {
   setState({ modal: { bookId, bookTitle } });
@@ -13,6 +16,9 @@ export function openModal(bookId, bookTitle, libId, notes) {
 
 export function closeModal() {
   setState({ modal: null });
+  document.removeEventListener('keydown', _onEscape);
+  _untrap?.();
+  _untrap = null;
   document.getElementById('modal-backdrop')?.remove();
 }
 
@@ -22,6 +28,9 @@ async function renderModal(bookId, bookTitle, libId, notes) {
   const backdrop = document.createElement('div');
   backdrop.id = 'modal-backdrop';
   backdrop.className = 'fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 fade-in';
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  backdrop.setAttribute('aria-label', bookTitle);
   backdrop.innerHTML = `
     <div class="bg-surface rounded-t-2xl sm:rounded-xl w-full sm:max-w-lg h-[90vh] sm:h-auto sm:max-h-[90vh]
                 overflow-y-auto shadow-2xl ring-1 ring-border/20 flex flex-col">
@@ -129,7 +138,9 @@ async function renderModal(bookId, bookTitle, libId, notes) {
 
   document.body.appendChild(backdrop);
 
-  // Close
+  // Focus trap + close (button, backdrop click, Escape)
+  _untrap = trapFocus(backdrop);
+  document.addEventListener('keydown', _onEscape);
   document.getElementById('modal-close').addEventListener('click', closeModal);
   backdrop.addEventListener('click', e => { if (e.target === backdrop) closeModal(); });
 

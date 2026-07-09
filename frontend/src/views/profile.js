@@ -388,7 +388,7 @@ function renderFeedTab(feed) {
           `<span style="color:${i < s.rating ? 'var(--color-accent)' : 'var(--color-border)'}">★</span>`).join('') : '';
         const authors = Array.isArray(s.authors) ? s.authors.join(', ') : (s.authors ?? '');
         const cover = s.cover_url
-          ? `<img src="${escHtml(coverProxySrc(s.cover_url, s.book_id))}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" />`
+          ? `<img src="${escHtml(coverProxySrc(s.cover_url, s.book_id))}" alt="" class="w-12 h-[4.5rem] object-cover rounded-lg shadow-md flex-shrink-0" loading="lazy" />`
           : `<div class="w-12 h-[4.5rem] bg-surface-2 rounded-lg flex-shrink-0"></div>`;
         const likeCount = s.like_count ?? 0;
         const liked = !!s.liked;
