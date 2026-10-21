@@ -2,6 +2,7 @@
 // (Postgres compiled to WASM) persisted in backend/.pglite-data.
 //   node scripts/dev-pglite.mjs            → API on :3000 (frontend dev proxies /api)
 //   PGLITE_FRESH=1 node scripts/dev-pglite.mjs  → start from an empty database
+//   DEV_WATCH=1 …                               → restart the API on file changes (may need a full restart if PGlite drops the connection)
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { rmSync } from 'node:fs';
@@ -26,7 +27,10 @@ await server.start();
 const port = Number(String(server.getServerConn()).split(':').pop());
 console.log(`[dev-pglite] PGlite listening on 127.0.0.1:${port} (data: ${dataDir})`);
 
-const api = spawn(process.execPath, ['--watch', 'src/index.js'], {
+// --watch is opt-in (DEV_WATCH=1): PGlite serves a single connection, and a
+// watch restart can leave the old one half-open so the new process can't connect.
+const nodeArgs = process.env.DEV_WATCH ? ['--watch', 'src/index.js'] : ['src/index.js'];
+const api = spawn(process.execPath, nodeArgs, {
   cwd: backend,
   stdio: 'inherit',
   env: {
