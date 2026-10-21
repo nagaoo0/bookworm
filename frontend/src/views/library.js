@@ -121,8 +121,9 @@ export function logRead(entry) {
 
 /** "Finish": status → Finished, then the Log-a-read modal. */
 export async function finishBook(entry) {
+  const route = location.hash;
   const ok = entry.status === 'done' ? true : await changeStatus(entry, 'done');
-  if (ok) logRead(findLibraryEntry(entry.id) ?? entry);
+  if (ok && location.hash === route) logRead(findLibraryEntry(entry.id) ?? entry);   // not on another page after a quick navigation
 }
 
 function restoreEntries(entries) {
@@ -233,8 +234,9 @@ export function openProgressPicker(entry, anchor) {
 export function bookActionHandlers({ getAnchor } = {}) {
   return {
     onStatus: async (entry, status) => {
+      const route = location.hash;
       const ok = await changeStatus(entry, status);
-      if (ok && status === 'done' && entry.status !== 'done') logRead(findLibraryEntry(entry.id) ?? entry);
+      if (ok && location.hash === route && status === 'done' && entry.status !== 'done') logRead(findLibraryEntry(entry.id) ?? entry);
     },
     onShelfToggle: (entry, shelf, on) => { toggleShelf(entry, shelf, on); },
     onRemove: (entry) => queueRemoval([entry]),
@@ -887,7 +889,7 @@ export function renderLibrary(el, params = {}) {
     try {
       const row = await api.updateShelf(id, { name });
       if (row && !disposed) setState({ shelves: getState().shelves.map((s) => (Number(s.id) === id ? { ...s, ...row } : s)) });
-      toast(TOAST.shelfRenamed);
+      if (!disposed) toast(TOAST.shelfRenamed);
     } catch {
       setState({ shelves: prev });
       toast(ERROR.renameShelf, { type: 'error' });
@@ -914,7 +916,7 @@ export function renderLibrary(el, params = {}) {
       shelves: (getState().shelves ?? []).filter((s) => Number(s.id) !== id),
       library: (getState().library ?? []).map((b) => ((b.shelf_ids ?? []).some((i) => Number(i) === id) ? { ...b, shelf_ids: b.shelf_ids.filter((i) => Number(i) !== id) } : b)),
     });
-    toast(TOAST.shelfDeleted);
+    if (!disposed) toast(TOAST.shelfDeleted);
   }
 
   async function commitShelfOrder(ids, message) {
@@ -1147,7 +1149,7 @@ export function renderLibrary(el, params = {}) {
       toast(`Couldn't update ${plural(failed.size, 'book')}`, { type: 'error' });
     }
     const done = targets.filter((e) => !failed.has(String(e.id)));
-    if (!done.length || silent) return;
+    if (!done.length || silent || disposed) return;
     toast(`Moved ${plural(done.length, 'book')} to ${statusLabel(status)}`, {
       action: {
         label: ACTION.undo,
@@ -1184,7 +1186,7 @@ export function renderLibrary(el, params = {}) {
       toast(ERROR.updateShelves, { type: 'error' });
     }
     const done = targets.filter((e) => !failed.has(String(e.id)));
-    if (!done.length || silent) return;
+    if (!done.length || silent || disposed) return;
     toast(remove ? `Removed ${plural(done.length, 'book')} from ${shelf.name}` : TOAST.bulkShelf(done.length, shelf.name).replace(/\b1 books\b/, '1 book'), {
       action: { label: ACTION.undo, onClick: () => bulkAddToShelf(done, shelf, { remove: !remove, silent: true }) },
     });

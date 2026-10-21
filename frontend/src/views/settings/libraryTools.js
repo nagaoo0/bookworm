@@ -151,7 +151,7 @@ export function mount(el) {
       setButtonLoading(trigger, true);
       try {
         await api.mergeBooks(keepId, removeId);
-        if (scope.disposed) return;
+        if (scope.disposed) { loadLibrary(); return; }   // the library changed server-side either way
         const row = el.querySelector(`[data-pair="${index}"]`);
         if (row) {
           row.classList.add('opacity-60');
@@ -176,7 +176,7 @@ export function mount(el) {
     setButtonLoading(btn, true);
     try {
       const { updated, checked } = await api.fetchMissingCovers();
-      if (scope.disposed) return;
+      if (scope.disposed) { if (updated) loadLibrary(); return; }
       if (!checked) toast('All books already have covers', { type: 'info' });
       else { toast(`Updated ${updated} of ${checked} covers`); if (updated) loadLibrary(); }
     } catch {
@@ -226,7 +226,7 @@ export function mount(el) {
     setButtonLoading(btn, true);
     try {
       const { imported = 0, skipped = 0 } = await api.importLibrary(csv);
-      if (scope.disposed) return;
+      if (scope.disposed) { loadLibrary(); return; }
       result.innerHTML = String(card({ padding: 'sm', cls: 'bg-surface-2', content: html`
         <p class="font-medium">Imported ${plural(imported, 'book')} · ${skipped} skipped</p>` }));
       form.reset();

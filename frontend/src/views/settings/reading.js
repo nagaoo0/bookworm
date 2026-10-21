@@ -77,7 +77,9 @@ export function mount(el) {
     try {
       await api.setGoal(year, target);
       if (scope.disposed) return;
-      goal = await api.getGoal(year).catch(() => ({ year, target, booksRead: goal?.booksRead ?? 0 }));
+      const fresh = await api.getGoal(year).catch(() => ({ year, target, booksRead: goal?.booksRead ?? 0 }));
+      if (scope.disposed) return;
+      goal = fresh;
       render();
       toast(TOAST.goalSet(target, year));
     } catch (err) {

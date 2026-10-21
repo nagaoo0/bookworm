@@ -7,7 +7,7 @@ import { getState } from '../store.js';
 import { upsertLibraryEntry } from '../libraryStore.js';
 import {
   avatar, badge, button, cover, field, icon, stars, spinner,
-  delegate, uid, plural, timeAgo, formatDate, statusLabel,
+  delegate, uid, plural, timeAgo, formatDate, formatAuthors, statusLabel,
   setButtonLoading, setFieldError, mountConfirmInline, toast, TOAST, ERROR,
 } from '../ui/index.js';
 
@@ -74,8 +74,10 @@ export function mountFollowButtons(root, { onChange } = {}) {
     buttonsFor(name).forEach(b => paintFollow(b, next));
     try {
       if (next) await api.follow(name); else await api.unfollow(name);
-      toast(next ? TOAST.following(name) : TOAST.unfollowed(name));
-      if (!disposed) onChange?.(name, next);
+      if (!disposed) {
+        toast(next ? TOAST.following(name) : TOAST.unfollowed(name));
+        onChange?.(name, next);
+      }
     } catch {
       if (!disposed) buttonsFor(name).forEach(b => paintFollow(b, !next));
       toast(next ? ERROR.follow : ERROR.unfollow, { type: 'error' });
@@ -126,7 +128,7 @@ export function feedCardHTML(item, { viewer = getState().user, showAddToLibrary 
   const name = item.username ?? '';
   const when = item.finished_at ?? item.started_at;
   const verb = item.finished_at ? 'finished' : 'started';
-  const authors = Array.isArray(item.authors) ? item.authors.join(', ') : (item.authors ?? '');
+  const authors = formatAuthors(item.authors);
   const review = typeof item.review === 'string' ? item.review.trim() : '';
   const long = review.length > REVIEW_CLAMP_CHARS || (review.match(/\n/g)?.length ?? 0) >= 4;
   const social = item.like_count !== undefined && item.like_count !== null;
@@ -144,7 +146,7 @@ export function feedCardHTML(item, { viewer = getState().user, showAddToLibrary 
   const commentBtn = social ? gate(html`<button type="button" class="btn btn--sm btn--ghost" data-feed-comments="${sid}" data-count="${comments}" aria-expanded="false" aria-controls="${threadId}" aria-label="${comments > 0 ? `Comments, ${comments}` : 'Comments'}"${viewer ? '' : raw(' disabled aria-disabled="true"')}><span class="btn__icon">${icon('message-circle', { size: 16 })}</span><span class="btn__label">${comments > 0 ? comments : ''}</span></button>`) : '';
 
   const addBtn = canAdd
-    ? html`<button type="button" class="btn btn--sm btn--ghost" data-feed-add data-book-id="${item.book_id}" data-google-id="${item.google_id ?? ''}" data-title="${item.title ?? ''}"><span class="btn__icon">${icon('plus', { size: 16 })}</span><span class="btn__label">Add to library</span></button>`
+    ? html`<button type="button" class="btn btn--sm btn--ghost" data-feed-add data-book-id="${item.book_id}"><span class="btn__icon">${icon('plus', { size: 16 })}</span><span class="btn__label">Add to library</span></button>`
     : '';
 
   return html`
@@ -340,24 +342,14 @@ export function mountFeedCards(root, { onChange } = {}) {
     btn.querySelector('.btn__label').textContent = expand ? 'Less' : 'More';
   }));
 
-  // Add to library — needs the book's external ids (the feed only carries our own book id)
+  // Add to library — the feed item carries our own books.id, so the server adds that row directly
   cleanups.push(delegate(root, 'click', '[data-feed-add]', async (e, btn) => {
     if (btn.dataset.loading) return;
     const bookId = btn.dataset.bookId;
     setButtonLoading(btn, true);
     try {
-      let payload;
-      try {
-        const b = await api.getBookDetail(bookId);
-        payload = {
-          googleId: b.google_id ?? undefined, openLibraryId: b.open_library_id ?? undefined, appleId: b.apple_id ?? undefined,
-          title: b.title, authors: b.authors ?? [], coverUrl: b.cover_url ?? undefined,
-        };
-      } catch {
-        payload = { googleId: btn.dataset.googleId || undefined, title: btn.dataset.title || undefined };
-      }
-      const row = await api.addToLibrary(payload);
-      upsertLibraryEntry(row);
+      const row = await api.addToLibrary({ bookId: Number(bookId) });
+      upsertLibraryEntry(row);   // store: the book is in the library whether or not this view is still open
       if (disposed) return;
       const done = String(badge({ label: 'In library', variant: 'neutral', icon: 'check' }));
       root.querySelectorAll('[data-feed-add]').forEach((b) => {

@@ -11,7 +11,7 @@ import { openSse } from '../sse.js';
 import { openLogReadModal, dayKey } from '../components/logReadModal.js';
 import {
   ACTION, EMPTY, ERROR, LABEL, STATUS, TOAST, avatar, badge, bookCard, button, card, chipGroup, cover,
-  delegate, emptyState, field, formatDate, icon, iconButton, mountBookGrid, mountChipGroup, mountConfirmInline,
+  delegate, emptyState, field, formatAuthors, formatDate, icon, iconButton, mountBookGrid, mountChipGroup, mountConfirmInline,
   mountCoverZoom, mountFields, mountMenuTriggers, mountProgressSlider, mountTabs, openModal, openPopover, openSheet,
   plural, progressBar, progressSlider, sectionHeader, segmented, setButtonLoading, setFieldError, skeleton,
   skeletonCard, skeletonList, stars, statusBadge, statusLabel, tabs, timeAgo, toast, uid, undoToast,
@@ -73,16 +73,37 @@ function splitList(s) {
 
 // ── Entry point ─────────────────────────────────────────────────────────────────
 
-/** Router contract: renderBook(el, { id }) → cleanup. (A bare id string is accepted too.) */
-export async function renderBook(el, params) {
+/**
+ * Router contract: renderBook(el, { id }) → cleanup. (A bare id string is accepted too.)
+ * Synchronous on purpose: the cleanup exists while the book is still loading, so a quick navigation away
+ * stops every pending write (history.replaceState, document.title, DOM) instead of racing the next view.
+ */
+export function renderBook(el, params) {
   const rawId = String((typeof params === 'string' ? params : params?.id) ?? '');
   const user = getState().user;
-  const cleanups = [];
-  const cleanup = () => { cleanups.splice(0).reverse().forEach((fn) => { try { fn(); } catch { /* tearing down */ } }); };
+  let disposed = false;
+  let seq = 0;
+  let skelTimer = null;
+  let pageCleanup = null;
+  let offRetry = null;
 
-  // Skeleton only if loading takes long enough to be noticed (spec §8: min 150 ms)
-  const skelTimer = setTimeout(() => {
-    if (!el.firstChild) {
+  const teardown = () => {
+    clearTimeout(skelTimer);
+    try { pageCleanup?.(); } catch { /* tearing down */ }
+    try { offRetry?.(); } catch { /* tearing down */ }
+    pageCleanup = null;
+    offRetry = null;
+  };
+
+  async function start() {
+    const mine = ++seq;
+    const stale = () => disposed || mine !== seq;
+    teardown();
+    el.innerHTML = '';
+
+    // Skeleton only if loading takes long enough to be noticed (spec §8: min 150 ms)
+    skelTimer = setTimeout(() => {
+      if (stale() || el.firstChild) return;
       el.innerHTML = String(html`
         <div class="space-y-6" aria-busy="true">
           <div class="flex flex-col items-center md:flex-row md:items-start gap-6">
@@ -91,32 +112,33 @@ export async function renderBook(el, params) {
           </div>
           ${skeletonCard()}${skeletonCard()}
         </div>`);
-    }
-  }, 150);
+    }, 150);
 
-  try {
-    const data = await load(rawId, user);
-    clearTimeout(skelTimer);
-    el.innerHTML = '';
-    cleanups.push(createPage(el, data, user));
-  } catch (err) {
-    clearTimeout(skelTimer);
-    const missing = err?.status === 404 || err?.status === 400;
-    const state = missing ? EMPTY.bookNotFound : EMPTY.loadError;
-    el.innerHTML = String(html`<div class="py-8">${emptyState({
-      icon: state.icon, title: state.title, body: state.body,
-      action: missing ? { label: state.action, href: '#library' } : { label: state.action, attrs: 'data-action="retry"' },
-    })}</div>`);
-    cleanups.push(delegate(el, 'click', '[data-action="retry"]', async () => {
-      cleanup();
+    try {
+      const data = await load(rawId, user, stale);
+      clearTimeout(skelTimer);
+      if (stale()) return;
       el.innerHTML = '';
-      cleanups.push(await renderBook(el, params));
-    }));
+      pageCleanup = createPage(el, data, user);
+    } catch (err) {
+      clearTimeout(skelTimer);
+      if (stale()) return;
+      const missing = err?.status === 404 || err?.status === 400;
+      const state = missing ? EMPTY.bookNotFound : EMPTY.loadError;
+      el.innerHTML = String(html`<div class="py-8">${emptyState({
+        icon: state.icon, title: state.title, body: state.body,
+        action: missing ? { label: state.action, href: '#library' } : { label: state.action, attrs: 'data-action="retry"' },
+      })}</div>`);
+      offRetry = delegate(el, 'click', '[data-action="retry"]', () => { start(); });
+    }
   }
-  return cleanup;
+
+  start();
+  return () => { disposed = true; seq++; teardown(); };
 }
 
-async function load(rawId, user) {
+/** Only what the first paint needs: the book and the user's reads. Everything else loads inside the page. */
+async function load(rawId, user, stale) {
   let id = rawId;
   const external = rawId.startsWith('g:') ? ['google', rawId.slice(2)]
     : rawId.startsWith('ol:') ? ['openlibrary', rawId.slice(3)]
@@ -126,21 +148,18 @@ async function load(rawId, user) {
     let extId = external[1];
     try { extId = decodeURIComponent(extId); } catch { /* keep raw */ }
     const resolved = await api.getBookByExternalId(external[0], extId);
+    if (stale()) return null;
     id = resolved.id;
     history.replaceState(null, '', `#book/${id}`);   // rewrite the hash without a second navigation
   }
   // Direct loads of a book URL can beat the shell's first library fetch; without it every book would look "not in library"
   if (user && !getState().libraryLoaded) await loadLibrary();
 
-  const [book, sessions, comments, recs, social, availability] = await Promise.all([
+  const [book, sessions] = await Promise.all([
     api.getBookDetail(id),
     user ? api.getSessions(id).catch(() => []) : [],
-    api.getComments(id).catch(() => []),
-    api.getRecommendations(id).catch(() => []),
-    user ? api.getBookSocial(id).catch(() => []) : [],
-    user ? api.getBookAvailability(id).catch(() => []) : [],
   ]);
-  return { book, sessions, comments, recs, social, availability };
+  return { book, sessions };
 }
 
 // ── The page ────────────────────────────────────────────────────────────────────
@@ -149,15 +168,20 @@ function createPage(el, data, user) {
   const S = {
     book: data.book,
     sessions: data.sessions ?? [],
-    comments: data.comments ?? [],
-    recs: data.recs ?? [],
-    social: data.social ?? [],
-    availability: data.availability ?? [],
+    comments: [],
+    recs: [],
+    social: [],
+    availability: [],
+    // Community + availability parts load after the first paint: 'idle' | 'loading' | 'ready' | 'error'
+    load: { comments: 'idle', recs: 'idle', social: 'idle', avail: 'idle' },
     notes: { draft: null },
     tab: null,
   };
   const cleanups = [];
   const runCleanups = () => cleanups.splice(0).reverse().forEach((fn) => { try { fn(); } catch { /* tearing down */ } });
+  // Every post-await DOM write, document.title change, toast and navigation checks this. Registered first, so it flips last.
+  let mounted = true;
+  cleanups.push(() => { mounted = false; });
   try {
   const tid = uid('bk-tabs');
   const ids = { reading: `${tid}-h-reading`, about: `${tid}-h-about`, community: `${tid}-h-community` };
@@ -247,7 +271,7 @@ function createPage(el, data, user) {
         <div class="min-w-0 flex-1 space-y-3">
           <div>
             <h1 class="h1 break-words">${v.title}</h1>
-            ${v.authors.length ? html`<p class="text-body text-text-2 mt-1">${v.authors.join(', ')}</p>` : ''}
+            ${v.authors.length ? html`<p class="text-body text-text-2 mt-1">${formatAuthors(v.authors)}</p>` : ''}
           </div>
           ${chips.length ? html`<div class="flex flex-wrap justify-center md:justify-start gap-2">${chips}</div>` : ''}
           ${(avg || e) ? html`
@@ -286,7 +310,7 @@ function createPage(el, data, user) {
     } else {
       sticky.hidden = true;
     }
-    document.title = `${view().title} · Bookworm`;
+    if (mounted) document.title = `${view().title} · Bookworm`;
   }
 
   // ── Your reading ──────────────────────────────────────────────────────────
@@ -444,8 +468,6 @@ function createPage(el, data, user) {
   function aboutHTML() {
     const v = view();
     const desc = plainText(v.description);
-    const m = aboutModel();
-    const rows = S.availability.map(availabilityRow).filter(r => r !== '');
     return html`
       <section aria-labelledby="${ids.about}">
         ${sectionHeader({ title: 'About', id: ids.about })}
@@ -455,11 +477,29 @@ function createPage(el, data, user) {
               <p class="text-body text-text-1 whitespace-pre-line break-words line-clamp-6" data-desc-text>${desc}</p>
               <button type="button" class="btn btn--ghost btn--sm -ml-2 mt-1" data-action="toggle-desc" aria-expanded="false" hidden><span class="btn__label">${ACTION.showMore}</span></button>
             </div>` : html`<p class="text-small text-text-3">No description available.</p>`}
-          ${rows.length ? html`<div>${sectionHeader({ title: LABEL.whereToFindIt, level: 3 })}<div class="space-y-3">${rows}</div></div>` : ''}
-          ${miniList(m.series ? `Also in ${m.series}` : '', m.inSeries)}
-          ${miniList(m.narrator ? `More narrated by ${m.narrator}` : '', m.narrated)}
+          <div class="space-y-6" data-slot="avail"></div>
         </div>
       </section>`;
+  }
+
+  // Availability-dependent parts (where to find it · series · narrator) fill in when /availability resolves
+  function availHTML() {
+    if (S.load.avail === 'idle') return '';
+    if (S.load.avail === 'loading') {
+      return html`<div class="space-y-3" role="status" aria-label="Loading availability" aria-busy="true">${skeleton({ w: '35%', h: 20 })}${skeleton({ w: '100%', h: 64 })}</div>`;
+    }
+    if (S.load.avail === 'error') return sectionError('where to find this book', 'avail');
+    const m = aboutModel();
+    const rows = S.availability.map(availabilityRow).filter(r => r !== '');
+    return html`
+      ${rows.length ? html`<div>${sectionHeader({ title: LABEL.whereToFindIt, level: 3 })}<div class="space-y-3">${rows}</div></div>` : ''}
+      ${miniList(m.series ? `Also in ${m.series}` : '', m.inSeries)}
+      ${miniList(m.narrator ? `More narrated by ${m.narrator}` : '', m.narrated)}`;
+  }
+  function renderAvail() {
+    if (!mounted) return;
+    const host = el.querySelector('[data-slot="avail"]');
+    if (host) paint(host, availHTML());
   }
 
   function measureDesc() {
@@ -471,6 +511,28 @@ function createPage(el, data, user) {
   function renderAbout() {
     paint(slot('about'), aboutHTML());
     measureDesc();
+    renderAvail();
+  }
+
+  // ── Per-section loading (never blocks the first paint) ────────────────────
+  function sectionError(what, key) {
+    return html`<div class="flex flex-wrap items-center gap-2 text-small text-danger" role="alert">Couldn't load ${what}. ${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: `data-action="retry-section" data-section="${key}"` })}</div>`;
+  }
+  const sectionSeq = {};
+  async function loadSection(key, fetcher, apply, repaint) {
+    const mine = (sectionSeq[key] = (sectionSeq[key] ?? 0) + 1);
+    S.load[key] = 'loading';
+    repaint();
+    try {
+      const value = await fetcher();
+      if (!mounted || mine !== sectionSeq[key]) return;
+      apply(value);
+      S.load[key] = 'ready';
+    } catch {
+      if (!mounted || mine !== sectionSeq[key]) return;
+      S.load[key] = 'error';
+    }
+    repaint();
   }
 
   // ── Community ─────────────────────────────────────────────────────────────
@@ -494,49 +556,82 @@ function createPage(el, data, user) {
     return html`
       ${sectionHeader({ title: 'Comments', level: 3, count: S.comments.length || undefined })}
       <div aria-live="polite">
-        ${S.comments.length
-          ? html`<ul class="space-y-4">${S.comments.map(commentHTML)}</ul>`
-          : html`<p class="text-small text-text-3">${user ? 'No comments yet. Be the first.' : 'No comments yet.'}</p>`}
+        ${S.load.comments === 'loading' && !S.comments.length ? html`<div role="status" aria-label="Loading comments" aria-busy="true" class="space-y-3">${skeleton({ w: '100%', h: 40 })}${skeleton({ w: '80%', h: 40 })}</div>`
+          : S.load.comments === 'error' && !S.comments.length ? sectionError('comments', 'comments')
+            : S.comments.length
+              ? html`<ul class="space-y-4">${S.comments.map(commentHTML)}</ul>`
+              : html`<p class="text-small text-text-3">${user ? 'No comments yet. Be the first.' : 'No comments yet.'}</p>`}
       </div>`;
   }
   function renderComments() {
+    if (!mounted) return;
     const host = el.querySelector('[data-slot="comments"]');
     if (host) paint(host, commentsHTML());
   }
 
-  function communityHTML() {
+  function friendsHTML() {
+    if (S.load.social === 'idle') return '';
+    if (S.load.social === 'loading') {
+      return html`<div role="status" aria-label="Loading friends" aria-busy="true" class="space-y-3">${skeleton({ w: '40%', h: 20 })}${skeleton({ w: '100%', h: 56 })}</div>`;
+    }
+    if (S.load.social === 'error') return sectionError('what your friends think', 'social');
+    if (!S.social.length) return '';
+    return html`
+      <div>
+        ${sectionHeader({ title: LABEL.friendsOnThisBook, level: 3, count: S.social.length })}
+        <ul class="space-y-3">
+          ${S.social.map(u => html`
+            <li>${card({ padding: 'sm', content: html`
+              <div class="flex gap-3">
+                ${avatar({ username: u.username, size: 32 })}
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <a class="text-small font-medium text-accent-text hover:underline" href="#u/${encodeURIComponent(u.username)}">@${u.username}</a>
+                    ${statusBadge(u.status)}
+                    ${u.rating ? stars({ value: u.rating, size: 14 }) : ''}
+                  </div>
+                  ${u.review ? html`<p class="text-small text-text-2 mt-1 line-clamp-3 whitespace-pre-line break-words">${u.review}</p>` : ''}
+                </div>
+              </div>` })}</li>`)}
+        </ul>
+      </div>`;
+  }
+  function renderFriends() {
+    if (!mounted) return;
+    const host = el.querySelector('[data-slot="friends"]');
+    if (host) paint(host, friendsHTML());
+  }
+
+  function recsHTML() {
+    if (S.load.recs === 'idle') return '';
+    if (S.load.recs === 'loading') {
+      return html`<div role="status" aria-label="Loading recommendations" aria-busy="true" class="space-y-3">${skeleton({ w: '45%', h: 20 })}<div class="flex gap-3">${skeleton({ w: 112, h: 168 })}${skeleton({ w: 112, h: 168 })}${skeleton({ w: 112, h: 168 })}</div></div>`;
+    }
+    if (S.load.recs === 'error') return sectionError('recommendations', 'recs');
     const recEntries = S.recs.map(b => ({ b, href: recHref(b) })).filter(r => r.href);
+    if (!recEntries.length) return '';
+    return html`
+      <div>
+        ${sectionHeader({ title: LABEL.youMightAlsoLike, level: 3 })}
+        <div class="scroller">${recEntries.map(({ b, href }) => bookCard(
+          { title: b.title, authors: b.authors, cover_url: b.cover_url, book_id: b.id ?? null },
+          { variant: 'compact', href },
+        ))}</div>
+      </div>`;
+  }
+  function renderRecs() {
+    if (!mounted) return;
+    const host = el.querySelector('[data-slot="recs"]');
+    if (host) paint(host, recsHTML());
+  }
+
+  function communityHTML() {
     return html`
       <section aria-labelledby="${ids.community}">
         ${sectionHeader({ title: 'Community', id: ids.community })}
         <div class="space-y-6">
-          ${S.social.length ? html`
-            <div>
-              ${sectionHeader({ title: LABEL.friendsOnThisBook, level: 3, count: S.social.length })}
-              <ul class="space-y-3">
-                ${S.social.map(u => html`
-                  <li>${card({ padding: 'sm', content: html`
-                    <div class="flex gap-3">
-                      ${avatar({ username: u.username, size: 32 })}
-                      <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <a class="text-small font-medium text-accent-text hover:underline" href="#u/${encodeURIComponent(u.username)}">@${u.username}</a>
-                          ${statusBadge(u.status)}
-                          ${u.rating ? stars({ value: u.rating, size: 14 }) : ''}
-                        </div>
-                        ${u.review ? html`<p class="text-small text-text-2 mt-1 line-clamp-3 whitespace-pre-line break-words">${u.review}</p>` : ''}
-                      </div>
-                    </div>` })}</li>`)}
-              </ul>
-            </div>` : ''}
-          ${recEntries.length ? html`
-            <div>
-              ${sectionHeader({ title: LABEL.youMightAlsoLike, level: 3 })}
-              <div class="scroller">${recEntries.map(({ b, href }) => bookCard(
-                { title: b.title, authors: b.authors, cover_url: b.cover_url, book_id: b.id ?? null },
-                { variant: 'compact', href },
-              ))}</div>
-            </div>` : ''}
+          <div data-slot="friends">${friendsHTML()}</div>
+          <div data-slot="recs">${recsHTML()}</div>
           <div>
             <div data-slot="comments">${commentsHTML()}</div>
             ${user ? html`
@@ -548,6 +643,19 @@ function createPage(el, data, user) {
         </div>
       </section>`;
   }
+
+  // Each section has its own request, skeleton and error line
+  const sectionLoaders = {
+    comments: () => loadSection('comments', () => api.getComments(S.book.id),
+      (list) => {   // keep a comment posted while this was loading
+        const known = new Set(list.map(c => String(c.id)));
+        S.comments = [...list, ...S.comments.filter(c => !known.has(String(c.id)))];
+      }, renderComments),
+    recs: () => loadSection('recs', () => api.getRecommendations(S.book.id), (list) => { S.recs = list ?? []; }, renderRecs),
+    social: () => loadSection('social', () => api.getBookSocial(S.book.id), (list) => { S.social = list ?? []; }, renderFriends),
+    avail: () => loadSection('avail', () => api.getBookAvailability(S.book.id),
+      (list) => { S.availability = list ?? []; sig.avail = sigs().avail; startAbsSse(); }, renderAvail),
+  };
 
   // ── Tabs (mobile) / stacked sections (desktop) ────────────────────────────
   const mq = matchMedia('(min-width: 768px)');
@@ -587,28 +695,14 @@ function createPage(el, data, user) {
     setButtonLoading(btn, true);
     const b = S.book;
     try {
-      const row = await api.addToLibrary({
-        googleId: b.google_id ?? undefined,
-        openLibraryId: b.open_library_id ?? undefined,
-        appleId: b.apple_id ?? undefined,
-        title: b.title,
-        authors: b.authors,
-        coverUrl: b.cover_url ?? undefined,
-        pageCount: b.page_count ?? undefined,
-        publishedDate: b.published_date ?? undefined,
-        description: b.description ?? undefined,
-        categories: b.categories ?? undefined,
-        status,
-      });
+      const row = await api.addToLibrary({ bookId: Number(b.id), status });   // the book is already in our DB
       upsertLibraryEntry(row);
-      toast(TOAST.addedTo(statusLabel(status)));
-      // A book without any external id is copied rather than shared: follow the user to their own copy
-      if (String(row.book_id) !== String(b.id)) location.hash = `#book/${row.book_id}`;
+      if (mounted) toast(TOAST.addedTo(statusLabel(status)));
     } catch {
       toast(ERROR.add, { type: 'error' });
     } finally {
       adding = false;
-      setButtonLoading(btn, false);
+      if (mounted) setButtonLoading(btn, false);
     }
   }
 
@@ -622,9 +716,11 @@ function createPage(el, data, user) {
     });
     try {
       upsertLibraryEntry(await api.setStatus(e.id, next));
-      toast(message ?? TOAST.movedTo(statusLabel(next)), undo
-        ? { action: { label: ACTION.undo, onClick: () => changeStatus(prev, { undo: false }) } }
-        : undefined);
+      if (mounted) {
+        toast(message ?? TOAST.movedTo(statusLabel(next)), undo
+          ? { action: { label: ACTION.undo, onClick: () => changeStatus(prev, { undo: false }) } }
+          : undefined);
+      }
     } catch {
       upsertLibraryEntry(e);
       toast(ERROR.changeStatus, { type: 'error' });
@@ -643,9 +739,11 @@ function createPage(el, data, user) {
     try {
       if (on) upsertLibraryEntry(await api.addShelfMembership(e.id, Number(shelfId)));
       else await api.removeShelfMembership(e.id, Number(shelfId));
-      toast(on ? TOAST.shelfAdded(shelf.name) : TOAST.shelfRemoved(shelf.name), {
-        action: { label: ACTION.undo, onClick: () => toggleShelf(shelfId, !on) },
-      });
+      if (mounted) {
+        toast(on ? TOAST.shelfAdded(shelf.name) : TOAST.shelfRemoved(shelf.name), {
+          action: { label: ACTION.undo, onClick: () => toggleShelf(shelfId, !on) },
+        });
+      }
     } catch {
       upsertLibraryEntry({ ...(getEntry() ?? e), shelf_ids: prevIds });
       toast(ERROR.updateShelves, { type: 'error' });
@@ -701,9 +799,9 @@ function createPage(el, data, user) {
     try {
       const row = await api.setProgress(e.id, { progress_pct: value });
       if (mine === progressSeq) upsertLibraryEntry(row);
-      flashSaved();
+      if (mounted) flashSaved();
     } catch {
-      if (mine === progressSeq) {
+      if (mounted && mine === progressSeq) {
         const sliders = [...document.querySelectorAll('.slider__input')];
         sliders.forEach((s) => { if (document.activeElement === s) s.blur(); });
         paintProgress(prev);
@@ -721,7 +819,13 @@ function createPage(el, data, user) {
   }
 
   async function reloadSessions() {
-    try { S.sessions = await api.getSessions(S.book.id); } catch { toast(ERROR.generic('refresh your reads'), { type: 'error' }); return; }
+    let next;
+    try { next = await api.getSessions(S.book.id); } catch {
+      if (mounted) toast(ERROR.generic('refresh your reads'), { type: 'error' });
+      return;
+    }
+    if (!mounted) return;
+    S.sessions = next;
     renderHistory();
     renderHero();
   }
@@ -870,9 +974,11 @@ function createPage(el, data, user) {
       try {
         const row = await api.updateMetadata(e.id, changes);
         upsertLibraryEntry(row);
+        if (!mounted) return;
         modal.close();
         toast(TOAST.detailsSaved);
       } catch (err) {
+        if (!mounted) return;
         saving = false;
         modal.setBusy(false);
         setButtonLoading(saveBtn, false);
@@ -906,17 +1012,17 @@ function createPage(el, data, user) {
       try {
         found = (await api.search(q)).slice(0, 8);
       } catch {
-        if (mine === seq) results.innerHTML = String(emptyState({ icon: 'alert-circle', title: ERROR.searchFailed, size: 'sm' }));
+        if (mounted && mine === seq) results.innerHTML = String(emptyState({ icon: 'alert-circle', title: ERROR.searchFailed, size: 'sm' }));
         return;
       }
-      if (mine !== seq) return;
+      if (!mounted || mine !== seq) return;
       results.innerHTML = String(found.length
         ? html`<ul class="space-y-2">${found.map((b, i) => html`
             <li class="flex items-center gap-3 rounded-md bg-surface-2 p-2">
               ${cover({ url: b.coverUrl, title: b.title, size: 'xs' })}
               <div class="min-w-0 flex-1">
                 <p class="text-small font-medium line-clamp-1">${b.title}</p>
-                <p class="text-caption text-text-2 line-clamp-1">${[(b.authors ?? []).join(', '), String(b.publishedDate ?? '').slice(0, 4)].filter(Boolean).join(' · ')}</p>
+                <p class="text-caption text-text-2 line-clamp-1">${[formatAuthors(b.authors), String(b.publishedDate ?? '').slice(0, 4)].filter(Boolean).join(' · ')}</p>
                 ${b.source && SOURCE_LABEL[b.source] ? badge({ label: SOURCE_LABEL[b.source], variant: 'outline' }) : ''}
               </div>
               ${button({ label: 'Attach', variant: 'secondary', size: 'sm', attrs: `data-attach="${i}"` })}
@@ -941,9 +1047,11 @@ function createPage(el, data, user) {
       })) if (val !== undefined && val !== null && val !== '') body[k] = val;
       try {
         upsertLibraryEntry(await api.updateMetadata(entry.id, body));
+        if (!mounted) return;
         modal.close();
         toast(TOAST.metadataAttached);
       } catch {
+        if (!mounted) return;
         setButtonLoading(btn, false);
         toast("Couldn't attach metadata", { type: 'error' });
       }
@@ -978,7 +1086,7 @@ function createPage(el, data, user) {
               ${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, size: 'xs' })}
               <div class="min-w-0 flex-1">
                 <p class="text-small font-medium line-clamp-1">${b.title}</p>
-                <p class="text-caption text-text-2 line-clamp-1">${(b.authors ?? []).join(', ')}</p>
+                <p class="text-caption text-text-2 line-clamp-1">${formatAuthors(b.authors)}</p>
               </div>
               <button type="button" class="btn btn--secondary btn--sm" data-confirm="Merge “${v.title}” into “${b.title}”? This can't be undone." data-confirm-verb="Merge" data-keep-id="${b.book_id}"><span class="btn__label">Merge into this</span></button>
             </li>`)}</ul>`
@@ -995,10 +1103,12 @@ function createPage(el, data, user) {
         try {
           await api.mergeBooks(keepId, Number(S.book.id));
         } catch {
+          if (!mounted) return;
           buttons.forEach((b) => { b.disabled = false; });
           toast("Couldn't merge", { type: 'error' });
           return;
         }
+        if (!mounted) { loadLibrary(); return; }   // navigated away mid-request: refresh the store, don't hijack the route
         modal.close();
         toast(TOAST.booksMerged);
         location.hash = `#book/${keepId}`;
@@ -1011,6 +1121,7 @@ function createPage(el, data, user) {
   let notesTimer = null;
   let notesBusy = false;
   const notesStatus = (text, tone) => {
+    if (!mounted) return;
     const n = el.querySelector('[data-notes-status]');
     if (!n) return;
     n.textContent = text;
@@ -1032,7 +1143,7 @@ function createPage(el, data, user) {
       notesStatus('Not saved — try again', 'error');
     } finally {
       notesBusy = false;
-      if (S.notes.draft !== null && S.notes.draft !== text) notesTimer = setTimeout(saveNotes, 400);   // typed during the request
+      if (mounted && S.notes.draft !== null && S.notes.draft !== text) notesTimer = setTimeout(saveNotes, 400);   // typed during the request
     }
   }
   cleanups.push(() => { if (S.notes.draft !== null) saveNotes(); clearTimeout(notesTimer); });
@@ -1046,14 +1157,16 @@ function createPage(el, data, user) {
     setButtonLoading(btn, true);
     setFieldError(ta, null);
     try {
-      S.comments = [...S.comments, await api.addComment(S.book.id, body)];
+      const posted = await api.addComment(S.book.id, body);
+      if (!mounted) return;
+      S.comments = [...S.comments, posted];
       ta.value = '';
       ta.dispatchEvent(new Event('input', { bubbles: true }));   // counter
       renderComments();
     } catch {
-      setFieldError(ta, "Couldn't post — try again");
+      if (mounted) setFieldError(ta, "Couldn't post — try again");
     } finally {
-      setButtonLoading(btn, false);
+      if (mounted) setButtonLoading(btn, false);
     }
   }
 
@@ -1063,17 +1176,19 @@ function createPage(el, data, user) {
     if (kind === 'session') {
       try {
         await api.deleteSession(S.book.id, id);
+        if (!mounted) return;
         S.sessions = S.sessions.filter(s => Number(s.id) !== id);
         renderHistory();
         renderHero();
         toast(TOAST.readDeleted);
-      } catch { toast("Couldn't delete read", { type: 'error' }); }
+      } catch { if (mounted) toast("Couldn't delete read", { type: 'error' }); }
     } else if (kind === 'comment') {
       try {
         await api.deleteComment(S.book.id, id);
+        if (!mounted) return;
         S.comments = S.comments.filter(c => Number(c.id) !== id);
         renderComments();
-      } catch { toast("Couldn't delete comment", { type: 'error' }); }
+      } catch { if (mounted) toast("Couldn't delete comment", { type: 'error' }); }
     }
   }
 
@@ -1104,6 +1219,8 @@ function createPage(el, data, user) {
     else if (action === 'edit-read') {
       const s = S.sessions.find(x => Number(x.id) === Number(t.dataset.sessionId));
       if (s) openLog(s);
+    } else if (action === 'retry-section') {
+      sectionLoaders[t.dataset.section]?.();
     } else if (action === 'toggle-desc') {
       const p = el.querySelector('[data-desc-text]');
       const expanded = p.classList.toggle('line-clamp-6') === false;
@@ -1129,7 +1246,8 @@ function createPage(el, data, user) {
     return {
       hero: JSON.stringify([e?.id ?? null, e?.status, v.title, v.authors, v.cover, v.pages, v.published, v.categories]),
       reading: JSON.stringify([e?.id ?? null, e?.status, e?.shelf_ids, getShelves().map(s => [s.id, s.name, s.color])]),
-      about: JSON.stringify([v.description, m.inSeries.map(b => b.book_id), m.narrated.map(b => b.book_id)]),
+      about: JSON.stringify([v.description]),
+      avail: JSON.stringify([m.inSeries.map(b => b.book_id), m.narrated.map(b => b.book_id)]),
       tabs: String(!!e),
     };
   };
@@ -1151,13 +1269,18 @@ function createPage(el, data, user) {
     }
     if (next.hero !== sig.hero) { sig.hero = next.hero; renderHero(); }
     if (next.reading !== sig.reading) { sig.reading = next.reading; renderReading(); }
-    if (next.about !== sig.about) { sig.about = next.about; renderAbout(); }
+    if (next.about !== sig.about) { sig.about = next.about; sig.avail = next.avail; renderAbout(); }
+    else if (next.avail !== sig.avail) { sig.avail = next.avail; renderAvail(); }
   }));
 
-  // ── Live Audiobookshelf progress ──────────────────────────────────────────
-  const absAvail = S.availability.find(a => a.service === 'audiobookshelf');
-  if (user && absAvail) {
+  // ── Live Audiobookshelf progress (starts once /availability says this book is in Audiobookshelf) ──
+  let sseStarted = false;
+  function startAbsSse() {
+    const absAvail = S.availability.find(a => a.service === 'audiobookshelf');
+    if (!mounted || sseStarted || !user || !absAvail) return;
+    sseStarted = true;
     cleanups.push(openSse('/api/integrations/sse', (msg) => {
+      if (!mounted) return;
       try {
         const m = JSON.parse(msg.data);
         if (m.type !== 'progress' || m.data?.libraryItemId !== absAvail.external_id) return;
@@ -1176,6 +1299,11 @@ function createPage(el, data, user) {
       } catch { /* malformed event */ }
     }));
   }
+
+  // Kick off the slow requests only now: the page above is already interactive
+  sectionLoaders.comments();
+  sectionLoaders.recs();
+  if (user) { sectionLoaders.social(); sectionLoaders.avail(); }
 
   return runCleanups;
   } catch (err) {

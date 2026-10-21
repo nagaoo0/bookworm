@@ -88,8 +88,8 @@ export function mount(el, { user }) {
     setButtonLoading(btn, true);
     try {
       const updated = await api.updateMe({ bio: bio || null, avatarUrl: avatarUrl || null, bannerUrl: bannerUrl || null });
+      patchUser({ bio: updated.bio, avatarUrl: updated.avatarUrl, bannerUrl: updated.bannerUrl });   // store: the header avatar follows even if this section was closed
       if (scope.disposed) return;
-      patchUser({ bio: updated.bio, avatarUrl: updated.avatarUrl, bannerUrl: updated.bannerUrl });
       toast(TOAST.profileSaved);
     } catch (err) {
       if (scope.disposed) return;
@@ -108,8 +108,8 @@ export function mount(el, { user }) {
     sw.disabled = true;
     try {
       const updated = await api.updateMe({ isPublic });
-      if (scope.disposed) return;
       patchUser({ isPublic: updated?.isPublic ?? isPublic });
+      if (scope.disposed) return;
       el.querySelector('[data-private-note]').hidden = isPublic;
       toast(TOAST.settingsSaved);
     } catch {
@@ -122,7 +122,7 @@ export function mount(el, { user }) {
   }));
 
   scope.add(delegate(el, 'click', '[data-action="copy-link"]', async () => {
-    try { await navigator.clipboard.writeText(profileUrl); toast(TOAST.linkCopied); }
+    try { await navigator.clipboard.writeText(profileUrl); if (!scope.disposed) toast(TOAST.linkCopied); }
     catch { toast("Couldn't copy the link — try again", { type: 'error' }); }
   }));
 

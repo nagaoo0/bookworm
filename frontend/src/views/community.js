@@ -8,7 +8,7 @@ import {
   skeletonCard, skeletonList, spinner, statusBadge, tabs, tabPanel,
   setButtonLoading, setFieldError,
   mountChipGroup, mountConfirmInline, mountFields, mountTabs, confirmPopover, openMenu, openModal, toast,
-  delegate, uid, plural, formatDate,
+  delegate, uid, plural, formatDate, formatAuthors,
   ACTION, EMPTY, ERROR, LABEL, TOAST,
 } from '../ui/index.js';
 import { feedCardHTML, mountFeedCards, followButton, mountFollowButtons } from './feedCard.js';
@@ -255,7 +255,7 @@ function challengesSection(panel, { isDisposed }) {
       <a href="#book/${b.book_id}" class="shrink-0" tabindex="-1" aria-hidden="true">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, size: 'xs' })}</a>
       <div class="min-w-0 flex-1">
         <a href="#book/${b.book_id}" class="block text-small font-medium text-text-1 hover:text-accent-text line-clamp-1">${b.title}</a>
-        <p class="text-caption text-text-2 line-clamp-1">${authorsText(Array.isArray(b.authors) ? b.authors.slice(0, 2) : b.authors)}</p>
+        <p class="text-caption text-text-2 line-clamp-1">${formatAuthors(b.authors)}</p>
       </div>
       ${b.done ? statusBadge('done') : (b.in_library ? badge({ label: LABEL.inLibrary }) : '')}
       ${c.is_creator ? iconButton({ icon: 'x', label: `Remove ${b.title} from this challenge`, size: 'sm', attrs: `data-ch-rmbook="${Number(c.id)}" data-book-id="${Number(b.book_id)}"` }) : ''}
@@ -394,6 +394,7 @@ function challengesSection(panel, { isDisposed }) {
           endDate: form.elements.endDate.value,
         };
         if (editing) await api.editChallenge(c.id, data); else await api.createChallenge(data);
+        if (isDisposed()) return;
         modal.close();
         toast(editing ? TOAST.challengeUpdated : TOAST.challengeCreated);
         await refresh();
@@ -426,7 +427,7 @@ function challengesSection(panel, { isDisposed }) {
         ${cover({ url: r.coverUrl, bookId: r.bookId, title: r.title, size: 'xs' })}
         <div class="min-w-0 flex-1">
           <p class="text-small font-medium text-text-1 line-clamp-1">${r.title}</p>
-          <p class="text-caption text-text-2 line-clamp-1">${authorsText(r.authors)}</p>
+          <p class="text-caption text-text-2 line-clamp-1">${formatAuthors(r.authors)}</p>
         </div>
         ${r.source ? badge({ label: SOURCE_LABEL[r.source] ?? r.source, variant: 'outline' }) : badge({ label: LABEL.inLibrary })}
         ${r.added ? badge({ label: 'Added', variant: 'success', icon: 'check' }) : button({ label: ACTION.add, variant: 'secondary', size: 'sm', attrs: `data-add="${i}"` })}
@@ -483,9 +484,11 @@ function challengesSection(panel, { isDisposed }) {
         have.add(String(bookId));
         r.added = true;
         changed = true;
+        if (isDisposed()) return;
         toast(TOAST.bookAddedToChallenge);
         paint();
       } catch {
+        if (isDisposed()) return;
         setButtonLoading(btn, false);
         toast("Couldn't update challenge", { type: 'error' });
       }
@@ -520,7 +523,7 @@ function challengesSection(panel, { isDisposed }) {
       replaceCard(c, '[data-ch-leave]');
       try {
         await api.joinChallenge(c.id);
-        toast(TOAST.joined(c.title));
+        if (!isDisposed()) toast(TOAST.joined(c.title));
       } catch {
         if (!isDisposed()) {
           c.joined = false;
@@ -555,6 +558,7 @@ function challengesSection(panel, { isDisposed }) {
               onConfirm: async () => {
                 try {
                   await api.deleteChallenge(c.id);
+                  if (isDisposed()) return;
                   toast(TOAST.challengeDeleted);
                   await refresh();
                 } catch {
@@ -578,6 +582,7 @@ function challengesSection(panel, { isDisposed }) {
         c.progress = c.books.filter(b => b.done).length;
         replaceCard(c, '[data-ch-addbook]');
       } catch {
+        if (isDisposed()) return;
         btn.disabled = false;
         toast("Couldn't update challenge", { type: 'error' });
       }
@@ -705,6 +710,7 @@ function groupsSection(panel, { viewer, isDisposed }) {
       },
       async submit(form, modal) {
         await api.createGroup({ name: form.elements.name.value.trim(), description: form.elements.description.value.trim() });
+        if (isDisposed()) return;
         modal.close();
         toast(TOAST.groupCreated);
         await refresh();
@@ -728,8 +734,10 @@ function groupsSection(panel, { viewer, isDisposed }) {
         } catch (err) {
           throw Object.assign(new Error(err.status === 404 || err.status === 400 ? "That code isn't valid" : ERROR.join), { field: 'code' });
         }
+        if (isDisposed()) return;
         modal.close();
         const list = await refresh();
+        if (isDisposed()) return;
         const g = list?.find(x => x.id === joined?.groupId);
         toast(TOAST.joined(g?.name ?? 'group'));
       },
@@ -759,7 +767,7 @@ function groupsSection(panel, { viewer, isDisposed }) {
     delegate(panel, 'click', '[data-gr-copy]', async (e, btn) => {
       try {
         await navigator.clipboard.writeText(btn.dataset.grCopy);
-        toast(TOAST.copied);
+        if (!isDisposed()) toast(TOAST.copied);
       } catch {
         toast("Couldn't copy — select the code instead", { type: 'error' });
       }

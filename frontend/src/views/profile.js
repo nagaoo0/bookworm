@@ -10,7 +10,7 @@ import {
   avatar, avatarHue, bookCard, button, cover, emptyState, field, icon, iconButton, sectionHeader,
   skeleton, skeletonBookGrid, skeletonList, tabs, tabPanel,
   mountBookGrid, mountTabs, openMenu, openModal, toast,
-  delegate, uid, plural,
+  delegate, uid, plural, formatAuthors,
   ACTION, EMPTY, ERROR, LABEL, TOAST, statusLabel,
 } from '../ui/index.js';
 import { feedCardHTML, mountFeedCards, followButton, mountFollowButtons } from './feedCard.js';
@@ -123,7 +123,6 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   let disposed = false;
   let followers = Number(data.followerCount) || 0;
   let followingCount = Number(data.followingCount) || 0;
-  let myFollows = null;   // Set of usernames the viewer follows (loaded with the first followers/following list)
 
   // Viewer-dependent bits ("You read this", "In common") follow the viewer's library as it loads
   const viewerLibrary = () => (getState().library ?? []);
@@ -324,7 +323,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
               ${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, size: 'xs' })}
               <span class="min-w-0 flex-1">
                 <span class="block text-small font-medium text-text-1 line-clamp-1">${b.title}</span>
-                <span class="block text-caption text-text-2 line-clamp-1">${Array.isArray(b.authors) ? b.authors.join(', ') : ''}</span>
+                <span class="block text-caption text-text-2 line-clamp-1">${formatAuthors(b.authors)}</span>
               </span>
               ${current && String(current.book_id) === String(b.book_id) ? html`<span class="text-accent-text">${icon('check', { size: 16, label: 'Current pick' })}</span>` : ''}
             </button>
@@ -344,6 +343,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
     });
 
     if (!getState().libraryLoaded) await loadLibrary();
+    if (disposed) return;
     books = getState().library ?? [];
     paint();
   }
@@ -369,7 +369,6 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   cleanups.push(mountFeedCards(root));
   cleanups.push(mountFollowButtons(root, {
     onChange: (who, nowFollowing) => {
-      myFollows?.[nowFollowing ? 'add' : 'delete'](who);
       if (who.toLowerCase() === name.toLowerCase()) setCounts({ followers: followers + (nowFollowing ? 1 : -1) });
     },
   }));
@@ -401,7 +400,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   cleanups.push(delegate(root, 'click', '[data-copy-link]', async () => {
     try {
       await navigator.clipboard.writeText(`${location.origin}${location.pathname}#u/${enc(name)}`);
-      toast(TOAST.linkCopied);
+      if (!disposed) toast(TOAST.linkCopied);
     } catch {
       toast("Couldn't copy the link", { type: 'error' });
     }
@@ -421,17 +420,12 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
     const body = modal.body.querySelector('[data-follow-body]');
     off = mountFollowButtons(modal.body, {
       onChange: (who, nowFollowing) => {
-        myFollows?.[nowFollowing ? 'add' : 'delete'](who);
         if (isOwn) setCounts({ following: followingCount + (nowFollowing ? 1 : -1) });
         else if (who.toLowerCase() === name.toLowerCase()) setCounts({ followers: followers + (nowFollowing ? 1 : -1) });
       },
     });
     try {
-      const [users, mine] = await Promise.all([
-        followersList ? api.getProfileFollowers(name) : api.getProfileFollowing(name),
-        viewer && !myFollows ? api.getFollows().catch(() => []) : null,
-      ]);
-      if (mine) myFollows = new Set(mine.map(u => u.username));
+      const users = await (followersList ? api.getProfileFollowers(name) : api.getProfileFollowing(name));   // rows carry you_follow when signed in
       if (disposed || !body.isConnected) return;
       if (!users.length) {
         setHTML(body, emptyState({ icon: 'users', title: followersList ? 'No followers yet' : 'Not following anyone yet', size: 'sm' }));
@@ -445,7 +439,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
               <a href="#u/${enc(u.username)}" class="block truncate font-semibold text-text-1 hover:text-accent-text">@${u.username}</a>
               <p class="text-small text-text-2">${plural(u.book_count ?? 0, 'book')}</p>
             </div>
-            ${viewer && viewer.username !== u.username ? followButton(u.username, !!myFollows?.has(u.username)) : ''}
+            ${viewer && viewer.username !== u.username ? followButton(u.username, !!u.you_follow) : ''}
           </li>`)}</ul>`);
     } catch {
       if (!disposed && body.isConnected) setHTML(body, emptyState({ ...EMPTY.loadError, action: undefined, size: 'sm' }));

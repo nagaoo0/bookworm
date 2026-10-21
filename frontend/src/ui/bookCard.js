@@ -13,7 +13,26 @@ import { STATUS, statusLabel } from './status.js';
 import { ACTION, LABEL } from './copy.js';
 import { cx, prefersReducedMotion } from './dom.js';
 
-const authorsText = (b) => (Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? ''));
+const AUTHORS_SHOWN = 2;
+const AUTHORS_TITLE_MAX = 5;
+
+/**
+ * Author line for cards: at most the first two names, then " et al." (providers sometimes return dozens of authors
+ * for an anthology). Accepts an array or an already-joined string.
+ * @param {string[]|string|null|undefined} authors
+ */
+export function formatAuthors(authors) {
+  const list = Array.isArray(authors) ? authors.filter(Boolean) : (authors ? [String(authors)] : []);
+  return list.length > AUTHORS_SHOWN ? `${list.slice(0, AUTHORS_SHOWN).join(', ')} et al.` : list.join(', ');
+}
+
+/** Full author list for a tooltip / aria-label, only when it is short enough to be useful (3-5 names); else ''. */
+export function fullAuthorsIfShort(authors) {
+  const list = Array.isArray(authors) ? authors.filter(Boolean) : [];
+  return list.length > AUTHORS_SHOWN && list.length <= AUTHORS_TITLE_MAX ? list.join(', ') : '';
+}
+
+const authorsText = (b) => formatAuthors(b.authors);
 
 /** "2h 5m left" for audiobooks in progress (from the Audiobookshelf availability extras), or null. */
 function etaText(entry) {
@@ -61,7 +80,8 @@ export function bookCard(entry, { variant = 'grid', showStatus = false, selectab
   const bookId = entry.book_id ?? (searchMode ? null : entry.id ?? null);
   const link = href ?? ((entry.book_id ?? entry.id) && !searchMode ? `#book/${entry.book_id ?? entry.id}` : null);
   const hasMenu = !readOnly && !searchMode && !selectable && variant !== 'compact' && !!entry.id;
-  const label = [title, authors && `by ${authors}`].filter(Boolean).join(' ') + (sMeta ? `, ${sMeta.label}` : '');
+  const authorsFull = fullAuthorsIfShort(entry.authors);
+  const label = [title, authors && `by ${authorsFull || authors}`].filter(Boolean).join(' ') + (sMeta ? `, ${sMeta.label}` : '');
 
   // Keyboard model (spec §5.14): the card is the tab stop (roving tabindex across the grid, see mountBookGrid);
   // Enter opens, so the title link is not a second stop. The ⋯ / select controls are tabbable only on the active card.
@@ -89,7 +109,7 @@ export function bookCard(entry, { variant = 'grid', showStatus = false, selectab
       <div class="book-card__cover">${cover({ url: entry.cover_url ?? entry.coverUrl, bookId, title, size: 'xs' })}</div>
       <div class="book-card__body">
         ${titleEl}
-        ${authors ? html`<p class="book-card__authors">${authors}</p>` : ''}
+        ${authors ? html`<p class="book-card__authors"${authorsFull ? html` title="${authorsFull}"` : ''}>${authors}</p>` : ''}
         <div class="book-card__meta">${metaRow}</div>
         ${readingProgress ? progressBar({ value: pct, size: 'sm', label: `Progress for ${title}`, cls: 'mt-1' }) : ''}
       </div>
@@ -108,7 +128,7 @@ export function bookCard(entry, { variant = 'grid', showStatus = false, selectab
     </div>
     <div class="book-card__body">
       ${titleEl}
-      ${authors ? html`<p class="book-card__authors">${authors}</p>` : ''}
+      ${authors ? html`<p class="book-card__authors"${authorsFull ? html` title="${authorsFull}"` : ''}>${authors}</p>` : ''}
       ${variant === 'compact' ? '' : html`<div class="book-card__meta">${metaRow}</div>`}
       ${eta && variant !== 'compact' ? html`<p class="book-card__eta">${eta}</p>` : ''}
       ${footer ?? ''}

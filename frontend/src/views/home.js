@@ -12,7 +12,7 @@ import {
   ACTION, EMPTY, LABEL,
   bookCard, bookMenuItems, button, card, cover, cssEscape, delegate, emptyState, icon, iconButton, mountBookGrid,
   mountMenuTriggers, mountProgressSlider, openCommandPalette, plural, progressBar, progressRing, progressSlider,
-  sectionHeader, skeletonCard, skeletonList, timeAgo, uid,
+  formatAuthors, sectionHeader, skeletonCard, skeletonList, timeAgo, uid,
 } from '../ui/index.js';
 import { feedCardHTML, mountFeedCards } from './feedCard.js';
 import {
@@ -43,7 +43,7 @@ function dayOfYear(d = new Date()) {
 
 function readingRowHTML(b) {
   const pct = Math.round(Number(b.progress_pct) || 0);
-  const authors = authorsOf(b).join(', ');
+  const authors = formatAuthors(authorsOf(b));
   const started = b.started_reading_at ? `started ${timeAgo(b.started_reading_at)}` : '';
   const meta = [authors, started].filter(Boolean).join(' · ');
   return html`

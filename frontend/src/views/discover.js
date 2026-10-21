@@ -367,6 +367,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   // ── Adding books ───────────────────────────────────────────────────────────
   function afterAdd(row, title, status) {
     upsertLibraryEntry(row);
+    if (disposed) return;   // the book is saved either way; don't toast or open a modal over another page
     toast(TOAST.addedTo(statusLabel(status)), {
       action: { label: ACTION.view, onClick: () => { location.hash = `#book/${row.book_id}`; } },
     });
@@ -478,6 +479,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
           status,
         });
       } catch (err) {
+        if (disposed) return;
         formError.textContent = err?.message || ERROR.add;
         formError.hidden = false;
         setButtonLoading(primary, false);

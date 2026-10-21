@@ -6,7 +6,7 @@ import { getState } from '../store.js';
 import { html, raw, safeUrl, localDayKey } from '../utils.js';
 import { ACCENT_KEYS } from '../prefs.js';
 import {
-  ACTION, EMPTY, LABEL, NAV, TOAST, plural, formatDate, uid, delegate, prefersReducedMotion,
+  ACTION, EMPTY, LABEL, NAV, TOAST, plural, formatDate, formatAuthors, uid, delegate, prefersReducedMotion,
   avatar, badge, button, card, chipGroup, cover, emptyState, icon, mountChipGroup, mountTabs,
   progressRing, sectionHeader, skeletonCard, stars, statCard, tabPanel, tabs, toast,
 } from '../ui/index.js';
@@ -492,7 +492,7 @@ function yearBodyHTML({ stats, feed, person, year, headingLevel, shareUrl, own }
             ${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, size: 'xs' })}
             <div class="min-w-0 flex-1">
               <a class="block truncate font-medium hover:text-accent-text" href="#book/${b.book_id}">${b.title}</a>
-              <p class="truncate text-small text-text-2">${(b.authors ?? []).join(', ')}</p>
+              <p class="truncate text-small text-text-2">${formatAuthors(b.authors)}</p>
             </div>
             ${b.rating ? stars({ value: b.rating, size: 14 }) : ''}
           </li>`)}
@@ -553,10 +553,10 @@ function mountYearReview(container, { stats, feed, person, year, basePath, headi
     if (typeof navigator.share === 'function' && (!navigator.canShare || navigator.canShare(data))) {
       try { await navigator.share(data); return; } catch (err) { if (err?.name === 'AbortError') return; }
     }
-    try { await navigator.clipboard.writeText(url); toast(TOAST.linkCopied); } catch { toast("Couldn't copy the link — try again", { type: 'error' }); }
+    try { await navigator.clipboard.writeText(url); if (!scope.disposed) toast(TOAST.linkCopied); } catch { toast("Couldn't copy the link — try again", { type: 'error' }); }
   }));
   scope.add(delegate(container, 'click', '[data-action="copy-link"]', async () => {
-    try { await navigator.clipboard.writeText(shareUrlFor(selected)); toast(TOAST.linkCopied); } catch { toast("Couldn't copy the link — try again", { type: 'error' }); }
+    try { await navigator.clipboard.writeText(shareUrlFor(selected)); if (!scope.disposed) toast(TOAST.linkCopied); } catch { toast("Couldn't copy the link — try again", { type: 'error' }); }
   }));
 
   renderBody();
