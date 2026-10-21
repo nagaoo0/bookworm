@@ -6,13 +6,13 @@ import { html, safeUrl } from './utils.js';
 applyPrefs();
 
 import { api, setOnUnauthorized, setLoggedIn } from './api.js';
-import { loadLibrary } from './libraryStore.js';
+import { loadLibrary, resetLibraryStore } from './libraryStore.js';
 import { renderAuth } from './views/auth.js';
 import {
   icon, iconButton, button, avatar, emptyState, skeletonList, setButtonLoading,
   openMenu, openPopover, openSheet, closeAllOverlays,
   openCommandPalette, mountCommandPaletteShortcuts,
-  toast, timeAgo, NAV, ACTION, EMPTY, OFFLINE_MESSAGE, STATUS, delegate,
+  toast, flushPendingUndos, timeAgo, NAV, ACTION, EMPTY, OFFLINE_MESSAGE, STATUS, delegate,
 } from './ui/index.js';
 
 // ── Views ──────────────────────────────────────────────────────────────────────
@@ -429,6 +429,8 @@ async function showApp(user, { target } = {}) {
 function resetSession() {
   stopPolling();
   setLoggedIn(false);
+  resetLibraryStore();   // invalidate in-flight library loads/writes from this session
+  try { localStorage.removeItem('bw_recent_searches'); } catch { /* storage unavailable */ }   // shared devices; theme prefs stay
   setState({
     user: null, unreadCount: 0, shelves: [], library: [], libraryLoaded: false, loading: false, error: null,
     selectedShelfId: null, searchResults: [], searchQuery: '', routeParams: {},
@@ -448,7 +450,12 @@ function presentAuth({ next, mode } = {}) {
   mainEl.replaceChildren(root);
   currentCleanup = renderAuth(root, {
     next, mode,
-    onSuccess: (user, target) => showApp(user, { target }),
+    onSuccess: async (user, target) => {
+      // Login/register may return a slimmer user than /me: refresh so prefs, accent, bio and images are present
+      let full = user;
+      try { full = (await api.me()) ?? user; } catch { /* keep the login response */ }
+      showApp(full, { target });
+    },
   });
   announce(document.title);
 }
@@ -467,6 +474,8 @@ setOnUnauthorized(() => {
 });
 
 async function doLogout() {
+  // Commit pending "remove from library" undos while the session is still valid
+  try { await flushPendingUndos(); } catch { /* individual commits report their own errors */ }
   try {
     await api.logout();
   } catch (err) {
@@ -523,7 +532,10 @@ const ROUTES = [
   { id: 'book', nav: null, title: () => 'Book', width: 'reading', file: 'book.js', fn: 'renderBook', public: () => true,
     match: (p) => {
       const m = /^book\/(.+)$/.exec(p);
-      return m ? { id: dec(m[1]) } : null;
+      if (!m) return null;
+      const id = dec(m[1]);
+      // Local ids are numeric; external ones are g:/ol:/a:<id>. Anything else is a bad link.
+      return /^\d+$/.test(id) || /^(g|ol|a):[^/]+$/.test(id) ? { id } : { notFound: true };
     } },
 
   { id: 'community', nav: 'community', title: () => NAV.community, width: 'reading', file: 'community.js', fn: 'renderCommunity',
@@ -712,7 +724,11 @@ async function navigate() {
   try {
     const render = await loadView(route.file, route.fn);
     if (token !== renderToken) return;
-    if (!render) {
+    if (params.notFound) {
+      root.innerHTML = String(stateRoot(route, emptyState({
+        ...EMPTY.bookNotFound, action: { label: EMPTY.bookNotFound.action, href: '#library' },
+      })));
+    } else if (!render) {
       const retry = route.id === 'home';
       root.innerHTML = String(stateRoot(route, emptyState({
         icon: 'refresh-cw', title: 'This page is being rebuilt', body: 'Check back in a moment.',
@@ -739,16 +755,38 @@ async function navigate() {
   focusHeading(root);
 }
 
-window.addEventListener('hashchange', () => { if (!appLoading) navigate(); });
+let bootFailed = false;   // /me could not be reached: stay on the retry screen instead of showing sign-in
+window.addEventListener('hashchange', () => { if (!appLoading && !bootFailed) navigate(); });
 
 // Bootstrap: try to restore the session via /me. An anonymous visitor is not an error:
 // public routes render as-is, everything else shows the sign-in screen.
-(async () => {
+async function bootstrap() {
   let user = null;
-  try { user = await api.me(); } catch { /* not signed in */ }
+  bootFailed = false;
+  try {
+    user = await api.me();
+  } catch (err) {
+    // Only a 401 means "signed out"; offline / 5xx must not look like a sign-out
+    if (err?.status !== 401) {
+      bootFailed = true;
+      renderToken++;
+      runCleanup();
+      setChrome('none');
+      mainEl.replaceChildren();
+      const root = document.createElement('div');
+      root.innerHTML = String(html`<h1 class="sr-only">Bookworm</h1>${emptyState({
+        icon: 'wifi-off', title: "Couldn't reach the server", body: 'Check your connection and try again.',
+        action: { label: ACTION.tryAgain, attrs: 'data-shell="bootstrap-retry"' },
+      })}`);
+      mainEl.appendChild(root);
+      return;
+    }
+  }
   if (user) showApp(user);
   else navigate();
-})();
+}
+delegate(mainEl, 'click', '[data-shell="bootstrap-retry"]', () => { bootstrap(); });
+bootstrap();
 
 // ── Offline awareness ──────────────────────────────────────────────────────────
 function offlineBanner() {

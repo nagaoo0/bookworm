@@ -9,7 +9,9 @@ export function setLoggedIn(v) { _loggedIn = !!v; }
 
 // A 401 from these is a normal answer (wrong password, anonymous bootstrap),
 // not an expired session.
-const NO_SESSION_EXPIRY = new Set(['POST /auth/login', 'POST /auth/register', 'PATCH /auth/me', 'GET /auth/me']);
+// (PATCH /auth/me is exempt only for a password change - see below: a wrong current
+// password is a 401, whereas an expired session during a profile save must sign out.)
+const NO_SESSION_EXPIRY = new Set(['POST /auth/login', 'POST /auth/register', 'GET /auth/me']);
 
 // options: method, body (JSON-encoded), headers, signal,
 //   silent401 - never trigger the session-expired handler for this call
@@ -28,7 +30,7 @@ async function request(path, options = {}) {
     const err = new Error(data?.error ?? (res.statusText || (res.status === 401 ? 'Unauthorized' : `Request failed (${res.status})`)));
     err.status = res.status;
     const key = `${(rest.method ?? 'GET').toUpperCase()} ${path.split('?')[0]}`;
-    if (res.status === 401 && _loggedIn && !silent401 && !NO_SESSION_EXPIRY.has(key)) {
+    if (res.status === 401 && _loggedIn && !silent401 && !NO_SESSION_EXPIRY.has(key) && !(key === 'PATCH /auth/me' && body?.currentPassword)) {
       _loggedIn = false; // several in-flight requests may 401 together; react once
       _onUnauthorized?.();
     }
@@ -96,7 +98,7 @@ export const api = {
   updateMetadata: (libId, data) =>
     request(`/library/${libId}/metadata`, { method: 'PATCH', body: data }),
 
-  getBookDetail: (bookId) => request(`/books/${bookId}`),
+  getBookDetail: (bookId) => request(`/books/${encodeURIComponent(bookId)}`),
   getBookByExternalId: (source, id) => request(`/books/by-external/${encodeURIComponent(source)}/${encodeURIComponent(id)}`),
   getSessions: (bookId) => request(`/books/${bookId}/sessions`),
   addSession: (bookId, data) => request(`/books/${bookId}/sessions`, { method: 'POST', body: data }),

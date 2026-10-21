@@ -5,7 +5,7 @@
 // so one broken request never blanks the page.
 import { api } from '../api.js';
 import { getState, subscribe } from '../store.js';
-import { loadLibrary } from '../libraryStore.js';
+import { loadLibrary, upsertLibraryEntry } from '../libraryStore.js';
 import { openSse } from '../sse.js';
 import { html } from '../utils.js';
 import {
@@ -290,7 +290,9 @@ export function renderHome(el) {
       const data = await api.getNowPlaying();
       if (H.disposed) return;
       setNowPlaying(data || null);
-    } catch { /* Audiobookshelf isn't connected: the section stays hidden */ }
+    } catch {
+      return;   // Audiobookshelf isn't connected: the section stays hidden and there is nothing to stream
+    }
     if (H.disposed) return;
     closeSse = openSse('/api/integrations/sse', (e) => {
       try {
@@ -396,7 +398,7 @@ export function renderHome(el) {
 
   offs.push(delegate(el, 'click', '[data-action]', (e, t) => {
     switch (t.dataset.action) {
-      case 'add-book': openCommandPalette({}); break;
+      case 'add-book': openCommandPalette({ onAdded: (row) => upsertLibraryEntry(row) }); break;
       case 'finish': { const entry = rowEntry(t); if (entry) finishBook(entry); break; }
       case 'retry-library': loadLibrary(); break;
       case 'retry-goal': loadGoal(); break;

@@ -62,7 +62,9 @@ export function progressSlider({ id, value = 0, step = 5, label = 'Reading progr
 
 /**
  * Live readout while dragging; onCommit(value, el) fires 400 ms after the last `input`, or immediately on `change`
- * (pointer release / keyboard). Duplicate commits of the same value are skipped. Returns cleanup (cancels the timer).
+ * (pointer release / keyboard). Duplicate commits of the same value are skipped, but a commit whose returned promise
+ * rejects (or resolves false) is forgotten so the same value can be committed again; a slider repainted from data
+ * (a script setting `input.value`, then dispatching a bare `slider:sync` event) re-baselines too. Returns cleanup (cancels the timer).
  */
 export function mountProgressSlider(root, onCommit, { debounce = 400 } = {}) {
   const timers = new WeakMap();
@@ -80,7 +82,14 @@ export function mountProgressSlider(root, onCommit, { debounce = 400 } = {}) {
     const v = Number(input.value);
     if (lastCommitted.get(input) === v) return;
     lastCommitted.set(input, v);
-    onCommit?.(v, input);
+    // A failed save must not leave the value "committed": after the caller reverts the slider, dragging
+    // back to it has to fire again. Rejection, a `false` result, or a reverted input value all forget it.
+    const forget = () => { if (lastCommitted.get(input) === v) lastCommitted.delete(input); };
+    let result;
+    try { result = onCommit?.(v, input); } catch { forget(); return; }
+    if (result && typeof result.then === 'function') {
+      result.then((ok) => { if (ok === false || Number(input.value) !== v) forget(); }, forget);
+    }
   };
   const onInput = (e) => {
     const input = e.target instanceof Element ? e.target.closest('.slider__input') : null;
@@ -93,12 +102,19 @@ export function mountProgressSlider(root, onCommit, { debounce = 400 } = {}) {
     const input = e.target instanceof Element ? e.target.closest('.slider__input') : null;
     if (input && root.contains(input)) { readout(input); commit(input); }
   };
+  // The value was repainted from data (see setSliderValue): that is the new baseline
+  const onSync = (e) => {
+    const input = e.target instanceof Element ? e.target.closest('.slider__input') : null;
+    if (input && root.contains(input)) { clearTimeout(timers.get(input)); lastCommitted.set(input, Number(input.value)); }
+  };
   // Remember the initial value so merely touching the slider without moving it doesn't commit.
   root.querySelectorAll('.slider__input').forEach(i => lastCommitted.set(i, Number(i.value)));
 
   root.addEventListener('input', onInput);
   root.addEventListener('change', onChange);
+  root.addEventListener('slider:sync', onSync);
   return () => {
+    root.removeEventListener('slider:sync', onSync);
     root.removeEventListener('input', onInput);
     root.removeEventListener('change', onChange);
     root.querySelectorAll('.slider__input').forEach(i => clearTimeout(timers.get(i)));

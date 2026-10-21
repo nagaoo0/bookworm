@@ -72,6 +72,8 @@ export function mount(el, { user }) {
   form.addEventListener('input', onInput);
   scope.add(() => form.removeEventListener('input', onInput));
 
+  let baseline = { bio: (user.bio ?? '').trim(), avatarUrl: (user.avatarUrl ?? '').trim(), bannerUrl: (user.bannerUrl ?? '').trim() };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     const avatarUrl = avatarInput.value.trim();
@@ -84,11 +86,21 @@ export function mount(el, { user }) {
     if (bannerUrl && !isHttpUrl(bannerUrl)) { setFieldError(bannerInput, URL_ERROR); valid = false; } else setFieldError(bannerInput, null);
     if (!valid) { (form.querySelector('[aria-invalid="true"]'))?.focus(); return; }
 
+    // Send only what changed, so a field this form never saw (missing from the user object) can't be wiped
+    const changes = {};
+    if (bio !== baseline.bio) changes.bio = bio || null;
+    if (avatarUrl !== baseline.avatarUrl) changes.avatarUrl = avatarUrl || null;
+    if (bannerUrl !== baseline.bannerUrl) changes.bannerUrl = bannerUrl || null;
+    if (!Object.keys(changes).length) { toast(TOAST.profileSaved); return; }
+
     const btn = form.querySelector('[data-save]');
     setButtonLoading(btn, true);
     try {
-      const updated = await api.updateMe({ bio: bio || null, avatarUrl: avatarUrl || null, bannerUrl: bannerUrl || null });
-      patchUser({ bio: updated.bio, avatarUrl: updated.avatarUrl, bannerUrl: updated.bannerUrl });   // store: the header avatar follows even if this section was closed
+      const updated = await api.updateMe(changes);
+      baseline = { bio, avatarUrl, bannerUrl };
+      const patch = {};
+      for (const k of Object.keys(changes)) patch[k] = updated?.[k] !== undefined ? updated[k] : changes[k];
+      patchUser(patch);   // store: the header avatar follows even if this section was closed
       if (scope.disposed) return;
       toast(TOAST.profileSaved);
     } catch (err) {

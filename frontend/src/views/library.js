@@ -175,6 +175,7 @@ export function setSliderValue(input, value) {
   input.setAttribute('aria-valuetext', `${value}%`);
   const out = input.parentElement?.querySelector('.slider__value');
   if (out) out.textContent = `${value}%`;
+  input.dispatchEvent(new CustomEvent('slider:sync', { bubbles: true }));   // mountProgressSlider re-baselines
 }
 
 /** Brief "Saved" caption inside `root` (an element containing `[data-saved]`). */

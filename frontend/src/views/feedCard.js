@@ -255,7 +255,7 @@ export function mountFeedCards(root, { onChange } = {}) {
       const items = await api.getSessionComments(sid);
       if (disposed) return;
       thread.dataset.loaded = 'true';
-      list.innerHTML = String(items.length ? items.map(commentHTML) : NO_COMMENTS);
+      list.innerHTML = String(items.length ? html`${items.map(commentHTML)}` : NO_COMMENTS);
     } catch {
       if (disposed) return;
       list.innerHTML = String(html`<div class="flex items-center gap-2 text-small text-danger">Couldn't load comments. ${button({ label: 'Try again', variant: 'ghost', size: 'sm', attrs: 'data-feed-retry' })}</div>`);

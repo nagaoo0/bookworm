@@ -9,6 +9,7 @@ const DEFAULT_MS = { success: 3500, info: 3500, error: 6000 };
 const ICON = { success: 'check-circle', error: 'x-circle', info: 'info' };
 
 let _container = null;
+const _pendingUndos = new Set();   // undo toasts whose Undo window is still open
 
 function getContainer() {
   if (!_container || !document.body.contains(_container)) {
@@ -119,16 +120,27 @@ export function undoToast(message, { onUndo, onCommit, duration = 6000 } = {}) {
   const settle = (undone) => {
     if (settled) return;
     settled = true;
+    _pendingUndos.delete(handle);
     stop();
     remove(el);
-    (undone ? onUndo : onCommit)?.();
+    return (undone ? onUndo : onCommit)?.();
   };
   el.style.cursor = 'default';
   el.querySelector('[data-toast-action]').addEventListener('click', (e) => { e.stopPropagation(); settle(true); });
   stop = countdown(el, duration, () => settle(false));
   el._dismiss = () => settle(false);
+  const handle = { commit: () => settle(false), undo: () => settle(true) };
+  _pendingUndos.add(handle);
   show(el, 'info');
-  return { commit: () => settle(false), undo: () => settle(true) };
+  return handle;
+}
+
+/**
+ * Commit every undo toast whose window is still open (e.g. before signing out, so a pending
+ * "remove from library" is sent while the session is still valid). Resolves when all commits settle.
+ */
+export async function flushPendingUndos() {
+  await Promise.allSettled([..._pendingUndos].map(h => h.commit()));
 }
 
 /** Aliases with the names of the legacy components/toast.js exports. */

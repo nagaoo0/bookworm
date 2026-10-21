@@ -35,7 +35,8 @@ self.addEventListener('fetch', e => {
       fetch(req)
         .then(res => {
           // Keep the offline shell pointing at the latest hashed bundles
-          if (res.ok) {
+          // (only a real HTML page: a proxy error body or JSON must never become the offline shell)
+          if (res.ok && (res.headers.get('content-type') ?? '').includes('text/html')) {
             const copy = res.clone();
             caches.open(CACHE).then(cache => cache.put('/index.html', copy));
           }

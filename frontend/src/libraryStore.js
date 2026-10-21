@@ -5,8 +5,19 @@ import { getState, setState } from './store.js';
 import { showToast } from './ui/toast.js';
 
 let _libraryLoadSeq = 0;
+// Set by resetLibraryStore() (sign-out); cleared when the next session starts loading its library.
+// While set, late local writes from the previous session's requests are ignored.
+let _resetPending = false;
+
+/** Sign-out / session end: drop library state, invalidate in-flight loads and ignore stale local writes. */
+export function resetLibraryStore() {
+  _libraryLoadSeq++;
+  _resetPending = true;
+  setState({ shelves: [], library: [], libraryLoaded: false, loading: false, error: null });
+}
 
 export async function loadLibrary() {
+  _resetPending = false;
   const seq = ++_libraryLoadSeq;
   if (!getState().libraryLoaded) setState({ loading: true, error: null });
   try {
@@ -23,7 +34,7 @@ export async function loadLibrary() {
 // Replace or insert one library entry locally (after a PATCH that returned the
 // full row) without refetching the whole library.
 export function upsertLibraryEntry(entry) {
-  if (!entry) return;
+  if (!entry || _resetPending) return;
   const lib = getState().library ?? [];
   const i = lib.findIndex(b => String(b.id) === String(entry.id));
   const next = i === -1 ? [entry, ...lib] : lib.map((b, j) => (j === i ? entry : b));
@@ -32,6 +43,7 @@ export function upsertLibraryEntry(entry) {
 
 // Remove library entries locally by library-entry id.
 export function removeLibraryEntries(ids) {
+  if (_resetPending) return;
   const drop = new Set(ids.map(String));
   setState({ library: (getState().library ?? []).filter(b => !drop.has(String(b.id))) });
 }

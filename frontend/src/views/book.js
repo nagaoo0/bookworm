@@ -779,6 +779,7 @@ function createPage(el, data, user) {
       input.setAttribute('aria-valuetext', `${pct}%`);
       const out = input.parentElement?.querySelector('.slider__value');
       if (out) out.textContent = `${pct}%`;
+      input.dispatchEvent(new CustomEvent('slider:sync', { bubbles: true }));   // mountProgressSlider re-baselines
     });
   }
   function flashSaved() {
