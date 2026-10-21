@@ -1,21 +1,41 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark" data-accent="amber">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Bookworm</title>
+  <meta name="description" content="Bookworm: a self-hosted reading tracker. Log what you read, track your progress and share your shelves." />
   <link rel="icon" type="image/png" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#0c0a09" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+
+  <!-- Pre-paint: apply the stored theme + accent before any CSS is parsed (no flash).
+       Keep the surface-0 colours in sync with styles.css and prefs.js. -->
+  <script>
+    (function () {
+      try {
+        var p = JSON.parse(localStorage.getItem('bw_prefs') || '{}') || {};
+        var t = ['dark', 'light', 'sepia', 'system'].indexOf(p.theme) > -1 ? p.theme : 'dark';
+        var a = ['amber', 'blue', 'teal', 'rose'].indexOf(p.accent) > -1 ? p.accent : 'amber';
+        var h = document.documentElement;
+        h.setAttribute('data-theme', t);
+        h.setAttribute('data-accent', a);
+        var r = t === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', { dark: '#0c0a09', light: '#faf8f5', sepia: '#f4ecd8' }[r]);
+        var s = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+        if (s && r !== 'dark') s.setAttribute('content', 'default');
+      } catch (e) { /* keep the dark/amber defaults from the <html> tag */ }
+    })();
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@100..700&family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>

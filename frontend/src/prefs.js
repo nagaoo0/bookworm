@@ -1,56 +1,104 @@
+// User display preferences (theme, accent, card size, search language).
+// Stored in localStorage under `bw_prefs`; the inline script in index.html applies
+// theme + accent before first paint, applyPrefs() keeps them in sync at runtime.
+// All theming lives in CSS (styles.css) behind `data-theme` / `data-accent` on <html>.
 const KEY = 'bw_prefs';
+
+export const THEMES = [
+  { value: 'dark',   label: 'Dark',   icon: 'moon' },
+  { value: 'light',  label: 'Light',  icon: 'sun' },
+  { value: 'sepia',  label: 'Sepia',  icon: 'coffee' },
+  { value: 'system', label: 'System', icon: 'monitor' },
+];
+const THEME_VALUES = THEMES.map(t => t.value);
+
+export const ACCENT_KEYS = ['amber', 'blue', 'teal', 'rose'];
+
+// Accent fill (`main`) and its hover colour, identical in every theme (design-system §2.3).
+export const ACCENT_COLORS = {
+  amber: { main: '#f59e0b', hover: '#fbbf24' },
+  blue:  { main: '#2563eb', hover: '#3b82f6' },
+  teal:  { main: '#14b8a6', hover: '#2dd4bf' },
+  rose:  { main: '#e11d48', hover: '#f43f5e' },
+};
+
+export const CARD_SIZES = { miniature: '58px', small: '80px', medium: '110px', large: '158px' };
+
+// Page background (--surface-0) per resolved theme; used for <meta name="theme-color">.
+const SURFACE_0 = { dark: '#0c0a09', light: '#faf8f5', sepia: '#f4ecd8' };
+
+// Spec §2.1: dark unless the user picked something else.
 const DEFAULTS = { theme: 'dark', cardSize: 'medium', accent: 'amber', searchLanguage: '' };
 
-// Until the user explicitly picks a theme, follow the OS preference
+function readStored() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    return s && typeof s === 'object' ? s : {};
+  } catch { return {}; }
+}
+
+function normalise(p) {
+  const prefs = { ...DEFAULTS, ...p };
+  if (!THEME_VALUES.includes(prefs.theme)) prefs.theme = DEFAULTS.theme;   // migrates unknown/legacy values
+  if (!ACCENT_COLORS[prefs.accent]) prefs.accent = DEFAULTS.accent;
+  if (!CARD_SIZES[prefs.cardSize]) prefs.cardSize = DEFAULTS.cardSize;
+  return prefs;
+}
+
+export function loadPrefs() {
+  return normalise(readStored());
+}
+
+export function savePrefs(patch) {
+  // Persist only what was ever set, so untouched prefs keep following the defaults.
+  const stored = { ...readStored(), ...patch };
+  try { localStorage.setItem(KEY, JSON.stringify(stored)); } catch { /* private mode / quota */ }
+  const prefs = normalise(stored);
+  applyPrefs(prefs);
+  return prefs;
+}
+
 function systemTheme() {
   try { return matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; }
   catch { return 'dark'; }
 }
 
-export function loadPrefs() {
+/** The theme actually on screen: 'dark' | 'light' | 'sepia' (system resolved via the OS). */
+export function resolvedTheme(prefs = loadPrefs()) {
+  return prefs.theme === 'system' ? systemTheme() : prefs.theme;
+}
+
+let watchingSystem = false;
+function watchSystemTheme() {
+  if (watchingSystem) return;
+  watchingSystem = true;
   try {
-    const stored = JSON.parse(localStorage.getItem(KEY) ?? '{}');
-    const prefs = { ...DEFAULTS, ...stored };
-    if (!stored.theme) prefs.theme = systemTheme();
-    return prefs;
-  } catch { return { ...DEFAULTS, theme: systemTheme() }; }
+    matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+      if (loadPrefs().theme === 'system') applyPrefs();
+    });
+  } catch { /* old browsers */ }
 }
-
-export function savePrefs(patch) {
-  const prefs = { ...loadPrefs(), ...patch };
-  localStorage.setItem(KEY, JSON.stringify(prefs));
-  applyPrefs(prefs);
-  return prefs;
-}
-
-export const ACCENT_COLORS = {
-  amber: { main: '#f59e0b', hover: '#fbbf24' },
-  blue:  { main: '#3b82f6', hover: '#60a5fa' },
-  teal:  { main: '#14b8a6', hover: '#2dd4bf' },
-  rose:  { main: '#f43f5e', hover: '#fb7185' },
-};
-
-const CARD_SIZES = { miniature: '58px', small: '80px', medium: '110px', large: '158px' };
 
 export function applyPrefs(prefs = loadPrefs()) {
-  const html = document.documentElement;
+  const root = document.documentElement;
+  const resolved = resolvedTheme(prefs);
 
-  // Theme class on <html> — CSS overrides cascade to all children
-  html.classList.remove('theme-light');
-  if (prefs.theme === 'light') html.classList.add('theme-light');
+  root.setAttribute('data-theme', prefs.theme);
+  root.setAttribute('data-accent', prefs.accent);
+  root.classList.remove('theme-light');   // legacy class from before the token system
 
-  // Keep the browser/OS chrome (Android status bar, PWA title bar) in sync
-  document.querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', prefs.theme === 'light' ? '#f8f7f4' : '#0c0a09');
+  // Keep the browser/OS chrome (Android status bar, PWA title bar) in sync with surface-0
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', SURFACE_0[resolved]);
+  document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+    ?.setAttribute('content', resolved === 'dark' ? 'black-translucent' : 'default');
 
   // Card size via CSS variable consumed by .book-grid
-  html.style.setProperty('--grid-min-col', CARD_SIZES[prefs.cardSize] ?? CARD_SIZES.medium);
+  root.style.setProperty('--grid-min-col', CARD_SIZES[prefs.cardSize]);
 
-  // Accent — overrides the custom accent vars AND Tailwind's amber scale
-  // so that bg-amber-500, text-amber-400, ring-amber-500, etc. all follow the choice
-  const a = ACCENT_COLORS[prefs.accent] ?? ACCENT_COLORS.amber;
-  html.style.setProperty('--color-accent', a.main);
-  html.style.setProperty('--color-accent-hover', a.hover);
-  html.style.setProperty('--color-amber-500', a.main);
-  html.style.setProperty('--color-amber-400', a.hover);
+  watchSystemTheme();
+  // Charts and other canvas consumers re-read the tokens on this event.
+  // `prefs:change` is the name used in the design spec's Stats section.
+  const detail = { ...prefs, resolvedTheme: resolved };
+  window.dispatchEvent(new CustomEvent('bw:prefs', { detail }));
+  window.dispatchEvent(new CustomEvent('prefs:change', { detail }));
 }
