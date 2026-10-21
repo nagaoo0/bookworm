@@ -1,1137 +1,446 @@
+// Home dashboard: #home (design-system §8.1).
+// Currently reading (inline progress + Finish) · yearly goal · now listening (Audiobookshelf, live over SSE) ·
+// up next · activity from people you follow · recently added from integrations.
+// Library-driven sections repaint from the store; the other sections load on their own and fail on their own,
+// so one broken request never blanks the page.
 import { api } from '../api.js';
-import { setState, getState, subscribe } from '../store.js';
-import { bookCardHTML } from '../components/bookCard.js';
-import { escHtml, safeUrl, safeColor, coverProxySrc } from '../utils.js';
-import { openLogReadModal } from '../components/logReadModal.js';
-import { showToast, showUndoToast } from '../components/toast.js';
-import { openSse } from '../sse.js';
-
-// Persists collapse/sort state across re-renders
-const sectionState = {
-  reading: { open: true, sort: 'added' },
-  to_read: { open: true, sort: 'added' },
-  done:    { open: true, sort: 'added' },
-};
-
-let libraryQuery = '';
-let availFilter = null; // null = all, 'audiobookshelf' = audio only, 'calibre' = ebook only
-const selectedLibIds = new Set();
-
-// Library entries hidden behind a pending undo toast. Removal is destructive
-// (it also deletes the book's reading sessions server-side), so the DELETE is
-// only sent after the toast expires; until then the card is just filtered out.
-const pendingRemovals = new Set();
-
-// The mounted home view (null when another route is showing)
-let _mount = null;
-
-function queueRemoval(libIds, message) {
-  const ids = libIds.map(String);
-  ids.forEach(id => pendingRemovals.add(id));
-  _mount?.repaintContent(); // re-render the cards without the queued ones (no refetch)
-
-  showUndoToast(message, {
-    onUndo: () => {
-      ids.forEach(id => pendingRemovals.delete(id));
-      _mount?.repaintContent();
-    },
-    onCommit: async () => {
-      await Promise.all(ids.map(id => api.removeFromLibrary(id).catch(() => {})));
-      ids.forEach(id => pendingRemovals.delete(id));
-      loadLibrary();
-    },
-  });
-}
-
-function filterBooks(books, q) {
-  let result = books;
-  if (availFilter) {
-    result = result.filter(b => (b.availability ?? []).some(a => a.service === availFilter));
-  }
-  if (!q) return result;
-  const lq = q.toLowerCase();
-  return result.filter(b =>
-    b.title.toLowerCase().includes(lq) ||
-    (b.authors ?? []).some(a => a.toLowerCase().includes(lq))
-  );
-}
-
-function sortBooks(books, sort) {
-  if (sort === 'title')  return [...books].sort((a, b) => a.title.localeCompare(b.title));
-  if (sort === 'author') return [...books].sort((a, b) => (a.authors?.[0] ?? '').localeCompare(b.authors?.[0] ?? ''));
-  return books; // 'added' — preserve API order (added_at DESC)
-}
-
-// ── Data loading ───────────────────────────────────────────────────────────────
-// One state change per load. The skeleton (loading: true) is only used for the
-// very first load; later refreshes swap the data in place.
+import { getState, subscribe } from '../store.js';
 import { loadLibrary } from '../libraryStore.js';
+import { openSse } from '../sse.js';
+import { html } from '../utils.js';
+import {
+  ACTION, EMPTY, LABEL,
+  bookCard, bookMenuItems, button, card, cover, cssEscape, delegate, emptyState, icon, iconButton, mountBookGrid,
+  mountMenuTriggers, mountProgressSlider, openCommandPalette, plural, progressBar, progressRing, progressSlider,
+  sectionHeader, skeletonCard, skeletonList, timeAgo, uid,
+} from '../ui/index.js';
+import { feedCardHTML, mountFeedCards } from './feedCard.js';
+import {
+  bookActionHandlers, commitProgress, dispatchBookMenu, findLibraryEntry, finishBook, flashSaved, onboardingHTML,
+  savedCaption, setSliderValue,
+} from './library.js';
+
+// The shared loader lives in libraryStore.js; other modules may still import it from here during the transition.
 export { loadLibrary };
 
-// ── Main render ────────────────────────────────────────────────────────────────
-// Mounts the home view and returns its cleanup. The view subscribes to the store
-// while mounted and repaints only when the library, shelves, loading or error
-// state actually changed. The Now Playing / Recently Added banners (and the SSE
-// connection feeding the former) are created once per mount and survive repaints.
-const NOW_PLAYING_HTML = `
-  <div id="now-playing-banner" class="hidden items-center gap-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl px-4 py-3">
-    <div id="now-playing-cover" class="w-10 h-14 rounded-md overflow-hidden bg-surface-2 flex-shrink-0"></div>
-    <div class="flex-1 min-w-0">
-      <p class="text-xs text-blue-300 font-medium uppercase tracking-wider mb-0.5">Now Listening</p>
-      <p id="now-playing-title" class="text-sm font-semibold text-text truncate"></p>
-      <div class="mt-1.5 w-full bg-blue-500/20 rounded-full h-1">
-        <div id="now-playing-bar" class="h-1 bg-blue-400 rounded-full transition-all duration-500" style="width:0%"></div>
+const RECENTLY_ADDED_KEY = 'recentlyAddedDismissedAt';
+const MAX_READING = 3;
+const UP_NEXT = 8;
+const FEED_MAX = 5;
+
+const ts = (v) => { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; };
+const authorsOf = (b) => (Array.isArray(b.authors) ? b.authors : (b.authors ? [b.authors] : []));
+
+function greeting(user) {
+  const h = new Date().getHours();
+  const part = h < 12 ? 'Good morning' : (h < 18 ? 'Good afternoon' : 'Good evening');
+  return user?.username ? `${part}, ${user.username}` : part;
+}
+
+function dayOfYear(d = new Date()) {
+  return Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+}
+
+function readingRowHTML(b) {
+  const pct = Math.round(Number(b.progress_pct) || 0);
+  const authors = authorsOf(b).join(', ');
+  const started = b.started_reading_at ? `started ${timeAgo(b.started_reading_at)}` : '';
+  const meta = [authors, started].filter(Boolean).join(' · ');
+  return html`
+    <article class="card flex gap-3 sm:gap-4" data-lib-id="${b.id}" data-book-id="${b.book_id}" aria-label="${b.title}${authors ? ` by ${authors}` : ''}">
+      <a href="#book/${b.book_id}" class="block w-16 shrink-0 sm:w-24" tabindex="-1" aria-hidden="true">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title })}</a>
+      <div class="flex min-w-0 flex-1 flex-col gap-3">
+        <div class="flex items-start gap-2">
+          <div class="min-w-0 flex-1">
+            <h3 class="font-display text-card line-clamp-2"><a href="#book/${b.book_id}" class="hover:text-accent-text">${b.title}</a></h3>
+            ${meta ? html`<p class="truncate text-small text-text-2">${meta}</p>` : ''}
+          </div>
+          ${iconButton({ icon: 'more-horizontal', label: `More options for ${b.title}`, size: 'sm', attrs: 'data-row-menu aria-haspopup="menu"' })}
+        </div>
+        ${progressSlider({ value: pct, label: `Progress for ${b.title}` })}
+        <div class="flex items-center justify-between gap-2">
+          ${savedCaption()}
+          ${button({ label: ACTION.finish, icon: 'check', size: 'sm', attrs: 'data-action="finish"' })}
+        </div>
       </div>
-      <p id="now-playing-pct" class="text-xs text-muted mt-1"></p>
-    </div>
-    <a id="now-playing-link" href="#" class="text-xs text-blue-300 hover:text-blue-200 transition-colors flex-shrink-0">Open →</a>
-  </div>`;
+    </article>`;
+}
 
-export function renderHome(container) {
-  const tpl = document.createElement('template');
-  tpl.innerHTML = NOW_PLAYING_HTML.trim();
-  const recentlyAdded = document.createElement('div');
-  recentlyAdded.id = 'recently-added-banner';
+// Everything about a row except its progress: a progress-only change must not rebuild the row (the slider may be mid-drag)
+const rowSignature = (b) => [b.id, b.title, b.cover_url, b.started_reading_at, authorsOf(b).join(',')].join(':');
 
-  const mount = {
-    container,
-    nowPlaying: tpl.content.firstElementChild,
-    recentlyAdded,
-    last: null,          // store values the current paint was based on
+export function renderHome(el) {
+  const year = new Date().getFullYear();
+  const user = getState().user;
+  const ids = {
+    reading: uid('home-reading'), goal: uid('home-goal'), listening: uid('home-listening'),
+    upnext: uid('home-upnext'), following: uid('home-following'), recent: uid('home-recent'),
+  };
+  const H = {
     disposed: false,
-    closeSse: null,
-    unsubscribe: null,
-    repaintContent: () => repaintContent(mount),
+    goal: { state: 'loading', data: null },
+    feed: { state: 'loading', items: [] },
+    np: null,
+    recent: [],
+    readingSig: null,
+    upNextSig: null,
+    last: {},
+    wide: false,
   };
+  const offs = [];
+  let closeSse = null;
 
-  _mount = mount;
-  mount.unsubscribe = subscribe(state => {
-    const l = mount.last;
-    if (l && state.library === l.library && state.shelves === l.shelves
-          && state.loading === l.loading && state.error === l.error) return;
-    paintHome(mount);
-  });
+  const q = (name) => el.querySelector(`[data-region="${name}"]`);
 
-  paintHome(mount);
-
-  // Once per mount, not per paint
-  initNowPlaying(mount);
-  initRecentlyAdded(mount);
-
-  return () => {
-    mount.disposed = true;
-    mount.unsubscribe?.();
-    mount.closeSse?.();
-    resetGridPagers();
-    selectedLibIds.clear();
-    bulkState.selectMode = false;
-    bulkState.updateBulkBar = () => {};
-    if (_mount === mount) _mount = null;
-  };
-}
-
-// Library minus entries hidden behind a pending undo toast
-function visibleLibrary() {
-  const { library } = getState();
-  return pendingRemovals.size ? library.filter(b => !pendingRemovals.has(String(b.id))) : library;
-}
-
-// Re-render just the books area from the data already in memory
-function repaintContent(mount) {
-  if (mount.disposed) return;
-  const { container } = mount;
-  const contentEl = container.querySelector('#shelf-content');
-  if (!contentEl) return;
-  const { shelves, selectedShelfId } = getState();
-  const library = visibleLibrary();
-  renderShelfContent(contentEl, library, shelves, selectedShelfId, container);
-  attachCardHandlers(container, shelves, library);
-}
-
-function paintHome(mount) {
-  const { container } = mount;
-  const { shelves, library: fullLibrary, loading, error } = getState();
-  mount.last = { library: fullLibrary, shelves, loading, error };
-  const library = visibleLibrary();
-
-  // The old DOM (and any selection / pagers on it) is about to go away
-  resetGridPagers();
-  selectedLibIds.clear();
-
-  if (loading && !fullLibrary.length) {
-    const count = 12;
-    container.innerHTML = `
-      <div class="flex flex-col gap-6">
-        <div class="h-10 skeleton rounded-xl w-full"></div>
-        <div class="book-grid">
-          ${Array.from({ length: count }, () => `
-            <div class="flex flex-col gap-2">
-              <div class="skeleton aspect-[2/3] w-full rounded"></div>
-              <div class="skeleton h-3 w-3/4 rounded"></div>
-              <div class="skeleton h-2 w-1/2 rounded"></div>
-            </div>`).join('')}
+  el.innerHTML = String(html`
+    <div class="mx-auto w-full max-w-7xl space-y-6 md:space-y-8">
+      <header class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+        <div class="min-w-0">
+          <h1 class="h1">${greeting(user)}</h1>
+          <p class="text-small text-text-2" data-region="summary"></p>
         </div>
-      </div>`;
-    return;
-  }
-  if (error) {
-    container.innerHTML = `<div class="text-red-400 text-center py-20">${escHtml(error)}</div>`;
-    return;
+        ${button({ label: 'Add a book', icon: 'plus', variant: 'primary', attrs: 'data-action="add-book"' })}
+      </header>
+      <div data-region="gate"></div>
+      <div class="space-y-6 md:space-y-8" data-region="dash" hidden>
+        <div class="grid gap-6 md:gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+          <section aria-labelledby="${ids.reading}" data-region="reading"></section>
+          <div class="space-y-6 md:space-y-8">
+            <section aria-labelledby="${ids.goal}" data-region="goal"></section>
+            <section aria-labelledby="${ids.listening}" data-region="listening" hidden></section>
+          </div>
+        </div>
+        <section aria-labelledby="${ids.upnext}" data-region="upnext"></section>
+        <section aria-labelledby="${ids.following}" data-region="following"></section>
+        <section aria-labelledby="${ids.recent}" data-region="recent" hidden></section>
+      </div>
+    </div>`);
+
+  // ── library-driven sections ────────────────────────────────────────────────
+  function readingEntries() {
+    return (getState().library ?? [])
+      .filter((b) => b.status === 'reading')
+      .sort((a, b) => ts(b.started_reading_at ?? b.added_at) - ts(a.started_reading_at ?? a.added_at));
   }
 
-  const selectedShelfId = getState().selectedShelfId;
+  function paintSummary() {
+    const reading = readingEntries().length;
+    const parts = [];
+    if (reading) parts.push(`${plural(reading, 'book')} in progress`);
+    const g = H.goal.data;
+    if (H.goal.state === 'ok' && g?.target) parts.push(`${g.booksRead} of ${g.target} this year`);
+    q('summary').textContent = parts.join(' · ');
+  }
 
-  container.innerHTML = `
-    <div class="flex flex-col gap-6">
-
-      <!-- Now Playing banner (ABS real-time) — persistent node, swapped in below -->
-      <div data-slot="now-playing"></div>
-
-      <!-- Library search + select toggle -->
-      <div class="flex gap-2 items-center">
-        <div class="relative flex-1">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
-            </svg>
-          </span>
-          <input id="library-search" type="search" value="${escHtml(libraryQuery)}"
-            placeholder="Filter by title or author…"
-            class="library-search w-full rounded-xl pl-9 pr-4 py-2.5 text-sm" />
-        </div>
-        <button id="select-mode-btn"
-          class="flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted
-                 hover:border-amber-500 hover:text-amber-400 transition-colors">
-          Select
-        </button>
-      </div>
-
-      <!-- Bulk action bar (hidden unless books selected) -->
-      <div id="bulk-bar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50
-           bg-surface-2 border border-border rounded-2xl shadow-2xl px-4 py-3
-           flex items-center gap-3 text-sm">
-        <span id="bulk-count" class="text-text font-medium mr-1"></span>
-        <button id="bulk-status-btn" class="px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-border/60 text-text transition-colors">Set status…</button>
-        <button id="bulk-remove-btn" class="px-3 py-1.5 rounded-lg bg-red-900/60 hover:bg-red-900 text-red-300 transition-colors">Remove</button>
-        <button id="bulk-cancel-btn" class="px-2 py-1.5 text-muted hover:text-text transition-colors">✕</button>
-      </div>
-
-      <!-- Recently added from integrations (persistent node, filled async) -->
-      <div data-slot="recently-added"></div>
-
-      <!-- Shelf selector bar -->
-      <div class="shelf-bar flex items-center gap-2 overflow-x-auto">
-        <button class="shelf-chip ${selectedShelfId == null ? 'shelf-chip-active' : 'shelf-chip-idle'}"
-                data-shelf="all">All Books</button>
-        ${(() => {
-          const hasAbs = library.some(b => (b.availability ?? []).some(a => a.service === 'audiobookshelf'));
-          const hasCalibre = library.some(b => (b.availability ?? []).some(a => a.service === 'calibre'));
-          if (!hasAbs && !hasCalibre) return '';
-          const chip = (val, label, active) =>
-            `<button class="avail-filter-chip shelf-chip flex-shrink-0 ${active ? 'shelf-chip-active' : 'shelf-chip-idle'}"
-                     data-avail="${val}">${label}</button>`;
-          return (hasAbs ? chip('audiobookshelf', '🎧 Audio', availFilter === 'audiobookshelf') : '')
-               + (hasCalibre ? chip('calibre', '📚 Ebook', availFilter === 'calibre') : '');
-        })()}
-        ${shelves.map(s => `
-          <button class="shelf-chip ${selectedShelfId === s.id ? 'shelf-chip-active' : 'shelf-chip-idle'}"
-                  data-shelf="${s.id}" style="${selectedShelfId === s.id ? `background:${safeColor(s.color)}22;border-color:${safeColor(s.color)};color:${safeColor(s.color)}` : ''}">
-            <span class="inline-block w-2 h-2 rounded-full mr-1.5 flex-shrink-0" style="background:${safeColor(s.color)}"></span>${escHtml(s.name)}
-          </button>`).join('')}
-        <button id="new-shelf-btn" class="shelf-chip shelf-chip-idle text-muted border-dashed">+ New shelf</button>
-      </div>
-
-      <!-- Main content area -->
-      <div id="shelf-content"></div>
-
-      <!-- Shelf manager (collapsed by default) -->
-      <div class="pt-4 border-t border-border">
-        ${renderShelfManager(shelves)}
-      </div>
-    </div>`;
-
-  // Put the persistent banners back in their slots
-  container.querySelector('[data-slot="now-playing"]')?.replaceWith(mount.nowPlaying);
-  container.querySelector('[data-slot="recently-added"]')?.replaceWith(mount.recentlyAdded);
-
-  renderShelfContent(container.querySelector('#shelf-content'), library, shelves, selectedShelfId, container);
-  attachShelfBar(mount, shelves);
-  attachCardHandlers(container, shelves, library);
-  attachShelfManagerHandlers(container, shelves);
-
-  container.querySelector('#library-search')?.addEventListener('input', e => {
-    libraryQuery = e.target.value;
-    repaintContent(mount);
-  });
-
-  container.querySelectorAll('.avail-filter-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      availFilter = chip.dataset.avail || null;
-      container.querySelectorAll('.avail-filter-chip').forEach(c => {
-        const active = (c.dataset.avail || null) === availFilter;
-        c.className = `avail-filter-chip flex-shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-border text-muted hover:border-border/80 hover:text-text'}`;
-      });
-      repaintContent(mount);
-    });
-  });
-
-  // Select mode toggle — state lives in module-level bulkState so the
-  // bound-once card handlers always see the current value
-  bulkState.selectMode = false; // fresh render always starts un-selected
-  const selectBtn = container.querySelector('#select-mode-btn');
-  const bulkBar   = container.querySelector('#bulk-bar');
-  const bulkCount = container.querySelector('#bulk-count');
-
-  function updateBulkBar() {
-    const n = selectedLibIds.size;
-    if (n > 0) {
-      bulkCount.textContent = `${n} selected`;
-      bulkBar.classList.remove('hidden');
+  function paintGate() {
+    const st = getState();
+    const gate = q('gate');
+    const dash = q('dash');
+    let mode;
+    if (!st.libraryLoaded) mode = st.error ? 'error' : 'loading';
+    else mode = (st.library?.length ?? 0) ? 'dash' : 'empty';
+    dash.hidden = mode !== 'dash';
+    if (gate._mode === mode) return mode === 'dash';
+    gate._mode = mode;
+    if (mode === 'loading') {
+      gate.innerHTML = String(html`<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"><div class="space-y-3">${skeletonCard()}${skeletonCard()}</div>${skeletonCard()}</div>`);
+    } else if (mode === 'error') {
+      gate.innerHTML = String(emptyState({ icon: EMPTY.loadError.icon, title: EMPTY.loadError.title, body: EMPTY.loadError.body, action: { label: ACTION.tryAgain, variant: 'primary', attrs: 'data-action="retry-library"' } }));
+    } else if (mode === 'empty') {
+      gate.innerHTML = String(onboardingHTML());
     } else {
-      bulkBar.classList.add('hidden');
+      gate.innerHTML = '';
     }
-  }
-  bulkState.updateBulkBar = updateBulkBar;
-
-  selectBtn?.addEventListener('click', () => {
-    const selectMode = !bulkState.selectMode;
-    selectedLibIds.clear();
-    selectBtn.textContent = selectMode ? 'Done' : 'Select';
-    selectBtn.className = selectMode
-      ? 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-amber-500 text-xs text-amber-400 transition-colors'
-      : 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted hover:border-amber-500 hover:text-amber-400 transition-colors';
-    bulkBar.classList.add('hidden');
-    // Re-attach to toggle checkbox visibility (existing cards stay bound)
-    attachCardHandlers(container, getState().shelves, visibleLibrary(), { selectMode, updateBulkBar });
-  });
-
-  bulkBar?.querySelector('#bulk-cancel-btn')?.addEventListener('click', () => {
-    bulkState.selectMode = false;
-    selectedLibIds.clear();
-    selectBtn.textContent = 'Select';
-    selectBtn.className = 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted hover:border-amber-500 hover:text-amber-400 transition-colors';
-    bulkBar.classList.add('hidden');
-    container.querySelectorAll('.book-card').forEach(c => c.querySelector('.bulk-check')?.classList.add('hidden'));
-  });
-
-  bulkBar?.querySelector('#bulk-remove-btn')?.addEventListener('click', () => {
-    const ids = [...selectedLibIds];
-    if (!ids.length) return;
-    selectedLibIds.clear();
-    bulkBar.classList.add('hidden');
-    queueRemoval(ids, ids.length === 1 ? 'Removed 1 book' : `Removed ${ids.length} books`);
-  });
-
-  bulkBar?.querySelector('#bulk-status-btn')?.addEventListener('click', () => {
-    showBulkStatusMenu(bulkBar, [...selectedLibIds], () => {
-      selectedLibIds.clear();
-      updateBulkBar();
-      loadLibrary();
-    });
-  });
-}
-
-// ── Shelf bar ─────────────────────────────────────────────────────────────────
-function attachShelfBar(mount, shelves) {
-  const { container } = mount;
-  container.querySelectorAll('.shelf-chip[data-shelf]').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const raw = chip.dataset.shelf;
-      const id = raw === 'all' ? null : Number(raw);
-      setState({ selectedShelfId: id });
-
-      // Clicking "All Books" clears the availability filter
-      if (id === null && availFilter !== null) {
-        availFilter = null;
-        container.querySelectorAll('.avail-filter-chip').forEach(c => {
-          c.className = `avail-filter-chip shelf-chip shelf-chip-idle`;
-        });
-      }
-
-      // Re-render content from already-loaded state — no network round-trip needed
-      repaintContent(mount);
-      // Update active chip styles
-      container.querySelectorAll('.shelf-chip[data-shelf]').forEach(c => {
-        const cId = c.dataset.shelf === 'all' ? null : Number(c.dataset.shelf);
-        const isActive = cId === id;
-        c.className = `shelf-chip ${isActive ? 'shelf-chip-active' : 'shelf-chip-idle'}`;
-        if (isActive && cId !== null) {
-          const s = shelves.find(s => s.id === cId);
-          if (s) c.style.cssText = `background:${safeColor(s.color)}22;border-color:${safeColor(s.color)};color:${safeColor(s.color)}`;
-        } else {
-          c.style.cssText = '';
-        }
-      });
-    });
-  });
-
-  container.querySelector('#new-shelf-btn')?.addEventListener('click', () => {
-    showInlineShelfCreate(container);
-  });
-}
-
-function showInlineShelfCreate(container) {
-  const btn = container.querySelector('#new-shelf-btn');
-  if (!btn || container.querySelector('#inline-shelf-form')) return;
-
-  const form = document.createElement('form');
-  form.id = 'inline-shelf-form';
-  form.className = 'flex items-center gap-1.5';
-  form.innerHTML = `
-    <input name="name" required placeholder="Shelf name…" autofocus
-      class="field-input w-36" />
-    <button type="submit"
-      class="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-sm">
-      Add
-    </button>
-    <button type="button" id="cancel-shelf-create"
-      class="px-2 py-1 text-muted hover:text-text rounded-lg text-sm">
-      ✕
-    </button>`;
-
-  btn.replaceWith(form);
-  form.querySelector('input').focus();
-
-  form.addEventListener('submit', async e => {
-    e.preventDefault();
-    const name = new FormData(form).get('name').trim();
-    if (!name) return;
-    try {
-      await api.createShelf({ name });
-      loadLibrary();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  form.querySelector('#cancel-shelf-create').addEventListener('click', () => {
-    loadLibrary();
-  });
-}
-
-// ── Content area ──────────────────────────────────────────────────────────────
-// ── Incremental grid rendering ────────────────────────────────────────────────
-// Large libraries (1000+ books after a Calibre sync) would otherwise render
-// every card in one innerHTML pass. Only the first chunk is rendered; a
-// sentinel below each grid appends the rest as it scrolls into view.
-const GRID_CHUNK = 48;
-let _gridObservers = [];
-
-function resetGridPagers() {
-  _gridObservers.forEach(io => io.disconnect());
-  _gridObservers = [];
-}
-
-function paginateGrid(gridEl, books, cardOpts, onAppend) {
-  if (books.length <= GRID_CHUNK) return;
-  let index = GRID_CHUNK;
-  const sentinel = document.createElement('div');
-  sentinel.className = 'grid-sentinel h-6';
-  gridEl.after(sentinel);
-  const io = new IntersectionObserver(entries => {
-    if (!entries.some(en => en.isIntersecting)) return;
-    gridEl.insertAdjacentHTML('beforeend',
-      books.slice(index, index + GRID_CHUNK).map(b => bookCardHTML(b, cardOpts)).join(''));
-    index += GRID_CHUNK;
-    onAppend?.();
-    if (index >= books.length) { io.disconnect(); sentinel.remove(); }
-  }, { rootMargin: '800px' });
-  io.observe(sentinel);
-  _gridObservers.push(io);
-}
-
-function renderShelfContent(el, library, shelves, selectedShelfId, container) {
-  resetGridPagers();
-  const filtered = filterBooks(library, libraryQuery);
-  const onAppend = () => attachCardHandlers(container, shelves, library);
-  if (selectedShelfId == null) {
-    renderAllBooks(el, filtered, container, shelves, onAppend);
-  } else {
-    const shelf = shelves.find(s => s.id === selectedShelfId);
-    const books = filtered.filter(b => b.shelf_ids?.includes(selectedShelfId));
-    renderShelfGrid(el, shelf, books, onAppend);
-  }
-}
-
-function renderAllBooks(el, library, container, shelves, onAppend) {
-  const byStatus = { reading: [], to_read: [], done: [] };
-  for (const b of library) {
-    if (byStatus[b.status]) byStatus[b.status].push(b);
-  }
-  const sortedByKey = {};
-
-  const STATUS_META = [
-    { key: 'reading', label: 'Currently Reading', color: '#f59e0b' },
-    { key: 'done',    label: 'Done',               color: '#22c55e' },
-    { key: 'to_read', label: 'To Read',           color: '#64748b' },
-  ];
-
-  const SORT_OPTIONS = [
-    { value: 'added',  label: 'Date added' },
-    { value: 'title',  label: 'Title' },
-    { value: 'author', label: 'Author' },
-  ];
-
-  const sections = STATUS_META.map(({ key, label, color }) => {
-    const books = byStatus[key];
-    if (!books.length) return '';
-    const { open, sort } = sectionState[key];
-    const sorted = sortBooks(books, sort);
-    sortedByKey[key] = sorted;
-    const isReading = key === 'reading';
-    const chevron = `
-      <svg class="w-4 h-4 text-muted flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-      </svg>`;
-    const dot = `<span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${color}"></span>`;
-    const countBadge = `<span class="count-badge ml-0.5" style="background:${color}22;color:${color}">${books.length}</span>`;
-    const headingClass = `font-serif text-xl font-semibold${isReading ? ' reading-section-heading' : ''}`;
-    const sortSelect = `
-      <select class="section-sort section-sort-select ml-auto rounded-md px-2 py-0.5 text-xs cursor-pointer"
-              data-sort-section="${key}">
-        ${SORT_OPTIONS.map(o => `<option value="${o.value}" ${sort === o.value ? 'selected' : ''}>${o.label}</option>`).join('')}
-      </select>`;
-    return `
-      <section class="mb-10" data-status-section="${key}">
-        <div class="flex items-center gap-2 mb-4">
-          <button class="section-toggle flex items-center gap-2 min-w-0 hover:opacity-80 transition-opacity"
-                  data-toggle-section="${key}" aria-expanded="${open}">
-            ${chevron}
-            ${dot}
-            <h2 class="${headingClass}">${label}</h2>
-            ${countBadge}
-          </button>
-          ${open ? sortSelect : ''}
-        </div>
-        ${open ? `<div class="book-grid stagger">
-          ${sorted.slice(0, GRID_CHUNK).map(b => bookCardHTML(b, { isReading: isReading })).join('')}
-        </div>` : ''}
-      </section>`;
-  }).join('');
-
-  const emptyHtml = libraryQuery
-    ? `<div class="text-center py-20 space-y-2">
-        <p class="text-muted">No books match "<em class="text-text">${escHtml(libraryQuery)}</em>".</p>
-        <p class="text-muted text-sm">Try a different title or author name.</p>
-       </div>`
-    : `<div class="text-center py-24 space-y-5 fade-in">
-        <svg class="w-20 h-20 mx-auto text-border" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <rect x="8" y="20" width="14" height="44" rx="2" fill="currentColor" opacity="0.5"/>
-          <rect x="10" y="18" width="10" height="4" rx="1" fill="#f59e0b" opacity="0.6"/>
-          <rect x="26" y="14" width="12" height="50" rx="2" fill="currentColor" opacity="0.7"/>
-          <rect x="28" y="12" width="8" height="4" rx="1" fill="#f59e0b" opacity="0.4"/>
-          <rect x="42" y="22" width="16" height="42" rx="2" fill="currentColor" opacity="0.5"/>
-          <rect x="44" y="20" width="12" height="4" rx="1" fill="#f59e0b" opacity="0.7"/>
-          <rect x="62" y="30" width="10" height="34" rx="2" fill="currentColor" opacity="0.4"/>
-          <rect x="64" y="28" width="6" height="4" rx="1" fill="#f59e0b" opacity="0.5"/>
-          <line x1="4" y1="65" x2="76" y2="65" stroke="currentColor" stroke-width="2" stroke-opacity="0.4" stroke-linecap="round"/>
-        </svg>
-        <div class="space-y-1">
-          <p class="text-text text-lg font-serif font-semibold">Your library is empty</p>
-          <p class="text-muted text-sm">Start building your reading collection.</p>
-        </div>
-        <a href="#search"
-           class="inline-block px-6 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-stone-950 font-semibold rounded-xl text-sm transition-all duration-150 shadow-lg shadow-amber-500/20">
-          Search for a book
-        </a>
-        <div class="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-6 text-sm">
-          <a href="#settings" class="text-muted hover:text-amber-400 transition-colors inline-flex items-center gap-1.5">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4"/></svg>
-            Import a Goodreads / StoryGraph CSV
-          </a>
-          <a href="#settings" class="text-muted hover:text-amber-400 transition-colors inline-flex items-center gap-1.5">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 11-5.656-5.656l1.5-1.5m7.5-1.5l1.5-1.5a4 4 0 115.656 5.656l-3 3"/></svg>
-            Connect Calibre or Audiobookshelf
-          </a>
-        </div>
-       </div>`;
-  el.innerHTML = sections || emptyHtml;
-
-  // Sentinel-driven append for sections with more than one chunk
-  el.querySelectorAll('[data-status-section]').forEach(section => {
-    const key = section.dataset.statusSection;
-    const grid = section.querySelector('.book-grid');
-    if (grid) paginateGrid(grid, sortedByKey[key] ?? [], { isReading: key === 'reading' }, onAppend);
-  });
-
-  // Collapse toggles
-  el.querySelectorAll('.section-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const key = btn.dataset.toggleSection;
-      sectionState[key].open = !sectionState[key].open;
-      resetGridPagers();
-      renderAllBooks(el, library, container, shelves, onAppend);
-      attachCardHandlers(container, shelves, library);
-    });
-  });
-
-  // Sort selects
-  el.querySelectorAll('.section-sort').forEach(select => {
-    select.addEventListener('change', () => {
-      const key = select.dataset.sortSection;
-      sectionState[key].sort = select.value;
-      resetGridPagers();
-      renderAllBooks(el, library, container, shelves, onAppend);
-      attachCardHandlers(container, shelves, library);
-    });
-  });
-}
-
-function renderShelfGrid(el, shelf, books, onAppend) {
-  const dot = shelf ? `<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${safeColor(shelf.color)}"></span>` : '';
-  const title = shelf?.name ?? 'Unknown shelf';
-
-  el.innerHTML = `
-    <section>
-      <div class="flex items-center gap-2 mb-4">
-        ${dot}
-        <h2 class="font-serif text-xl font-semibold">${escHtml(title)}</h2>
-        <span class="text-sm text-muted">${books.length}</span>
-      </div>
-      ${books.length
-        ? `<div class="book-grid stagger">
-             ${books.slice(0, GRID_CHUNK).map(b => bookCardHTML(b, { showStatus: true })).join('')}
-           </div>`
-        : `<p class="text-muted italic text-sm py-3">No books on this shelf yet.</p>`}
-    </section>`;
-
-  const grid = el.querySelector('.book-grid');
-  if (grid) paginateGrid(grid, books, { showStatus: true }, onAppend);
-}
-
-// ── Card event handlers ───────────────────────────────────────────────────────
-// Live bulk-select state, read by the bound-once card handlers at event time.
-// (Closures over a local selectMode caused stacked stale handlers before.)
-const bulkState = { selectMode: false, updateBulkBar: () => {} };
-
-// Listeners are bound exactly once per card (data-bound guard), so this is
-// safe to call repeatedly on the same DOM — select-mode toggles and
-// incrementally appended grid chunks included. The checkbox-visibility pass
-// runs every call.
-function attachCardHandlers(container, shelves, library, bulk = {}) {
-  if (bulk.updateBulkBar) bulkState.updateBulkBar = bulk.updateBulkBar;
-  if ('selectMode' in bulk) bulkState.selectMode = bulk.selectMode;
-
-  container.querySelectorAll('.book-card').forEach(card => {
-    // Checkbox overlay + visibility — every call, so toggling select mode
-    // updates already-bound cards
-    if (!card.querySelector('.bulk-check')) {
-      const chk = document.createElement('div');
-      chk.className = `bulk-check absolute top-1.5 left-1.5 z-20 w-5 h-5 rounded-full border-2
-                       flex items-center justify-center text-xs font-bold transition-all
-                       ${bulkState.selectMode ? '' : 'hidden'}
-                       ${selectedLibIds.has(card.dataset.libId) ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-white/60 bg-black/30'}`;
-      card.querySelector('.relative.w-full')?.appendChild(chk);
-    }
-    const chk = card.querySelector('.bulk-check');
-    if (chk) chk.classList.toggle('hidden', !bulkState.selectMode);
-
-    if (card.dataset.bound) return;
-    card.dataset.bound = '1';
-
-    // Click → selection (in select mode) or navigate to the book page
-    card.addEventListener('click', e => {
-      if (e.target.closest('button') && !e.target.closest('.bulk-check')) return;
-      if (bulkState.selectMode) {
-        const libId = card.dataset.libId;
-        if (!libId) return;
-        const box = card.querySelector('.bulk-check');
-        if (selectedLibIds.has(libId)) {
-          selectedLibIds.delete(libId);
-          box?.classList.remove('bg-amber-500', 'border-amber-500', 'text-stone-950');
-          box?.classList.add('border-white/60', 'bg-black/30');
-          if (box) box.textContent = '';
-        } else {
-          selectedLibIds.add(libId);
-          box?.classList.add('bg-amber-500', 'border-amber-500', 'text-stone-950');
-          box?.classList.remove('border-white/60', 'bg-black/30');
-          if (box) box.textContent = '✓';
-        }
-        bulkState.updateBulkBar();
-        return;
-      }
-      const bookId = card.dataset.bookId;
-      if (bookId) location.hash = `#book/${bookId}`;
-    });
-
-    // Hover × remove — optimistic with an undo toast (removal also deletes the
-    // book's reading sessions, so it must be reversible)
-    card.querySelector('.remove-card-btn')?.addEventListener('click', e => {
-      e.stopPropagation();
-      const libId = card.dataset.libId;
-      if (!libId) return;
-      const entry = library.find(b => String(b.id) === String(libId));
-      queueRemoval([libId], `Removed “${entry?.title ?? 'book'}”`);
-    });
-
-    // ✓ Finish → set status done
-    card.querySelector('.finish-reading-btn')?.addEventListener('click', async e => {
-      e.stopPropagation();
-      const libId  = card.dataset.libId;
-      const bookId = card.dataset.bookId;
-      if (!libId) return;
-      try {
-        await api.setStatus(libId, 'done');
-      } catch (err) {
-        showToast(err.message, 'error');
-        return;
-      }
-      await loadLibrary();
-      const entry = (getState().library ?? []).find(b => String(b.book_id) === String(bookId));
-      openLogReadModal({ id: bookId, title: entry?.title ?? '', startedAt: entry?.started_reading_at }, null);
-    });
-
-    // ⋯ button → context menu
-    card.querySelector('.card-menu-btn')?.addEventListener('click', e => {
-      e.stopPropagation();
-      const rect = e.currentTarget.getBoundingClientRect();
-      showContextMenu(rect.left, rect.bottom + 4, card, shelves, library);
-    });
-
-    // Right-click / long-press → context menu
-    card.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      showContextMenu(e.clientX, e.clientY, card, shelves, library);
-    });
-    let pressTimer;
-    card.addEventListener('touchstart', e => {
-      pressTimer = setTimeout(() => {
-        const t = e.touches[0];
-        showContextMenu(t.clientX, t.clientY, card, shelves, library);
-      }, 600);
-    }, { passive: true });
-    card.addEventListener('touchend', () => clearTimeout(pressTimer));
-    card.addEventListener('touchmove', () => clearTimeout(pressTimer));
-  });
-}
-
-// ── Context menu (status + shelf memberships + remove) ─────────────────────────
-function showContextMenu(x, y, card, shelves, library) {
-  document.querySelector('.ctx-menu')?.remove();
-
-  const libId  = card.dataset.libId;
-  const libEntry = library.find(b => String(b.id) === String(libId));
-  if (!libId || !libEntry) return;
-
-  const shelfIds = libEntry.shelf_ids ?? [];
-
-  const STATUSES = [
-    { key: 'to_read', label: 'To Read',  color: '#64748b' },
-    { key: 'reading', label: 'Reading',  color: '#f59e0b' },
-    { key: 'done',    label: 'Done',     color: '#22c55e' },
-  ];
-
-  const menu = document.createElement('div');
-  menu.className = 'ctx-menu fixed bg-surface-2 border border-border rounded-xl shadow-2xl z-50 py-2 text-sm min-w-[200px] select-none';
-  menu.style.cssText = `left:${Math.min(x, window.innerWidth - 220)}px;top:${Math.min(y, window.innerHeight - 300)}px`;
-
-  menu.innerHTML = `
-    <div class="px-3 py-1.5 text-xs text-muted uppercase tracking-wider font-medium">Status</div>
-    ${STATUSES.map(s => `
-      <button class="ctx-status w-full text-left px-3 py-2 flex items-center gap-2
-                     ${libEntry.status === s.key ? 'text-amber-400' : 'hover:bg-border/40 text-text'}"
-              data-status="${s.key}">
-        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${safeColor(s.color)}"></span>
-        ${s.label}
-        ${libEntry.status === s.key ? '<span class="ml-auto text-xs">✓</span>' : ''}
-      </button>`).join('')}
-
-    ${shelves.length ? `
-    <div class="border-t border-border mt-1 pt-1">
-      <div class="px-3 py-1.5 text-xs text-muted uppercase tracking-wider font-medium">Shelves</div>
-      ${shelves.map(s => {
-        const on = shelfIds.includes(s.id);
-        return `
-          <button class="ctx-shelf w-full text-left px-3 py-2 flex items-center gap-2
-                         hover:bg-border/40 ${on ? 'text-text' : 'text-muted'}"
-                  data-shelf-id="${s.id}" data-on="${on}">
-            <span class="w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-xs
-                         ${on ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-border'}"
-              >${on ? '✓' : ''}
-            </span>
-            <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${safeColor(s.color)}"></span>
-            ${escHtml(s.name)}
-          </button>`;
-      }).join('')}
-    </div>` : ''}
-
-    ${libEntry.status === 'reading' ? `
-    <div class="border-t border-border mt-1 pt-1">
-      <div class="px-3 py-2 space-y-1.5">
-        <p class="text-xs text-muted uppercase tracking-wider font-medium">Progress</p>
-        <div class="flex items-center gap-2">
-          <input type="range" class="ctx-progress-slider flex-1 accent-amber-400"
-                 min="0" max="100" step="5"
-                 value="${libEntry.progress_pct ?? 0}" />
-          <span class="ctx-progress-label text-xs text-muted w-8 text-right">${libEntry.progress_pct ?? 0}%</span>
-        </div>
-      </div>
-    </div>` : ''}
-
-    <div class="border-t border-border mt-1 pt-1">
-      <button class="ctx-remove w-full text-left px-3 py-2 hover:bg-red-900/40 text-red-400">
-        Remove from library
-      </button>
-    </div>`;
-
-  document.body.appendChild(menu);
-
-  // Status change
-  menu.querySelectorAll('.ctx-status').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      menu.remove();
-      const newStatus = btn.dataset.status;
-      try {
-        await api.setStatus(libId, newStatus);
-      } catch (err) {
-        showToast(err.message, 'error');
-        return;
-      }
-      loadLibrary();
-      if (newStatus === 'done') {
-        openLogReadModal({ id: libEntry.book_id, title: libEntry.title, startedAt: libEntry.started_reading_at }, null);
-      }
-    });
-  });
-
-  // Shelf toggle
-  menu.querySelectorAll('.ctx-shelf').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      menu.remove();
-      const shelfId = Number(btn.dataset.shelfId);
-      const on = btn.dataset.on === 'true';
-      try {
-        if (on) await api.removeShelfMembership(libId, shelfId);
-        else await api.addShelfMembership(libId, shelfId);
-      } catch (err) {
-        showToast(err.message, 'error');
-        return;
-      }
-      loadLibrary();
-    });
-  });
-
-  // Remove — optimistic, reversible via the undo toast (no confirm needed)
-  menu.querySelector('.ctx-remove').addEventListener('click', () => {
-    menu.remove();
-    queueRemoval([libId], `Removed “${libEntry.title}”`);
-  });
-
-  // Progress slider
-  const slider = menu.querySelector('.ctx-progress-slider');
-  const label  = menu.querySelector('.ctx-progress-label');
-  if (slider) {
-    let saveTimer;
-    slider.addEventListener('input', () => {
-      label.textContent = slider.value + '%';
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(async () => {
-        try {
-          await api.setProgress(libId, { progress_pct: Number(slider.value) });
-          loadLibrary();
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      }, 600);
-    });
+    return mode === 'dash';
   }
 
-  const dismiss = e => {
-    if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', dismiss); }
-  };
-  setTimeout(() => document.addEventListener('click', dismiss), 0);
-}
-
-// ── Bulk status picker ────────────────────────────────────────────────────────
-function showBulkStatusMenu(anchor, libIds, onDone) {
-  document.querySelector('.bulk-status-menu')?.remove();
-  const menu = document.createElement('div');
-  menu.className = 'bulk-status-menu absolute bottom-full mb-2 left-0 bg-surface-2 border border-border rounded-xl shadow-xl py-1 text-sm min-w-[160px]';
-  menu.style.zIndex = 60;
-  const STATUSES = [
-    { key: 'to_read', label: 'To Read' },
-    { key: 'reading', label: 'Reading' },
-    { key: 'done',    label: 'Done'    },
-  ];
-  menu.innerHTML = STATUSES.map(s =>
-    `<button class="w-full text-left px-4 py-2 hover:bg-border/40 text-text" data-status="${s.key}">${s.label}</button>`
-  ).join('');
-  anchor.style.position = 'relative';
-  anchor.appendChild(menu);
-  menu.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      menu.remove();
-      const results = await Promise.allSettled(libIds.map(id => api.setStatus(id, btn.dataset.status)));
-      const failed = results.filter(r => r.status === 'rejected');
-      if (failed.length) showToast(`${failed.length} of ${libIds.length} books could not be updated: ${failed[0].reason?.message ?? 'error'}`, 'error');
-      onDone();
-    });
-  });
-  setTimeout(() => {
-    const dismiss = e => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', dismiss); } };
-    document.addEventListener('click', dismiss);
-  }, 0);
-}
-
-// ── Shelf manager ─────────────────────────────────────────────────────────────
-function renderShelfManager(shelves) {
-  return `
-    <details class="group">
-      <summary class="flex items-center gap-2 cursor-pointer list-none text-sm text-muted
-                      hover:text-text transition-colors select-none">
-        <span class="group-open:rotate-90 transition-transform inline-block">▸</span>
-        Manage shelves
-      </summary>
-      <div class="mt-4 space-y-3 max-w-md">
-        ${shelves.length ? shelves.map(s => `
-          <div class="flex flex-col gap-1" data-shelf-row="${s.id}">
-            <div class="flex items-center gap-2 bg-surface-2 rounded-lg px-3 py-2">
-              <input type="color" value="${safeColor(s.color)}" class="shelf-color-input w-7 h-7 rounded cursor-pointer bg-transparent border-none" data-shelf-id="${s.id}" />
-              <span class="flex-1 text-sm font-medium">${escHtml(s.name)}</span>
-              <button class="rename-shelf-btn text-xs text-muted hover:text-amber-400 px-2 transition-colors" data-shelf-id="${s.id}" data-shelf-name="${escHtml(s.name)}">Rename</button>
-              <button class="delete-shelf-btn text-xs text-muted hover:text-red-400 px-1 transition-colors" data-shelf-id="${s.id}">✕</button>
-            </div>
-            <p class="shelf-err text-xs text-red-400 px-1 hidden"></p>
-          </div>`).join('') : `<p class="text-muted text-sm italic">No shelves yet.</p>`}
-
-        <form id="create-shelf-form" class="flex gap-2 mt-2">
-          <input name="name" required placeholder="New shelf name…"
-            class="field-input flex-1" />
-          <input type="color" name="color" value="#a78bfa"
-            class="w-10 h-[38px] rounded-lg cursor-pointer bg-surface-2 border border-border" />
-          <button type="submit"
-            class="bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg px-3 text-sm transition-colors">
-            + Add
-          </button>
-        </form>
-      </div>
-    </details>`;
-}
-
-function attachShelfManagerHandlers(container) {
-  container.querySelector('#create-shelf-form')?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const name = fd.get('name').trim();
-    if (!name) return;
-    try {
-      await api.createShelf({ name, color: fd.get('color') });
-      e.target.reset();
-      loadLibrary();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  container.querySelectorAll('.rename-shelf-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      showInlineRename(btn);
-    });
-  });
-
-  container.querySelectorAll('.delete-shelf-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      showInlineDeleteConfirm(btn);
-    });
-  });
-
-  container.querySelectorAll('.shelf-color-input').forEach(input => {
-    input.addEventListener('change', async () => {
-      try {
-        await api.updateShelf(input.dataset.shelfId, { color: input.value });
-        loadLibrary();
-      } catch (err) {
-        showToast(err.message, 'error');
+  function paintReading() {
+    const region = q('reading');
+    const items = readingEntries();
+    const shown = items.slice(0, MAX_READING);
+    const sig = `${shown.map(rowSignature).join('~')}|${items.length}`;
+    if (sig === H.readingSig) {
+      // Same rows: only mirror progress that changed elsewhere, and never touch a slider being dragged
+      for (const b of shown) {
+        const input = region.querySelector(`[data-lib-id="${cssEscape(b.id)}"] .slider__input`);
+        const pct = Math.round(Number(b.progress_pct) || 0);
+        if (input && input !== document.activeElement && Number(input.value) !== pct) setSliderValue(input, pct);
       }
-    });
-  });
-}
-
-function showInlineRename(btn) {
-  const row = btn.closest('[data-shelf-row]');
-  if (!row || row.querySelector('.inline-rename')) return;
-  const nameSpan = row.querySelector('span.flex-1');
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.value = btn.dataset.shelfName;
-  input.className = 'inline-rename flex-1 bg-surface-2 border border-amber-500 rounded px-2 py-0.5 text-sm focus:outline-none';
-
-  const save = document.createElement('button');
-  save.textContent = 'Save';
-  save.className = 'text-xs px-2 py-1 bg-amber-500 text-stone-950 rounded font-semibold';
-
-  const cancel = document.createElement('button');
-  cancel.textContent = 'Cancel';
-  cancel.className = 'text-xs px-1 py-1 text-muted hover:text-text';
-
-  nameSpan.replaceWith(input);
-  btn.replaceWith(save);
-  input.after(cancel);
-  input.focus();
-  input.select();
-
-  const doSave = async () => {
-    const newName = input.value.trim();
-    if (!newName || newName === btn.dataset.shelfName) { loadLibrary(); return; }
-    try {
-      await api.updateShelf(btn.dataset.shelfId, { name: newName });
-    } catch (err) {
-      showToast(err.message, 'error');
       return;
     }
-    loadLibrary();
+    H.readingSig = sig;
+    region.innerHTML = String(html`
+      ${sectionHeader({ title: LABEL.currentlyReading, count: items.length || undefined, href: items.length ? '#library/status/reading' : undefined, id: ids.reading })}
+      ${items.length ? html`
+        <div class="space-y-3">${shown.map(readingRowHTML)}</div>
+        ${items.length > MAX_READING ? html`<a class="mt-3 inline-flex items-center gap-1 text-small text-accent-text hover:underline" href="#library/status/reading">and ${items.length - MAX_READING} more${icon('arrow-right', { size: 16 })}</a>` : ''}`
+        : emptyState({ icon: EMPTY.nothingInProgress.icon, title: EMPTY.nothingInProgress.title, body: EMPTY.nothingInProgress.body, size: 'sm', action: { label: ACTION.browseLibrary, href: '#library/status/to_read', variant: 'secondary' } })}`);
+  }
+
+  function paintUpNext() {
+    const region = q('upnext');
+    const queue = (getState().library ?? []).filter((b) => b.status === 'to_read').sort((a, b) => ts(b.added_at) - ts(a.added_at));
+    const picks = queue.slice(0, UP_NEXT);
+    const sig = `${picks.map((b) => [b.id, b.title, b.cover_url].join(':')).join('~')}|${queue.length}`;
+    if (sig === H.upNextSig) return;
+    H.upNextSig = sig;
+    region.innerHTML = String(html`
+      ${sectionHeader({ title: LABEL.upNext, href: queue.length ? '#library/status/to_read' : undefined, id: ids.upnext })}
+      ${picks.length
+        ? html`<div class="scroller">${picks.map((b) => bookCard(b, { variant: 'compact' }))}</div>`
+        : emptyState({ icon: EMPTY.toReadEmpty.icon, title: EMPTY.toReadEmpty.title, size: 'sm', action: { label: ACTION.discoverBooks, href: '#discover', variant: 'secondary' } })}`);
+  }
+
+  function paintLibraryDriven() {
+    const st = getState();
+    H.last = { library: st.library, shelves: st.shelves, libraryLoaded: st.libraryLoaded, error: st.error };
+    const dashVisible = paintGate();
+    if (dashVisible) { paintReading(); paintUpNext(); }
+    paintSummary();
+  }
+
+  // ── goal ───────────────────────────────────────────────────────────────────
+  function paintGoal() {
+    const region = q('goal');
+    const g = H.goal;
+    const head = sectionHeader({ title: LABEL.yourGoal(year), id: ids.goal });
+    if (g.state === 'loading') { region.innerHTML = String(html`${head}${skeletonCard()}`); return; }
+    if (g.state === 'error') {
+      region.innerHTML = String(html`${head}${card({ content: html`<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-small text-text-2">Couldn't load your goal.</p>${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-goal"' })}</div>` })}`);
+      return;
+    }
+    const { target, booksRead } = g.data ?? {};
+    if (!target) {
+      region.innerHTML = String(html`${head}${card({ content: html`
+        <div class="flex items-center gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-accent-text" aria-hidden="true">${icon('target', { size: 20 })}</span>
+          <p class="min-w-0 flex-1 text-small font-medium text-text-1">Set a reading goal for ${year}</p>
+          <a class="btn btn--secondary btn--sm" href="#settings/reading"><span class="btn__label">Set goal</span></a>
+        </div>` })}`);
+      return;
+    }
+    const diff = booksRead - Math.round(target * dayOfYear() / 365);
+    const reached = booksRead >= target;
+    const pace = reached ? 'Goal reached' : (diff > 0 ? `${diff} ahead of pace` : (diff < 0 ? `${-diff} behind pace` : 'Right on pace'));
+    region.innerHTML = String(html`${head}${card({ content: html`
+      <div class="flex items-center gap-4">
+        ${progressRing({ value: booksRead, max: target, size: H.wide ? 140 : 96, label: String(booksRead), sublabel: `of ${target}` })}
+        <div class="min-w-0 space-y-1">
+          <p class="text-body font-medium text-text-1">${plural(booksRead, 'book')} finished</p>
+          <p class="text-small text-text-2">${pace}</p>
+          <a class="btn btn--ghost btn--sm -ml-3" href="#settings/reading"><span class="btn__label">Edit goal</span></a>
+        </div>
+      </div>` })}`);
+  }
+
+  async function loadGoal() {
+    H.goal = { state: 'loading', data: null };
+    paintGoal();
+    try {
+      const data = await api.getGoal(year);
+      if (H.disposed) return;
+      H.goal = { state: 'ok', data };
+    } catch {
+      if (H.disposed) return;
+      H.goal = { state: 'error', data: null };
+    }
+    paintGoal();
+    paintSummary();
+  }
+
+  // ── now listening (Audiobookshelf) ─────────────────────────────────────────
+  function nowPlayingHTML(np) {
+    const pct = np.progressPercent ?? 0;
+    const imgUrl = np.coverPath && np.serverUrl ? `${np.serverUrl}/api/items/${np.absItemId}/cover` : null;
+    return html`
+      ${sectionHeader({ title: 'Now listening', id: ids.listening })}
+      <div class="card flex items-center gap-3" data-np-item="${np.absItemId}">
+        ${cover({ url: imgUrl, title: np.title ?? '', size: 'xs' })}
+        <div class="min-w-0 flex-1 space-y-1.5">
+          <p class="truncate text-small font-semibold text-text-1" data-np-title>${np.title ?? 'Unknown'}</p>
+          ${progressBar({ value: pct, size: 'sm', tone: 'info', label: 'Listening progress' })}
+          <p class="text-caption text-text-3" data-np-pct>${pct}% complete</p>
+        </div>
+        ${np.bookId ? html`<a class="btn btn--ghost btn--sm shrink-0" href="#book/${np.bookId}"><span class="btn__label">Open</span><span class="btn__icon">${icon('arrow-right', { size: 16 })}</span></a>` : ''}
+      </div>`;
+  }
+
+  function setNowPlaying(next) {
+    const region = q('listening');
+    const prev = H.np;
+    H.np = next;
+    region.hidden = !next;
+    if (!next) { region.innerHTML = ''; return; }
+    const box = region.querySelector('[data-np-item]');
+    if (prev && box && String(prev.absItemId) === String(next.absItemId)) {
+      const pct = next.progressPercent ?? 0;
+      box.querySelector('[data-np-title]').textContent = next.title ?? 'Unknown';
+      box.querySelector('[data-np-pct]').textContent = `${pct}% complete`;
+      const bar = box.querySelector('.progress');
+      bar?.style.setProperty('--progress', `${pct}%`);
+      bar?.setAttribute('aria-valuenow', String(pct));
+      return;
+    }
+    region.innerHTML = String(nowPlayingHTML(next));
+  }
+
+  async function startNowPlaying() {
+    if (!user) return;
+    try {
+      const data = await api.getNowPlaying();
+      if (H.disposed) return;
+      setNowPlaying(data || null);
+    } catch { /* Audiobookshelf isn't connected: the section stays hidden */ }
+    if (H.disposed) return;
+    closeSse = openSse('/api/integrations/sse', (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type !== 'progress' || !msg.data) return;
+        const d = msg.data;
+        const raw = d.progress != null ? d.progress : (d.duration > 0 ? d.currentTime / d.duration : null);
+        const same = H.np && String(H.np.absItemId) === String(d.libraryItemId);
+        setNowPlaying({
+          ...(same ? H.np : {}),
+          absItemId: d.libraryItemId,
+          title: d.mediaMetadata?.title ?? (same ? H.np.title : null),
+          progressPercent: raw != null ? Math.round(raw * 100) : (same ? H.np.progressPercent : null),
+        });
+      } catch { /* malformed event */ }
+    });
+  }
+
+  // ── people you follow ──────────────────────────────────────────────────────
+  function paintFollowing() {
+    const region = q('following');
+    const f = H.feed;
+    const head = sectionHeader({ title: 'From people you follow', href: '#community/feed', id: ids.following });
+    let body;
+    if (f.state === 'loading') body = skeletonList(3);
+    else if (f.state === 'error') body = html`<div class="flex flex-wrap items-center gap-2 text-small text-text-2">Couldn't load activity.${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-feed"' })}</div>`;
+    else if (!f.items.length) body = emptyState({ icon: EMPTY.noFollowing.icon, title: EMPTY.noFollowing.title, size: 'sm', action: { label: ACTION.findPeople, href: '#community/people', variant: 'secondary' } });
+    else body = html`<div class="space-y-3">${f.items.map((item) => feedCardHTML(item, { viewer: getState().user }))}</div>`;
+    region.innerHTML = String(html`${head}${body}`);
+  }
+
+  async function loadFeed() {
+    if (!user) return;
+    H.feed = { state: 'loading', items: [] };
+    paintFollowing();
+    try {
+      const items = await api.getFeed('following');
+      if (H.disposed) return;
+      H.feed = { state: 'ok', items: (items ?? []).slice(0, FEED_MAX) };
+    } catch {
+      if (H.disposed) return;
+      H.feed = { state: 'error', items: [] };
+    }
+    paintFollowing();
+  }
+
+  // ── recently added from integrations ───────────────────────────────────────
+  function paintRecent() {
+    const region = q('recent');
+    let dismissedAt = null;
+    try { dismissedAt = localStorage.getItem(RECENTLY_ADDED_KEY); } catch { /* storage unavailable */ }
+    const unseen = dismissedAt ? H.recent.filter((b) => new Date(b.added_at) > new Date(dismissedAt)) : H.recent;
+    region.hidden = !unseen.length;
+    if (!unseen.length) { region.innerHTML = ''; return; }
+    const badgeFor = (service) => (service === 'audiobookshelf'
+      ? html`<span class="badge badge--info absolute bottom-1 right-1" role="img" aria-label="In Audiobookshelf" title="In Audiobookshelf">${icon('headphones', { size: 12 })}</span>`
+      : html`<span class="badge badge--success absolute bottom-1 right-1" role="img" aria-label="In Calibre" title="In Calibre">${icon('book-copy', { size: 12 })}</span>`);
+    region.innerHTML = String(html`
+      ${sectionHeader({ title: 'Recently added in your apps', id: ids.recent, actions: button({ label: 'Dismiss', icon: 'x', variant: 'ghost', size: 'sm', attrs: 'data-action="dismiss-recent"' }) })}
+      <div class="scroller">${unseen.map((b) => html`
+        <a href="#book/${b.book_id}" class="group flex w-20 flex-col gap-1.5">
+          <div class="relative">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title })}${badgeFor(b.service)}</div>
+          <span class="line-clamp-2 text-caption text-text-2 group-hover:text-text-1">${b.title}</span>
+        </a>`)}</div>`);
+  }
+
+  async function loadRecent() {
+    if (!user) return;
+    try {
+      const books = await api.getRecentlyAdded();
+      if (H.disposed) return;
+      H.recent = books ?? [];
+      paintRecent();
+    } catch { /* integrations not configured */ }
+  }
+
+  // ── behaviour (delegated once on `el`) ─────────────────────────────────────
+  const handlers = bookActionHandlers({
+    getAnchor: (entry) => el.querySelector(`[data-lib-id="${cssEscape(entry.id)}"] [data-row-menu]`),
+  });
+  const rowEntry = (node) => {
+    const row = node.closest('[data-lib-id]');
+    return row ? findLibraryEntry(row.dataset.libId) : null;
   };
 
-  save.addEventListener('click', doSave);
-  cancel.addEventListener('click', loadLibrary);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') doSave();
-    if (e.key === 'Escape') loadLibrary();
-  });
-}
+  offs.push(mountBookGrid(el, handlers));
 
-function showInlineDeleteConfirm(btn) {
-  const row = btn.closest('[data-shelf-row]');
-  if (!row || row.querySelector('.inline-confirm')) return;
+  offs.push(mountMenuTriggers(el, {
+    selector: '[data-row-menu]',
+    getItems: (trigger) => { const entry = rowEntry(trigger); return entry ? bookMenuItems(entry, { shelves: getState().shelves ?? [] }) : []; },
+    onSelect: (id, item, trigger) => { const entry = rowEntry(trigger); if (entry) dispatchBookMenu(handlers, entry, id, item); },
+  }));
 
-  const confirm = document.createElement('span');
-  confirm.className = 'inline-confirm flex items-center gap-1 text-xs';
-  confirm.innerHTML = `
-    <span class="text-muted">Delete?</span>
-    <button class="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded font-medium confirm-yes">Yes</button>
-    <button class="px-2 py-0.5 text-muted hover:text-text confirm-no">No</button>`;
+  offs.push(mountProgressSlider(el, async (value, input) => {
+    const row = input.closest('[data-lib-id]');
+    const entry = row && findLibraryEntry(row.dataset.libId);
+    if (!entry) return;
+    const before = Math.round(Number(entry.progress_pct) || 0);
+    const ok = await commitProgress(entry, value);
+    if (H.disposed || !row.isConnected) return;
+    if (ok) flashSaved(row); else setSliderValue(input, before);
+  }));
 
-  btn.replaceWith(confirm);
-
-  confirm.querySelector('.confirm-yes').addEventListener('click', async () => {
-    const errEl = row.querySelector('.shelf-err');
-    try {
-      await api.deleteShelf(btn.dataset.shelfId);
-      if (getState().selectedShelfId === Number(btn.dataset.shelfId)) {
-        setState({ selectedShelfId: null });
-      }
-      loadLibrary();
-    } catch (err) {
-      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+  offs.push(delegate(el, 'click', '[data-action]', (e, t) => {
+    switch (t.dataset.action) {
+      case 'add-book': openCommandPalette({}); break;
+      case 'finish': { const entry = rowEntry(t); if (entry) finishBook(entry); break; }
+      case 'retry-library': loadLibrary(); break;
+      case 'retry-goal': loadGoal(); break;
+      case 'retry-feed': loadFeed(); break;
+      case 'dismiss-recent':
+        try { localStorage.setItem(RECENTLY_ADDED_KEY, new Date().toISOString()); } catch { /* storage unavailable */ }
+        paintRecent();
+        break;
+      default: break;
     }
+  }));
+
+  offs.push(mountFeedCards(q('following')));
+
+  let mq = null;
+  try {
+    mq = matchMedia('(min-width: 1024px)');
+    H.wide = mq.matches;
+    const onChange = () => { H.wide = mq.matches; paintGoal(); };
+    mq.addEventListener('change', onChange);
+    offs.push(() => mq.removeEventListener('change', onChange));
+  } catch { /* no matchMedia */ }
+
+  const unsubscribe = subscribe((st) => {
+    if (H.disposed) return;
+    const l = H.last;
+    if (st.library === l.library && st.shelves === l.shelves && st.libraryLoaded === l.libraryLoaded && st.error === l.error) return;
+    paintLibraryDriven();
   });
 
-  confirm.querySelector('.confirm-no').addEventListener('click', loadLibrary);
-}
+  // First paint, then the independent loads
+  paintLibraryDriven();
+  paintGoal();
+  paintFollowing();
+  if (!getState().libraryLoaded && !getState().loading) loadLibrary();
+  loadGoal();
+  loadFeed();
+  loadRecent();
+  startNowPlaying();
 
-// ── Now Playing (Audiobookshelf real-time) ────────────────────────────────────
-
-function updateNowPlayingBanner(banner, data) {
-  if (!banner) return;
-
-  if (!data) {
-    banner.classList.add('hidden');
-    banner.classList.remove('flex');
-    return;
-  }
-
-  banner.classList.remove('hidden');
-  banner.classList.add('flex');
-
-  const title = banner.querySelector('#now-playing-title');
-  const bar   = banner.querySelector('#now-playing-bar');
-  const pct   = banner.querySelector('#now-playing-pct');
-  const cover = banner.querySelector('#now-playing-cover');
-  const link  = banner.querySelector('#now-playing-link');
-
-  if (title) title.textContent = data.title ?? 'Unknown';
-  const progress = data.progressPercent ?? 0;
-  if (bar) bar.style.width = `${progress}%`;
-  if (pct) pct.textContent = `${progress}% complete`;
-  if (cover) {
-    const imgUrl = data.coverPath && data.serverUrl
-      ? `${data.serverUrl}/api/items/${data.absItemId}/cover`
-      : null;
-    cover.innerHTML = imgUrl && safeUrl(imgUrl)
-      ? `<img src="${escHtml(safeUrl(imgUrl))}" class="w-full h-full object-cover" />`
-      : '<div class="w-full h-full bg-border/40"></div>';
-  }
-  if (link && data.bookId) link.href = `#book/${data.bookId}`;
-}
-
-// Runs once per mount: initial fetch, then a live SSE feed (auto-reconnecting)
-// that is closed by the view's cleanup.
-async function initNowPlaying(mount) {
-  if (!getState().user) return;
-  const banner = mount.nowPlaying;
-
-  try {
-    const data = await api.getNowPlaying();
-    if (mount.disposed) return;
-    updateNowPlayingBanner(banner, data);
-  } catch { /* not connected, ignore */ }
-  if (mount.disposed) return;
-
-  mount.closeSse = openSse('/api/integrations/sse', e => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'progress' && msg.data) {
-        const d = msg.data;
-        const rawPct = d.progress != null
-          ? d.progress
-          : (d.duration > 0 ? d.currentTime / d.duration : null);
-        updateNowPlayingBanner(banner, {
-          absItemId:       d.libraryItemId,
-          bookId:          null, // resolved on next full fetch
-          title:           d.mediaMetadata?.title ?? null,
-          progressPercent: rawPct != null ? Math.round(rawPct * 100) : null,
-          serverUrl:       null,
-        });
-      }
-    } catch { /* malformed event */ }
-  });
-}
-
-const RECENTLY_ADDED_KEY = 'recentlyAddedDismissedAt';
-
-async function initRecentlyAdded(mount) {
-  if (!getState().user) return;
-  try {
-    const books = await api.getRecentlyAdded();
-    if (mount.disposed || !books?.length) return;
-
-    // Only show books added after the last dismissal
-    const dismissedAt = localStorage.getItem(RECENTLY_ADDED_KEY);
-    const unseen = dismissedAt
-      ? books.filter(b => new Date(b.added_at) > new Date(dismissedAt))
-      : books;
-    if (!unseen.length) return;
-
-    const el = mount.recentlyAdded;
-
-    const SERVICE_LABEL = { audiobookshelf: '🎧', calibre: '📚' };
-    el.innerHTML = `
-      <section class="bg-surface-2/60 border border-border/30 rounded-2xl px-4 py-3">
-        <div class="flex items-center justify-between mb-2.5">
-          <p class="text-xs text-muted uppercase tracking-wider font-medium">Recently added to your library</p>
-          <button id="dismiss-recently-added" class="text-muted hover:text-text transition-colors text-xs px-2 py-0.5 rounded-lg hover:bg-border/40" title="Dismiss">✕ Dismiss</button>
-        </div>
-        <div class="flex gap-3 overflow-x-auto pb-1">
-          ${unseen.map(b => {
-            const icon = SERVICE_LABEL[b.service] ?? '';
-            const cover = b.cover_url
-              ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.book_id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
-              : `<div class="w-full h-full bg-border/40 flex items-center justify-center text-base">${icon}</div>`;
-            return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-14 group">
-              <div class="relative w-14 h-20 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
-                ${cover}
-                <span class="absolute bottom-0.5 right-0.5 text-[10px] leading-none">${icon}</span>
-              </div>
-              <p class="text-[10px] text-muted mt-1 line-clamp-2 group-hover:text-text transition-colors">${escHtml(b.title)}</p>
-            </a>`;
-          }).join('')}
-        </div>
-      </section>`;
-
-    el.querySelector('#dismiss-recently-added')?.addEventListener('click', () => {
-      try { localStorage.setItem(RECENTLY_ADDED_KEY, new Date().toISOString()); } catch { /* storage unavailable */ }
-      el.innerHTML = '';
-    });
-  } catch { /* integrations not configured */ }
+  return () => {
+    H.disposed = true;
+    unsubscribe();
+    closeSse?.();
+    offs.forEach((off) => off());
+  };
 }

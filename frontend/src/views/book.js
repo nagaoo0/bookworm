@@ -1,11 +1,29 @@
+// Book page (#book/:id, also #book/g:… #book/ol:… #book/a:…). Spec: docs/design-system.md §8.4, §9, §10.
+//
+// One page, four slots that re-render independently (hero · your reading · about · community) so typing in the
+// notes or comment boxes is never clobbered. Library data lives in the shared store: every mutation goes through
+// upsertLibraryEntry / removeLibraryEntries and a store subscription repaints only the slots whose inputs changed.
 import { api } from '../api.js';
-import { getState } from '../store.js';
-import { starRatingHTML, attachStarHandlers } from '../components/starRating.js';
-import { showToast } from '../components/toast.js';
-import { loadLibrary } from '../libraryStore.js';
-import { escHtml, safeUrl, safeColor, sourceBadgeHTML, coverProxySrc } from '../utils.js';
-import { openLogReadModal } from '../components/logReadModal.js';
+import { getState, subscribe } from '../store.js';
+import { loadLibrary, upsertLibraryEntry, removeLibraryEntries } from '../libraryStore.js';
+import { html, safeUrl } from '../utils.js';
 import { openSse } from '../sse.js';
+import { openLogReadModal, dayKey } from '../components/logReadModal.js';
+import {
+  ACTION, EMPTY, ERROR, LABEL, STATUS, TOAST, avatar, badge, bookCard, button, card, chipGroup, cover,
+  delegate, emptyState, field, formatDate, icon, iconButton, mountBookGrid, mountChipGroup, mountConfirmInline,
+  mountCoverZoom, mountFields, mountMenuTriggers, mountProgressSlider, mountTabs, openModal, openPopover, openSheet,
+  plural, progressBar, progressSlider, sectionHeader, segmented, setButtonLoading, setFieldError, skeleton,
+  skeletonCard, skeletonList, stars, statusBadge, statusLabel, tabs, timeAgo, toast, uid, undoToast,
+} from '../ui/index.js';
+
+const SOURCE_LABEL = { google: 'Google', openlibrary: 'Open Library', apple: 'Apple Books' };
+const STATUS_KEYS = ['to_read', 'reading', 'done'];
+const isMobile = () => { try { return matchMedia('(max-width: 767px)').matches; } catch { return false; } };
+
+// ── Small pure helpers ──────────────────────────────────────────────────────────
+
+const authHref = () => `#auth?next=${encodeURIComponent(location.hash || '#home')}`;
 
 function recHref(b) {
   if (b.id) return '#book/' + encodeURIComponent(b.id);
@@ -15,828 +33,30 @@ function recHref(b) {
   return null;
 }
 
-function recCard(b) {
-  const href = recHref(b);
-  if (!href) return '';
-  const cover = b.cover_url
-    ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
-    : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2">
-         <span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span>
-       </div>`;
-  const authors = Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? '');
-  return `
-    <a href="${escHtml(href)}" class="group flex flex-col">
-      <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-surface-2 shadow
-                  ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
-        ${cover}
-      </div>
-      <p class="mt-2 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
-      ${authors ? `<p class="text-[11px] text-muted mt-0.5 line-clamp-1">${escHtml(authors)}</p>` : ''}
-    </a>`;
+// Provider descriptions sometimes carry markup; show them as text (the result is escaped by html``).
+function plainText(s) {
+  const str = String(s ?? '');
+  if (!/<[a-z!/][\s\S]*>/i.test(str)) return str.trim();
+  const withBreaks = str.replace(/<br\s*\/?>|<\/p>|<\/li>/gi, '\n');
+  return (new DOMParser().parseFromString(withBreaks, 'text/html').body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// Returns the view's cleanup (closes the live-progress SSE, drops the lightbox)
-export async function renderBook(container, bookId) {
-  let closeSse = null;
-  const cleanup = () => {
-    closeSse?.();
-    closeSse = null;
-    document.getElementById('cover-lightbox')?.remove();
-    document.getElementById('sticky-book-cta')?.remove();
-  };
-  container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
-
-  try {
-    const { library, shelves, user } = getState();
-
-    // Support #book/g:<googleId>, #book/ol:<openLibraryId> and #book/a:<appleId>
-    // — resolve to a DB record first, then rewrite URL
-    let resolvedId = bookId;
-    const external = bookId.startsWith('g:') ? ['google', bookId.slice(2)]
-                   : bookId.startsWith('ol:') ? ['openlibrary', bookId.slice(3)]
-                   : bookId.startsWith('a:') ? ['apple', bookId.slice(2)]
-                   : null;
-    if (external) {
-      let extId = external[1];
-      try { extId = decodeURIComponent(extId); } catch { /* keep raw */ }
-      const resolved = await api.getBookByExternalId(external[0], extId);
-      resolvedId = resolved.id;
-      // Rewrite hash without triggering another navigation
-      history.replaceState(null, '', `#book/${resolvedId}`);
-    }
-
-    const [book, sessions, comments, recs, social, availability] = await Promise.all([
-      api.getBookDetail(resolvedId),
-      user ? api.getSessions(resolvedId).catch(() => []) : Promise.resolve([]),
-      api.getComments(resolvedId).catch(() => []),
-      api.getRecommendations(resolvedId).catch(() => []),
-      user ? api.getBookSocial(resolvedId).catch(() => []) : Promise.resolve([]),
-      user ? api.getBookAvailability(resolvedId).catch(() => []) : Promise.resolve([]),
-    ]);
-    mount(container, book, sessions, comments, library ?? [], shelves ?? [], recs, social, availability);
-
-    // Subscribe to live ABS progress if this book is in Audiobookshelf
-    const absAvail = availability.find(a => a.service === 'audiobookshelf');
-    if (user && absAvail) {
-      closeSse = openSse('/api/integrations/sse', (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type !== 'progress') return;
-          if (msg.data?.libraryItemId !== absAvail.external_id) return;
-          const raw = msg.data.progress ?? (msg.data.duration > 0 ? msg.data.currentTime / msg.data.duration : null);
-          if (raw == null) return;
-          const pct = Math.round(raw * 100);
-          // Update progress bar fill
-          const fill = container.querySelector('.abs-progress-fill');
-          if (fill) fill.style.width = `${pct}%`;
-          // Update label text
-          const label = container.querySelector('.abs-progress-label');
-          if (label) label.textContent = `${pct}% complete`;
-        } catch { /* malformed */ }
-      });
-    }
-    return cleanup;
-  } catch (err) {
-    cleanup();
-    container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
-  }
+function dayLabel(v) {
+  const k = dayKey(v);
+  if (!k) return '';
+  const [y, m, d] = k.split('-').map(Number);
+  return formatDate(new Date(y, m - 1, d));
 }
 
-function mount(container, book, sessions, comments, library, shelves, recs = [], social = [], availability = []) {
-  const { user } = getState();
-  const libEntry = library.find(b => String(b.book_id) === String(book.id));
-
-  const reloadSessions = async () => {
-    const fresh = await api.getSessions(book.id).catch(() => sessions);
-    const list = container.querySelector('#session-list');
-    if (list) list.innerHTML = renderSessionList(fresh, book.id, reloadSessions);
-    attachSessionDeleteHandlers(container, book.id, reloadSessions);
-  };
-
-  // Look up the freshest library entry at call time so a "Reading → Done" flow
-  // within this visit still picks up the started_reading_at set moments ago
-  const openReadModal = () => {
-    const entry = (getState().library ?? []).find(b => String(b.book_id) === String(book.id)) ?? libEntry;
-    openLogReadModal({ ...book, startedAt: entry?.started_reading_at }, reloadSessions);
-  };
-
-  const softReload = async () => {
-    await loadLibrary();
-    const newLib = getState().library ?? [];
-    const newShelves = getState().shelves ?? [];
-    const newEntry = newLib.find(b => String(b.book_id) === String(book.id));
-    renderLibraryPanel(container, book, newEntry, newShelves, openReadModal);
-  };
-
-  // Prefer the user's per-library-entry overrides over the shared book record
-  const effectiveCover       = libEntry?.cover_url       ?? book.cover_url;
-  const effectivePageCount   = libEntry?.page_count      ?? book.page_count;
-  const effectivePublished   = libEntry?.published_date  ?? book.published_date;
-  const effectiveDescription = libEntry?.description     ?? book.description;
-  const effectiveCategories  = libEntry?.categories      ?? book.categories;
-
-  const coverImg = effectiveCover
-    ? `<img src="${escHtml(coverProxySrc(effectiveCover, book.id))}" alt="${escHtml(book.title)}"
-            id="book-cover-img"
-            class="w-full object-cover rounded-xl shadow-2xl cursor-zoom-in" />`
-    : `<div class="w-full aspect-[2/3] bg-border/40 rounded-xl flex items-center justify-center">
-         <span class="text-muted text-4xl">📖</span>
-       </div>`;
-
-  const avgRating = sessions.filter(s => s.rating).length
-    ? sessions.reduce((s, r) => s + (r.rating ?? 0), 0) / sessions.filter(s => s.rating).length
-    : 0;
-  const stars = avgRating ? '★'.repeat(Math.round(avgRating)) + '☆'.repeat(5 - Math.round(avgRating)) : '';
-
-  container.innerHTML = `
-    <div class="max-w-4xl mx-auto fade-in">
-      <!-- Back -->
-      <button id="back-btn" class="inline-flex items-center gap-1.5 text-muted hover:text-text text-sm mb-6 transition-colors group">
-        <svg class="w-4 h-4 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-        </svg>
-        Back
-      </button>
-
-      <div class="grid grid-cols-1 sm:grid-cols-[200px_1fr] gap-8">
-        <!-- Cover column -->
-        <div class="w-40 sm:w-full mx-auto sm:mx-0 space-y-3">
-          <div id="cover-img-wrap">${coverImg}</div>
-
-          ${libEntry
-            ? `<button id="log-read-btn"
-                class="w-full px-3 py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950
-                       text-sm font-semibold rounded-lg transition-all shadow-lg shadow-amber-500/20
-                       inline-flex items-center justify-center gap-1.5">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
-                </svg>
-                Log a read
-              </button>`
-            : `<button id="add-to-library-btn"
-                class="w-full px-3 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 text-sm font-semibold rounded-lg transition-colors">
-                + Add to library
-              </button>`}
-        </div>
-
-        <!-- Metadata column -->
-        <div class="space-y-4">
-          <div>
-            <h1 class="font-serif text-2xl font-bold leading-tight">${escHtml(book.title)}</h1>
-            ${book.authors?.length ? `<p class="text-muted mt-1">${escHtml(book.authors.join(', '))}</p>` : ''}
-          </div>
-
-          <div class="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-muted">
-            ${effectivePublished ? `<span class="flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-              ${escHtml(effectivePublished)}</span>` : ''}
-            ${effectivePageCount ? `<span class="flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-              ${effectivePageCount} pages</span>` : ''}
-            ${book.publisher ? `<span class="flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5 flex-shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-              ${escHtml(book.publisher)}</span>` : ''}
-          </div>
-
-          ${stars ? `<p class="text-amber-400">${stars} <span class="text-muted text-sm ml-1">${sessions.filter(s => s.rating).length} rating${sessions.filter(s => s.rating).length !== 1 ? 's' : ''}</span></p>` : ''}
-
-          ${(effectiveCategories ?? []).length ? `
-          <div class="flex flex-wrap gap-2">
-            ${effectiveCategories.map(c => `<span class="text-xs bg-surface-2 px-2 py-1 rounded-full text-muted">${escHtml(c)}</span>`).join('')}
-          </div>` : ''}
-
-          ${effectiveDescription ? `
-          <details class="group">
-            <summary class="text-sm text-amber-400 hover:text-amber-300 cursor-pointer list-none flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-              Description
-            </summary>
-            <p class="mt-2 text-sm text-text leading-relaxed">${escHtml(effectiveDescription)}</p>
-          </details>` : ''}
-
-          <!-- Where to find this book -->
-          ${renderAvailabilitySection(availability)}
-
-          <!-- Narrator browse -->
-          ${renderNarratorSection(availability, library, book.id)}
-
-          <!-- Series in library -->
-          ${renderSeriesSection(availability, library, book.id)}
-
-          <!-- Library panel (status, shelves, progress, notes, cover, meta) -->
-          <div id="library-panel">
-            ${renderLibraryPanelHTML(book, libEntry, shelves)}
-          </div>
-        </div>
-      </div>
-
-      <!-- Reading sessions -->
-      <section class="mt-10">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="font-serif text-xl font-semibold">Reading history</h2>
-          ${user && libEntry ? `
-          <button id="log-read-btn-2"
-            class="text-sm px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30
-                   hover:bg-amber-500/25 transition-colors font-medium">
-            + Log a read
-          </button>` : ''}
-        </div>
-
-        <div id="session-list" class="space-y-3 mb-5">
-          ${renderSessionList(sessions, book.id, reloadSessions)}
-        </div>
-
-        ${user ? `
-        <details class="group" id="log-read-details">
-          <summary class="text-sm text-amber-400 hover:text-amber-300 cursor-pointer list-none flex items-center gap-1.5">
-            <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
-            Log a read
-          </summary>
-          <div class="mt-4 bg-surface rounded-xl p-5 ring-1 ring-border/20">
-            ${renderSessionForm()}
-          </div>
-        </details>` : ''}
-      </section>
-
-      <!-- Friends on this book -->
-      ${social.length ? `
-      <section class="mt-10">
-        <h2 class="font-serif text-xl font-semibold mb-4">Friends &amp; this book</h2>
-        <div class="space-y-3">
-          ${social.map(u => {
-            const stars = u.rating ? '★'.repeat(u.rating) + '☆'.repeat(5 - u.rating) : '';
-            const statusLabel = u.status === 'to_read' ? 'Wants to read' : u.status === 'reading' ? 'Currently reading' : 'Read it';
-            const statusColor = u.status === 'reading' ? 'text-amber-400' : u.status === 'done' ? 'text-green-400' : 'text-muted';
-            return `
-              <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-1">
-                      <a href="#u/${escHtml(u.username)}" class="text-sm font-medium text-amber-400 hover:underline">@${escHtml(u.username)}</a>
-                      <span class="text-xs ${statusColor}">${statusLabel}</span>
-                    </div>
-                    ${stars ? `<p class="text-amber-400 text-xs">${stars}</p>` : ''}
-                    ${u.review ? `<p class="text-sm text-text mt-1 leading-relaxed line-clamp-3">${escHtml(u.review)}</p>` : ''}
-                  </div>
-                </div>
-              </div>`;
-          }).join('')}
-        </div>
-      </section>` : ''}
-
-      <!-- Recommendations -->
-      ${recs.length ? `
-      <section class="mt-10">
-        <h2 class="font-serif text-xl font-semibold mb-4">You might also like :</h2>
-
-        <!-- Mobile: horizontal scroll -->
-        <div class="flex gap-3 overflow-x-auto sm:hidden reading-carousel pb-1">
-          ${recs.filter(b => recHref(b)).map(b => {
-            const href = recHref(b);
-            return `
-            <a href="${escHtml(href)}" class="group flex flex-col flex-shrink-0" style="width:7rem">
-              <div class="relative w-full rounded overflow-hidden bg-surface-2 shadow ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all" style="aspect-ratio:2/3">
-                ${b.cover_url
-                  ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
-                  : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-2"><span class="text-muted font-serif text-xs text-center line-clamp-3">${escHtml(b.title)}</span></div>`}
-              </div>
-              <p class="mt-1.5 font-serif text-xs font-semibold leading-tight line-clamp-2 group-hover:text-amber-400 transition-colors">${escHtml(b.title)}</p>
-            </a>`;
-          }).join('')}
-        </div>
-      </section>` : ''}
-
-      <!-- Comments -->
-      <section class="mt-10">
-        <h2 class="font-serif text-xl font-semibold mb-4">Comments</h2>
-        <div id="comments-list" class="space-y-3 mb-5">
-          ${renderCommentsList(comments, user)}
-        </div>
-        ${user ? `
-        <form id="comment-form" class="flex gap-3">
-          <textarea name="body" rows="2" placeholder="Leave a comment…" maxlength="2000"
-            class="field-input flex-1 resize-none"></textarea>
-          <button type="submit"
-            class="self-end px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold
-                   rounded-lg text-sm transition-colors flex-shrink-0">
-            Post
-          </button>
-        </form>
-        <p id="comment-err" class="text-xs text-red-400 mt-1 hidden"></p>` : ''}
-      </section>
-    </div>`;
-
-  // Cover zoom lightbox
-  container.querySelector('#book-cover-img')?.addEventListener('click', () => {
-    const src = container.querySelector('#book-cover-img')?.src;
-    if (!src) return;
-    document.getElementById('cover-lightbox')?.remove();
-    const lb = document.createElement('div');
-    lb.id = 'cover-lightbox';
-    lb.innerHTML = `<img src="${escHtml(src)}" alt="${escHtml(book.title)}" />`;
-    const onKey = e => { if (e.key === 'Escape') closeLightbox(); };
-    function closeLightbox() { document.removeEventListener('keydown', onKey); lb.remove(); }
-    lb.addEventListener('click', closeLightbox);
-    document.addEventListener('keydown', onKey);
-    document.body.appendChild(lb);
-  });
-
-  // Back button
-  container.querySelector('#back-btn')?.addEventListener('click', () => history.back());
-
-  // Log a read buttons open the modal (dates prefilled from the library entry)
-  container.querySelector('#log-read-btn')?.addEventListener('click', openReadModal);
-  container.querySelector('#log-read-btn-2')?.addEventListener('click', openReadModal);
-
-  // Add to library
-  container.querySelector('#add-to-library-btn')?.addEventListener('click', async () => {
-    const btn = container.querySelector('#add-to-library-btn');
-    btn.disabled = true; btn.textContent = '…';
-    try {
-      await api.addToLibrary({
-        googleId:      book.google_id,
-        openLibraryId: book.open_library_id,
-        appleId:       book.apple_id,
-        title:         book.title,
-        authors:       book.authors,
-        coverUrl:      book.cover_url,
-        pageCount:     book.page_count,
-        publishedDate: book.published_date,
-        description:   book.description,
-        categories:    book.categories,
-      });
-      await loadLibrary();
-      const newEntry = (getState().library ?? []).find(b => String(b.book_id) === String(book.id));
-      btn.textContent = '✓ Added';
-      btn.classList.replace('bg-amber-500', 'bg-green-800');
-      if (newEntry) {
-        renderLibraryPanel(container, book, newEntry, getState().shelves ?? []);
-      }
-    } catch (err) {
-      btn.textContent = '+ Add to library';
-      btn.disabled = false;
-      showToast(err.message, 'error');
-    }
-  });
-
-  // Session form
-  const sessionStarsEl = container.querySelector('#session-stars');
-  let selectedRating = 0;
-  if (sessionStarsEl) {
-    attachStarHandlers(sessionStarsEl, val => { selectedRating = val; });
-  }
-
-  container.querySelector('#session-form')?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const errEl = container.querySelector('#session-error');
-    try {
-      await api.addSession(book.id, {
-        startedAt:  fd.get('startedAt')  || null,
-        finishedAt: fd.get('finishedAt') || null,
-        rating:     selectedRating || null,
-        review:     fd.get('review')     || null,
-      });
-      e.target.reset();
-      selectedRating = 0;
-      if (sessionStarsEl) {
-        sessionStarsEl.innerHTML = starRatingHTML(0, { interactive: true });
-        attachStarHandlers(sessionStarsEl, val => { selectedRating = val; });
-      }
-      errEl?.classList.add('hidden');
-      await reloadSessions();
-    } catch (err) {
-      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
-    }
-  });
-
-  attachSessionDeleteHandlers(container, book.id, reloadSessions);
-  attachLibraryPanelHandlers(container, book, libEntry, shelves, softReload, openReadModal);
-
-  // Comment form
-  container.querySelector('#comment-form')?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const body = new FormData(e.target).get('body')?.trim();
-    const errEl = container.querySelector('#comment-err');
-    errEl?.classList.add('hidden');
-    if (!body) return;
-    try {
-      const newComment = await api.addComment(book.id, body);
-      e.target.reset();
-      const list = container.querySelector('#comments-list');
-      list?.insertAdjacentHTML('beforeend', renderComment(newComment, user));
-      attachCommentDeleteHandlers(container, book.id);
-    } catch (err) {
-      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
-    }
-  });
-
-  attachCommentDeleteHandlers(container, book.id);
+function readDates(s) {
+  const a = dayLabel(s.started_at);
+  const b = dayLabel(s.finished_at);
+  if (a && b) return `${a} – ${b}`;
+  if (b) return `Finished ${b}`;
+  if (a) return `Started ${a}`;
+  const c = dayLabel(s.created_at);
+  return c ? `Logged ${c}` : 'Read';
 }
-
-// ── Library panel ──────────────────────────────────────────────────────────────
-
-function renderLibraryPanel(container, book, libEntry, shelves, onMarkDone = null) {
-  const panel = container.querySelector('#library-panel');
-  if (!panel) return;
-  panel.innerHTML = renderLibraryPanelHTML(book, libEntry, shelves);
-  attachLibraryPanelHandlers(container, book, libEntry, shelves, async () => {
-    await loadLibrary();
-    renderLibraryPanel(container, book, (getState().library ?? []).find(b => String(b.book_id) === String(book.id)), getState().shelves ?? [], onMarkDone);
-  }, onMarkDone);
-}
-
-function renderLibraryPanelHTML(book, libEntry, shelves) {
-  if (!libEntry) return '';
-
-  // Compute effective display values (libEntry overrides take precedence over shared book data)
-  const effectiveCover       = libEntry.cover_url       ?? book.cover_url;
-  const effectivePageCount   = libEntry.page_count      ?? book.page_count;
-  const effectivePublished   = libEntry.published_date  ?? book.published_date;
-  const effectiveDescription = libEntry.description     ?? book.description;
-
-  const STATUSES = [
-    { key: 'to_read', label: 'To Read',  color: '#64748b' },
-    { key: 'reading', label: 'Reading',  color: '#f59e0b' },
-    { key: 'done',    label: 'Done',     color: '#22c55e' },
-  ];
-
-  const pct = libEntry.progress_pct ?? 0;
-
-  return `
-    <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20 space-y-4">
-
-      <!-- Status -->
-      <div>
-        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2">Status</p>
-        <div class="flex gap-2 flex-wrap">
-          ${STATUSES.map(s => `
-            <button class="lib-status-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
-              ${libEntry.status === s.key
-                ? 'ring-2 ring-offset-1 ring-offset-surface text-stone-950'
-                : 'bg-surface-2 hover:bg-border/40 text-text'}"
-              data-status="${s.key}"
-              style="${libEntry.status === s.key ? `background:${s.color};--tw-ring-color:${s.color}` : ''}">
-              ${s.label}
-            </button>`).join('')}
-        </div>
-      </div>
-
-      ${shelves.length ? `
-      <!-- Shelves -->
-      <div>
-        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2">Shelves</p>
-        <div class="flex flex-wrap gap-2">
-          ${shelves.map(s => {
-            const on = (libEntry.shelf_ids ?? []).includes(s.id);
-            return `
-              <button class="lib-shelf-btn flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors
-                ${on ? 'text-stone-950' : 'bg-surface-2 hover:bg-border/40 text-muted'}"
-                data-shelf-id="${s.id}" data-on="${on}"
-                style="${on ? `background:${safeColor(s.color)}` : ''}">
-                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${safeColor(s.color)}"></span>
-                ${escHtml(s.name)}
-              </button>`;
-          }).join('')}
-        </div>
-      </div>` : ''}
-
-      ${libEntry.status === 'reading' ? `
-      <!-- Progress -->
-      <div>
-        <p class="text-xs text-muted uppercase tracking-wider font-medium mb-2">Progress</p>
-        <div class="flex items-center gap-3">
-          <input type="range" id="progress-slider" class="flex-1 accent-amber-400"
-                 min="0" max="100" step="5" value="${pct}" />
-          <span id="progress-label" class="text-xs text-muted w-8 text-right">${pct}%</span>
-        </div>
-      </div>` : ''}
-
-      <!-- Notes -->
-      <div>
-        <p class="text-xs text-muted tracking-wider font-medium mb-2">Private Notes : </p>
-        <textarea id="book-notes" rows="3" placeholder="Quotes, context, anything to remember…"
-          class="field-input w-full resize-none">${escHtml(libEntry.notes ?? '')}</textarea>
-        <div class="flex items-center gap-2 mt-2">
-          <button id="save-notes-btn" class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded-lg text-xs font-medium transition-colors">Save notes</button>
-          <span id="notes-saved" class="text-xs text-green-400 opacity-0 transition-opacity">Saved</span>
-        </div>
-      </div>
-
-      <!-- Book details & cover (editable) -->
-      <details class="group" id="edit-details-panel">
-        <summary class="text-xs text-muted hover:text-amber-400 cursor-pointer list-none flex items-center gap-1 transition-colors">
-          <span class="group-open:rotate-90 transition-transform inline-block">▸</span> Edit details &amp; cover
-        </summary>
-        <div class="mt-3 space-y-4">
-
-          <!-- Editable fields -->
-          <div class="space-y-3">
-            <div>
-              <label class="text-xs text-muted block mb-1">Title</label>
-              <input id="edit-title" type="text" value="${escHtml(book.title)}"
-                class="field-input w-full text-xs" />
-            </div>
-            <div>
-              <label class="text-xs text-muted block mb-1">Authors <span class="text-muted">(comma-separated)</span></label>
-              <input id="edit-authors" type="text" value="${escHtml((book.authors ?? []).join(', '))}"
-                class="field-input w-full text-xs" />
-            </div>
-            <div>
-              <label class="text-xs text-muted block mb-1">Cover image URL</label>
-              <input id="cover-url-input" type="url" placeholder="https://…"
-                value="${escHtml(effectiveCover ?? '')}"
-                class="field-input w-full text-xs" />
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="text-xs text-muted block mb-1">Page count</label>
-                <input id="edit-page-count" type="number" min="1"
-                  value="${effectivePageCount ?? ''}"
-                  class="field-input w-full text-xs" />
-              </div>
-              <div>
-                <label class="text-xs text-muted block mb-1">Published date</label>
-                <input id="edit-published" type="text" placeholder="e.g. 2021-03-15"
-                  value="${escHtml(effectivePublished ?? '')}"
-                  class="field-input w-full text-xs" />
-              </div>
-            </div>
-            <div>
-              <label class="text-xs text-muted block mb-1">Description</label>
-              <textarea id="edit-description" rows="3" placeholder="Book description…"
-                class="field-input w-full text-xs resize-none">${escHtml(effectiveDescription ?? '')}</textarea>
-            </div>
-            <div class="flex items-center gap-2">
-              <button id="save-details-btn"
-                class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-xs transition-colors">
-                Save details
-              </button>
-              <p id="details-msg" class="text-xs hidden"></p>
-            </div>
-          </div>
-
-          <hr class="border-border/40" />
-
-          <!-- Metadata search (Google Books + Open Library) -->
-          <div>
-            <label class="text-xs text-muted block mb-1">Import metadata from Google Books &amp; Open Library</label>
-            <div class="flex gap-2">
-              <input id="meta-search-input" type="text" value="${escHtml(book.title)}" placeholder="Search title or ISBN…"
-                class="field-input flex-1 text-xs" />
-              <button id="meta-search-btn"
-                class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
-                Search
-              </button>
-            </div>
-            <div id="meta-results" class="space-y-2 max-h-48 overflow-y-auto mt-2"></div>
-          </div>
-
-          <hr class="border-border/40" />
-
-          <!-- Manual merge -->
-          <div>
-            <label class="text-xs text-muted block mb-1">Merge into another book in your library</label>
-            <p class="text-xs text-muted mb-2">This entry will be absorbed into the selected book — shelves, sessions, and availability data are transferred.</p>
-            <div class="flex gap-2">
-              <input id="merge-search-input" type="text" placeholder="Search by title…"
-                class="field-input flex-1 text-xs" />
-              <button id="merge-search-btn"
-                class="px-3 py-1.5 bg-surface-2 hover:bg-border/60 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">
-                Search
-              </button>
-            </div>
-            <div id="merge-results" class="space-y-2 max-h-56 overflow-y-auto mt-2"></div>
-            <p id="merge-msg" class="text-xs mt-2 hidden"></p>
-          </div>
-        </div>
-      </details>
-    </div>`;
-}
-
-function attachLibraryPanelHandlers(container, book, libEntry, shelves, softReload, onMarkDone = null) {
-  if (!libEntry) return;
-
-  // Status buttons
-  container.querySelectorAll('.lib-status-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const newStatus = btn.dataset.status;
-      try {
-        await api.setStatus(libEntry.id, newStatus);
-        // await so the log-read modal sees the refreshed entry (started_reading_at)
-        await softReload();
-      } catch (err) {
-        showToast(err.message, 'error');
-        return;
-      }
-      if (newStatus === 'done' && onMarkDone) onMarkDone();
-    });
-  });
-
-  // Shelf toggles
-  container.querySelectorAll('.lib-shelf-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const shelfId = Number(btn.dataset.shelfId);
-      const on = btn.dataset.on === 'true';
-      try {
-        if (on) await api.removeShelfMembership(libEntry.id, shelfId);
-        else await api.addShelfMembership(libEntry.id, shelfId);
-        await softReload();
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
-  });
-
-  // Progress slider
-  const slider = container.querySelector('#progress-slider');
-  const label  = container.querySelector('#progress-label');
-  if (slider) {
-    let saveTimer;
-    slider.addEventListener('input', () => {
-      if (label) label.textContent = slider.value + '%';
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(async () => {
-        try {
-          await api.setProgress(libEntry.id, { progress_pct: Number(slider.value) });
-          loadLibrary();
-        } catch (err) {
-          showToast(err.message, 'error');
-        }
-      }, 600);
-    });
-  }
-
-  // Notes
-  container.querySelector('#save-notes-btn')?.addEventListener('click', async () => {
-    const text = container.querySelector('#book-notes')?.value ?? '';
-    try {
-      await api.updateNotes(libEntry.id, text || null);
-    } catch (err) {
-      showToast(err.message, 'error');
-      return;
-    }
-    const savedEl = container.querySelector('#notes-saved');
-    if (savedEl) { savedEl.style.opacity = '1'; setTimeout(() => { savedEl.style.opacity = '0'; }, 1500); }
-    loadLibrary();
-  });
-
-  // Save all editable details (title, authors, cover, page count, published date, description)
-  container.querySelector('#save-details-btn')?.addEventListener('click', async () => {
-    const msg = container.querySelector('#details-msg');
-    const title       = container.querySelector('#edit-title')?.value.trim();
-    const authorsRaw  = container.querySelector('#edit-authors')?.value ?? '';
-    const coverUrl    = container.querySelector('#cover-url-input')?.value.trim() || null;
-    const pageCount   = parseInt(container.querySelector('#edit-page-count')?.value, 10) || null;
-    const publishedDate = container.querySelector('#edit-published')?.value.trim() || null;
-    const description = container.querySelector('#edit-description')?.value.trim() || null;
-
-    if (!title) {
-      if (msg) { msg.className = 'text-xs text-red-400'; msg.textContent = 'Title cannot be empty.'; msg.classList.remove('hidden'); }
-      return;
-    }
-
-    try {
-      await api.updateMetadata(libEntry.id, {
-        title,
-        authors: authorsRaw.split(',').map(a => a.trim()).filter(Boolean),
-        coverUrl,
-        pageCount,
-        publishedDate,
-        description,
-      });
-      await loadLibrary();
-      // Refresh cover in the header
-      if (coverUrl) {
-        const wrap = container.querySelector('#cover-img-wrap');
-        if (wrap) wrap.innerHTML = `<img src="${escHtml(coverUrl)}" alt="" class="w-full object-cover rounded-xl shadow-2xl" />`;
-      }
-      // Refresh title + author display
-      const h1 = container.querySelector('h1.font-serif');
-      if (h1 && title) h1.textContent = title;
-      if (msg) { msg.className = 'text-xs text-green-400'; msg.textContent = 'Saved.'; msg.classList.remove('hidden'); }
-    } catch (err) {
-      if (msg) { msg.className = 'text-xs text-red-400'; msg.textContent = err.message; msg.classList.remove('hidden'); }
-    }
-    if (msg) setTimeout(() => msg.classList.add('hidden'), 2500);
-  });
-
-  // Metadata search (Google Books + Open Library)
-  const metaSearchBtn = container.querySelector('#meta-search-btn');
-  const metaSearchInput = container.querySelector('#meta-search-input');
-  metaSearchBtn?.addEventListener('click', () => {
-    const q = metaSearchInput?.value.trim();
-    if (q) runMetaSearch(container, q, libEntry.id, softReload);
-  });
-  metaSearchInput?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') metaSearchBtn?.click();
-  });
-
-  // Merge search
-  const mergeSearchBtn = container.querySelector('#merge-search-btn');
-  const mergeSearchInput = container.querySelector('#merge-search-input');
-  mergeSearchBtn?.addEventListener('click', () => {
-    const q = mergeSearchInput?.value.trim();
-    if (q) runMergeSearch(container, q, book, softReload);
-  });
-  mergeSearchInput?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') mergeSearchBtn?.click();
-  });
-}
-
-// ── Sessions ───────────────────────────────────────────────────────────────────
-
-function renderSessionForm() {
-  return `
-    <form id="session-form" class="space-y-4">
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="text-xs text-muted block mb-1">Started</label>
-          <input type="date" name="startedAt" class="field-input w-full" />
-        </div>
-        <div>
-          <label class="text-xs text-muted block mb-1">Finished</label>
-          <input type="date" name="finishedAt" class="field-input w-full" />
-        </div>
-      </div>
-      <div>
-        <label class="text-xs text-muted block mb-1">Rating</label>
-        <div id="session-stars" class="flex gap-1">${starRatingHTML(0, { interactive: true })}</div>
-      </div>
-      <div>
-        <label class="text-xs text-muted block mb-1">Review</label>
-        <textarea name="review" rows="3" placeholder="Your thoughts…"
-          class="field-input w-full resize-none"></textarea>
-      </div>
-      <button type="submit"
-        class="w-full bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg py-2.5 text-sm transition-colors">
-        Save Session
-      </button>
-      <p id="session-error" class="text-xs text-red-400 hidden"></p>
-    </form>`;
-}
-
-function renderSessionList(sessions, _bookId, _reload) {
-  if (!sessions.length) return `<p class="text-muted italic text-sm">No reads logged yet.</p>`;
-  return sessions.map(s => {
-    const date = s.finished_at
-      ? new Date(s.finished_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-      : s.started_at ? `Started ${new Date(s.started_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}` : '';
-    const sStars = s.rating ? '★'.repeat(s.rating) + '☆'.repeat(5 - s.rating) : '';
-    const sourceBadge = s.source === 'audiobookshelf'
-      ? `<span class="text-[10px] bg-blue-500/15 text-blue-300 ring-1 ring-blue-500/20 px-1.5 py-0.5 rounded-full">🎧 via ABS</span>`
-      : s.source === 'calibre'
-        ? `<span class="text-[10px] bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20 px-1.5 py-0.5 rounded-full">📚 via Calibre</span>`
-        : '';
-    return `
-      <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20" data-session-id="${s.id}">
-        <div class="flex items-start justify-between gap-4">
-          <div class="flex-1 min-w-0">
-            ${sStars ? `<p class="text-amber-400 text-sm">${sStars}</p>` : ''}
-            <div class="flex items-center gap-2 flex-wrap mt-0.5">
-              ${date ? `<p class="text-xs text-muted">${escHtml(date)}</p>` : ''}
-              ${sourceBadge}
-            </div>
-            ${s.review ? `<p class="text-sm text-text mt-2 leading-relaxed">${escHtml(s.review)}</p>` : ''}
-          </div>
-          <button class="delete-session text-muted hover:text-red-400 text-xs flex-shrink-0 transition-colors" data-session-id="${s.id}">✕</button>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function attachSessionDeleteHandlers(container, bookId, reload) {
-  container.querySelectorAll('.delete-session').forEach(btn => {
-    if (btn.dataset.wired) return;
-    btn.dataset.wired = '1';
-    btn.addEventListener('click', () => {
-      const row = btn.closest('[data-session-id]');
-      if (!row || row.querySelector('.sess-confirm')) return;
-      const orig = btn.outerHTML;
-      btn.outerHTML = `
-        <span class="sess-confirm flex items-center gap-1">
-          <button class="sess-del-yes text-[10px] px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded">Delete</button>
-          <button class="sess-del-no text-[10px] px-1 text-muted hover:text-text">Cancel</button>
-        </span>`;
-      row.querySelector('.sess-del-yes').addEventListener('click', async e => {
-        const yes = e.currentTarget;
-        yes.disabled = true;
-        try {
-          await api.deleteSession(bookId, row.dataset.sessionId);
-          await reload();
-        } catch (err) {
-          yes.disabled = false;
-          showToast(err.message, 'error');
-        }
-      });
-      row.querySelector('.sess-del-no').addEventListener('click', () => {
-        row.querySelector('.sess-confirm').outerHTML = orig;
-      });
-    });
-  });
-}
-
-// ── Narrator browse ────────────────────────────────────────────────────────────
 
 function toSeriesName(s) {
   if (!s) return null;
@@ -845,313 +65,1121 @@ function toSeriesName(s) {
   return s;
 }
 
-function renderNarratorSection(availability, library, currentBookId) {
-  const narrator = availability.find(a => a.service === 'audiobookshelf')?.extra?.narrator;
-  if (!narrator || typeof narrator !== 'string') return '';
+const hoursMins = (mins) => (mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`);
 
-  const others = (library ?? []).filter(b =>
-    String(b.book_id) !== String(currentBookId) &&
-    (b.availability ?? []).some(a => a.service === 'audiobookshelf' && a.extra?.narrator === narrator)
-  ).slice(0, 6);
-
-  if (!others.length) return '';
-
-  return `
-    <section class="mt-6">
-      <h2 class="font-serif text-base font-semibold mb-3 text-muted">More narrated by ${escHtml(narrator)}</h2>
-      <div class="flex gap-3 overflow-x-auto pb-1">
-        ${others.map(b => {
-          const cover = b.cover_url
-            ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.book_id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
-            : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-1 text-[10px] text-center text-muted font-serif">${escHtml(b.title)}</div>`;
-          return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-16 group">
-            <div class="w-16 h-24 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">${cover}</div>
-            <p class="text-[10px] text-muted mt-1 line-clamp-2 group-hover:text-text transition-colors">${escHtml(b.title)}</p>
-          </a>`;
-        }).join('')}
-      </div>
-    </section>`;
+function splitList(s) {
+  return String(s ?? '').split(',').map(x => x.trim()).filter(Boolean);
 }
 
-// ── Series in library ──────────────────────────────────────────────────────────
+// ── Entry point ─────────────────────────────────────────────────────────────────
 
-function renderSeriesSection(availability, library, currentBookId) {
-  const series = toSeriesName(availability.find(a => a.extra?.series)?.extra?.series);
-  if (!series) return '';
+/** Router contract: renderBook(el, { id }) → cleanup. (A bare id string is accepted too.) */
+export async function renderBook(el, params) {
+  const rawId = String((typeof params === 'string' ? params : params?.id) ?? '');
+  const user = getState().user;
+  const cleanups = [];
+  const cleanup = () => { cleanups.splice(0).reverse().forEach((fn) => { try { fn(); } catch { /* tearing down */ } }); };
 
-  const others = (library ?? []).filter(b =>
-    String(b.book_id) !== String(currentBookId) &&
-    (b.availability ?? []).some(a => toSeriesName(a.extra?.series) === series)
-  ).slice(0, 8);
+  // Skeleton only if loading takes long enough to be noticed (spec §8: min 150 ms)
+  const skelTimer = setTimeout(() => {
+    if (!el.firstChild) {
+      el.innerHTML = String(html`
+        <div class="space-y-6" aria-busy="true">
+          <div class="flex flex-col items-center md:flex-row md:items-start gap-6">
+            ${skeleton({ w: 160, h: 240 })}
+            <div class="flex-1 w-full space-y-3">${skeleton({ w: '70%', h: 28 })}${skeleton({ w: '40%', h: 16 })}${skeleton({ w: '55%', h: 16 })}${skeleton({ w: 180, h: 44 })}</div>
+          </div>
+          ${skeletonCard()}${skeletonCard()}
+        </div>`);
+    }
+  }, 150);
 
-  if (!others.length) return '';
-
-  return `
-    <section class="mt-6">
-      <h2 class="font-serif text-base font-semibold mb-3 text-muted">Also in <em>${escHtml(series)}</em></h2>
-      <div class="flex gap-3 overflow-x-auto pb-1">
-        ${others.map(b => {
-          const cover = b.cover_url
-            ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.book_id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy">`
-            : `<div class="w-full h-full bg-border/40 flex items-center justify-center p-1 text-[10px] text-center text-muted font-serif">${escHtml(b.title)}</div>`;
-          return `<a href="#book/${b.book_id}" class="flex-shrink-0 w-16 group">
-            <div class="w-16 h-24 rounded overflow-hidden bg-surface-2 ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">${cover}</div>
-            <p class="text-[10px] text-muted mt-1 line-clamp-2 group-hover:text-text transition-colors">${escHtml(b.title)}</p>
-          </a>`;
-        }).join('')}
-      </div>
-    </section>`;
+  try {
+    const data = await load(rawId, user);
+    clearTimeout(skelTimer);
+    el.innerHTML = '';
+    cleanups.push(createPage(el, data, user));
+  } catch (err) {
+    clearTimeout(skelTimer);
+    const missing = err?.status === 404 || err?.status === 400;
+    const state = missing ? EMPTY.bookNotFound : EMPTY.loadError;
+    el.innerHTML = String(html`<div class="py-8">${emptyState({
+      icon: state.icon, title: state.title, body: state.body,
+      action: missing ? { label: state.action, href: '#library' } : { label: state.action, attrs: 'data-action="retry"' },
+    })}</div>`);
+    cleanups.push(delegate(el, 'click', '[data-action="retry"]', async () => {
+      cleanup();
+      el.innerHTML = '';
+      cleanups.push(await renderBook(el, params));
+    }));
+  }
+  return cleanup;
 }
 
-// ── Availability ───────────────────────────────────────────────────────────────
+async function load(rawId, user) {
+  let id = rawId;
+  const external = rawId.startsWith('g:') ? ['google', rawId.slice(2)]
+    : rawId.startsWith('ol:') ? ['openlibrary', rawId.slice(3)]
+      : rawId.startsWith('a:') ? ['apple', rawId.slice(2)]
+        : null;
+  if (external) {
+    let extId = external[1];
+    try { extId = decodeURIComponent(extId); } catch { /* keep raw */ }
+    const resolved = await api.getBookByExternalId(external[0], extId);
+    id = resolved.id;
+    history.replaceState(null, '', `#book/${id}`);   // rewrite the hash without a second navigation
+  }
+  // Direct loads of a book URL can beat the shell's first library fetch; without it every book would look "not in library"
+  if (user && !getState().libraryLoaded) await loadLibrary();
 
-function renderAvailabilitySection(availability = []) {
-  if (!availability.length) return '';
+  const [book, sessions, comments, recs, social, availability] = await Promise.all([
+    api.getBookDetail(id),
+    user ? api.getSessions(id).catch(() => []) : [],
+    api.getComments(id).catch(() => []),
+    api.getRecommendations(id).catch(() => []),
+    user ? api.getBookSocial(id).catch(() => []) : [],
+    user ? api.getBookAvailability(id).catch(() => []) : [],
+  ]);
+  return { book, sessions, comments, recs, social, availability };
+}
 
-  const items = availability.map(a => {
-    if (a.service === 'audiobookshelf') {
-      const absUrl = a.server_url ? `${a.server_url}/item/${a.external_id}` : null;
-      const pct = a.extra?.progress_pct ?? null;
-      const isFinished = a.extra?.is_finished ?? false;
-      const durationMins = a.extra?.duration_minutes ?? null;
-      const remainingMins = (pct !== null && pct < 100 && durationMins)
-        ? Math.round(durationMins * (1 - pct / 100)) : null;
+// ── The page ────────────────────────────────────────────────────────────────────
 
-      const progressEl = (pct !== null && pct > 0) ? `
-        <div class="mt-2.5">
-          <div class="flex justify-between text-[10px] text-muted mb-1">
-            <span class="abs-progress-label">${isFinished ? '✓ Finished' : pct + '% complete'}</span>
-            ${remainingMins ? `<span>${remainingMins >= 60 ? Math.floor(remainingMins / 60) + 'h ' + (remainingMins % 60) + 'm' : remainingMins + 'm'} remaining</span>` : ''}
+function createPage(el, data, user) {
+  const S = {
+    book: data.book,
+    sessions: data.sessions ?? [],
+    comments: data.comments ?? [],
+    recs: data.recs ?? [],
+    social: data.social ?? [],
+    availability: data.availability ?? [],
+    notes: { draft: null },
+    tab: null,
+  };
+  const cleanups = [];
+  const runCleanups = () => cleanups.splice(0).reverse().forEach((fn) => { try { fn(); } catch { /* tearing down */ } });
+  try {
+  const tid = uid('bk-tabs');
+  const ids = { reading: `${tid}-h-reading`, about: `${tid}-h-about`, community: `${tid}-h-community` };
+  let pendingRemoval = null;   // undoToast handle while a "Remove from library" can still be undone
+  let adding = false;
+  let progressSeq = 0;
+
+  const getEntry = () => (getState().library ?? []).find(b => String(b.book_id) === String(S.book.id)) ?? null;
+  const getShelves = () => getState().shelves ?? [];
+
+  // Per-user overrides win over the shared book record (library rows already coalesce them)
+  function view() {
+    const e = getEntry();
+    const b = S.book;
+    return {
+      e,
+      title: e?.title ?? b.title,
+      authors: e?.authors ?? b.authors ?? [],
+      cover: e?.cover_url ?? b.cover_url,
+      pages: e?.page_count ?? b.page_count,
+      published: e?.published_date ?? b.published_date,
+      description: e?.description ?? b.description,
+      categories: e?.categories ?? b.categories ?? [],
+    };
+  }
+
+  // ── Skeleton of the page: slots are filled by the render* functions below ──
+  el.innerHTML = String(html`
+    <div class="space-y-6 md:space-y-8 pb-20 md:pb-0">
+      <div>${button({ label: 'Back', variant: 'ghost', size: 'sm', icon: 'arrow-left', cls: '-ml-2', attrs: 'data-action="back"' })}</div>
+      <section aria-label="Book details" data-slot="hero"></section>
+      <div class="md:hidden" data-slot="tabs"></div>
+      <div class="space-y-6 md:space-y-8">
+        <div role="tabpanel" id="${tid}-panel-reading" aria-labelledby="${tid}-tab-reading" data-panel="reading" hidden><div data-slot="reading"></div></div>
+        <div role="tabpanel" id="${tid}-panel-about" aria-labelledby="${tid}-tab-about" data-panel="about"><div data-slot="about"></div></div>
+        <div role="tabpanel" id="${tid}-panel-community" aria-labelledby="${tid}-tab-community" data-panel="community"><div data-slot="community"></div></div>
+      </div>
+    </div>`);
+  const slot = (name) => el.querySelector(`[data-slot="${name}"]`);
+
+  // Repaint a slot but keep keyboard focus on the equivalent control afterwards
+  function focusKey(node) {
+    if (!(node instanceof HTMLElement)) return null;
+    const group = node.closest('[data-chip-group]');
+    if (group && node.dataset.chipValue !== undefined) return `[data-chip-group="${CSS.escape(group.dataset.chipGroup)}"] [data-chip-value="${CSS.escape(node.dataset.chipValue)}"]`;
+    if (node.dataset.action) return `[data-action="${CSS.escape(node.dataset.action)}"]${node.dataset.sessionId ? `[data-session-id="${CSS.escape(node.dataset.sessionId)}"]` : ''}`;
+    if (node.hasAttribute('data-more')) return '[data-more]';
+    if (node.getAttribute('name')) return `[name="${CSS.escape(node.getAttribute('name'))}"]`;
+    return null;
+  }
+  function paint(host, markup) {
+    const active = document.activeElement;
+    const key = host.contains(active) ? focusKey(active) : null;
+    host.innerHTML = String(markup);
+    if (key) host.querySelector(key)?.focus();
+  }
+
+  // ── Hero ──────────────────────────────────────────────────────────────────
+  function primaryCta({ block = false } = {}) {
+    const e = getEntry();
+    const cls = block ? 'w-full' : 'max-md:flex-1';
+    if (!user) {
+      return html`<a class="btn btn--primary btn--lg ${cls}" href="${safeUrl(authHref())}"><span class="btn__label">Sign in to track</span></a>`;
+    }
+    const [label, ic] = !e ? [ACTION.addToLibrary, 'plus']
+      : e.status === 'to_read' ? [ACTION.startReading, 'book-open']
+        : e.status === 'reading' ? [ACTION.updateProgress, 'trending-up']
+          : [ACTION.logAnotherRead, 'plus'];
+    return button({ label, variant: 'primary', size: 'lg', icon: ic, cls, attrs: 'data-action="cta"' });
+  }
+
+  function heroHTML() {
+    const v = view();
+    const e = v.e;
+    const year = String(v.published ?? '').match(/\d{4}/)?.[0];
+    const rated = S.sessions.filter(s => s.rating);
+    const avg = rated.length ? rated.reduce((sum, s) => sum + s.rating, 0) / rated.length : 0;
+    const chips = [
+      year && badge({ label: year, icon: 'calendar' }),
+      v.pages && badge({ label: plural(v.pages, 'page'), icon: 'file-text' }),
+      S.book.publisher && badge({ label: S.book.publisher, icon: 'book' }),
+      ...v.categories.slice(0, 8).map(c => badge({ label: c, variant: 'outline', icon: 'tag' })),
+    ].filter(Boolean);
+    return html`
+      <div class="flex flex-col items-center text-center gap-5 md:flex-row md:items-start md:text-left md:gap-8">
+        <div class="shrink-0">${cover({ url: v.cover, bookId: S.book.id, title: v.title, size: 'lg', zoomable: true })}</div>
+        <div class="min-w-0 flex-1 space-y-3">
+          <div>
+            <h1 class="h1 break-words">${v.title}</h1>
+            ${v.authors.length ? html`<p class="text-body text-text-2 mt-1">${v.authors.join(', ')}</p>` : ''}
           </div>
-          <div class="h-1 rounded-full bg-white/10 overflow-hidden">
-            <div class="abs-progress-fill h-1 rounded-full transition-all ${isFinished ? 'bg-green-400' : 'bg-blue-400'}" style="width:${pct}%"></div>
+          ${chips.length ? html`<div class="flex flex-wrap justify-center md:justify-start gap-2">${chips}</div>` : ''}
+          ${(avg || e) ? html`
+            <div class="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-2">
+              ${avg ? html`<span class="inline-flex items-center gap-2">${stars({ value: avg, size: 18 })}<span class="text-small text-text-2 tabular-nums">${avg.toFixed(1)} · ${plural(S.sessions.length, 'read')}</span></span>` : ''}
+              ${e ? statusBadge(e.status, { size: 'md' }) : ''}
+            </div>` : ''}
+          ${e?.status === 'reading' ? html`<div class="w-full max-w-sm mx-auto md:mx-0" data-hero-progress>${progressBar({ value: e.progress_pct ?? 0, showValue: true, label: 'Reading progress' })}</div>` : ''}
+          <div class="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-1" data-hero-cta>
+            ${primaryCta()}
+            ${e?.status === 'reading' ? button({ label: ACTION.finish, variant: 'secondary', size: 'lg', icon: 'check', attrs: 'data-action="finish"' }) : ''}
+            ${user ? iconButton({ icon: 'more-horizontal', label: `More actions for ${v.title}`, variant: 'solid', attrs: 'data-more aria-haspopup="menu"' }) : ''}
           </div>
-        </div>` : '';
+        </div>
+      </div>`;
+  }
 
-      return `
-        <div class="bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
-          <div class="flex items-center gap-3">
-            <span class="text-2xl">🎧</span>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-text">Audiobookshelf</p>
-              <p class="text-xs text-muted">Audiobook available${a.extra?.narrator ? ' · Narrated by ' + escHtml(a.extra.narrator) : ''}${durationMins ? ' · ' + Math.round(durationMins / 60) + ' hrs' : ''}</p>
+  // Mobile: full-width CTA pinned above the bottom bar while the hero CTA is out of view
+  const sticky = document.createElement('div');
+  sticky.className = 'book-cta--sticky';
+  sticky.hidden = true;
+  document.body.appendChild(sticky);
+  cleanups.push(() => sticky.remove());
+  cleanups.push(delegate(sticky, 'click', '[data-action="cta"]', (e, btn) => ctaAction(btn)));
+  let io = null;
+  cleanups.push(() => io?.disconnect());
+
+  function renderHero() {
+    paint(slot('hero'), heroHTML());
+    sticky.innerHTML = String(primaryCta({ block: true }));
+    io?.disconnect();
+    const target = el.querySelector('[data-hero-cta]');
+    if (target && 'IntersectionObserver' in window) {
+      io = new IntersectionObserver(([entry]) => { sticky.hidden = entry.isIntersecting; });
+      io.observe(target);
+    } else {
+      sticky.hidden = true;
+    }
+    document.title = `${view().title} · Bookworm`;
+  }
+
+  // ── Your reading ──────────────────────────────────────────────────────────
+  function readRowHTML(s) {
+    const src = s.source === 'audiobookshelf' ? badge({ label: 'Audiobookshelf', variant: 'info', icon: 'headphones' })
+      : s.source === 'calibre' ? badge({ label: 'Calibre', variant: 'success', icon: 'book-copy' })
+        : '';
+    const sid = Number(s.id);
+    return html`
+      <li class="rounded-md border border-border-1 bg-surface-2 p-3 space-y-2" data-session-id="${sid}">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span class="text-small font-medium">${readDates(s)}</span>
+          ${s.rating ? stars({ value: s.rating, size: 14 }) : ''}
+          ${src}
+        </div>
+        ${s.review ? html`<p class="text-small text-text-2 whitespace-pre-line break-words">${s.review}</p>` : ''}
+        <div class="flex flex-wrap items-center justify-end gap-1">
+          ${button({ label: ACTION.edit, variant: 'ghost', size: 'sm', icon: 'pencil', attrs: `data-action="edit-read" data-session-id="${sid}"` })}
+          <button type="button" class="btn btn--danger-ghost btn--sm" data-confirm="Delete this read?" data-confirm-verb="Delete" data-confirm-action="session" data-id="${sid}">
+            <span class="btn__icon">${icon('trash-2', { size: 16 })}</span><span class="btn__label">${ACTION.delete}</span>
+          </button>
+        </div>
+      </li>`;
+  }
+
+  function historyHTML() {
+    return html`
+      <div class="space-y-3">
+        <div class="flex items-center justify-between gap-3">
+          <h3 class="h3">Reading history</h3>
+          ${button({ label: ACTION.logRead, variant: 'secondary', size: 'sm', icon: 'plus', attrs: 'data-action="log-read"' })}
+        </div>
+        ${S.sessions.length
+          ? html`<ul class="space-y-3">${S.sessions.map(readRowHTML)}</ul>`
+          : emptyState({ icon: EMPTY.noReads.icon, title: EMPTY.noReads.title, size: 'sm' })}
+      </div>`;
+  }
+
+  function readingHTML() {
+    const e = getEntry();
+    if (!e) return '';
+    const shelves = getShelves();
+    const notes = S.notes.draft ?? e.notes ?? '';
+    return html`
+      <section aria-labelledby="${ids.reading}">
+        ${sectionHeader({ title: 'Your reading', id: ids.reading })}
+        ${card({ content: html`
+          <div class="space-y-5">
+            <div class="space-y-2">
+              <p class="label">Status</p>
+              ${segmented({ name: 'status', label: 'Reading status', value: e.status, items: STATUS_KEYS.map(k => ({ value: k, label: STATUS[k].label, icon: STATUS[k].icon })) })}
             </div>
-            ${absUrl ? `<a href="${escHtml(safeUrl(absUrl))}" target="_blank" rel="noopener"
-                 class="text-xs px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-colors flex-shrink-0">
-                 ${isFinished ? 'Listen Again →' : (pct > 0 ? `Resume (${pct}%) →` : 'Open in ABS →')}
-               </a>` : ''}
+            ${e.status === 'reading' ? html`
+              <div class="space-y-2">
+                <p class="label">Progress</p>
+                <div class="flex items-center gap-3">
+                  <div class="flex-1 min-w-0">${progressSlider({ value: e.progress_pct ?? 0, label: 'Reading progress' })}</div>
+                  <span class="text-caption text-success opacity-0 transition-opacity" data-progress-saved role="status"></span>
+                </div>
+              </div>` : ''}
+            <div class="space-y-2">
+              <p class="label">Shelves</p>
+              ${shelves.length
+                ? chipGroup({ name: 'shelf', multi: true, wrap: true, label: 'Shelves', values: e.shelf_ids ?? [], items: shelves.map(s => ({ value: s.id, label: s.name, color: s.color })) })
+                : html`<p class="text-small text-text-3">No shelves yet. <a class="text-accent-text hover:underline" href="#library">Create one in your library</a>.</p>`}
+            </div>
+            <div>
+              ${field({ name: 'notes', label: LABEL.privateNotes, type: 'textarea', rows: 4, maxlength: 10000, value: notes, placeholder: 'Quotes, context, anything to remember' })}
+              <p class="text-caption mt-1 min-h-4" data-notes-status role="status"></p>
+            </div>
           </div>
-          ${progressEl}
-        </div>`;
+          <hr class="my-5 border-border-1">
+          <div data-slot="history">${historyHTML()}</div>` })}
+      </section>`;
+  }
+
+  function renderReading() {
+    paint(slot('reading'), readingHTML());
+  }
+  function renderHistory() {
+    const host = el.querySelector('[data-slot="history"]');
+    if (host) paint(host, historyHTML());
+  }
+
+  // ── About ─────────────────────────────────────────────────────────────────
+  function others(pred) {
+    return (getState().library ?? []).filter(b => String(b.book_id) !== String(S.book.id) && pred(b));
+  }
+  function aboutModel() {
+    const abs = S.availability.find(a => a.service === 'audiobookshelf');
+    const narrator = typeof abs?.extra?.narrator === 'string' ? abs.extra.narrator : null;
+    const series = toSeriesName(S.availability.find(a => a.extra?.series)?.extra?.series);
+    return {
+      narrator,
+      series,
+      narrated: narrator ? others(b => (b.availability ?? []).some(a => a.service === 'audiobookshelf' && a.extra?.narrator === narrator)).slice(0, 8) : [],
+      inSeries: series ? others(b => (b.availability ?? []).some(a => toSeriesName(a.extra?.series) === series)).slice(0, 8) : [],
+    };
+  }
+
+  function availabilityRow(a) {
+    if (a.service === 'audiobookshelf') {
+      const url = a.server_url && a.external_id ? `${String(a.server_url).replace(/\/+$/, '')}/item/${encodeURIComponent(a.external_id)}` : '';
+      const pct = a.extra?.progress_pct ?? null;
+      const finished = !!a.extra?.is_finished;
+      const dur = a.extra?.duration_minutes ?? null;
+      const remaining = (pct !== null && pct < 100 && dur) ? Math.round(dur * (1 - pct / 100)) : null;
+      const cta = finished ? 'Listen again' : (pct > 0 ? `Resume (${pct}%)` : 'Open');
+      return card({ padding: 'sm', content: html`
+        <div class="flex items-center gap-3">
+          <span class="text-info shrink-0">${icon('headphones', { size: 24 })}</span>
+          <div class="min-w-0 flex-1">
+            <p class="text-body font-medium">Audiobookshelf</p>
+            <p class="text-small text-text-2">Audiobook${a.extra?.narrator ? ` · Narrated by ${a.extra.narrator}` : ''}${dur ? ` · ${hoursMins(Math.round(dur))}` : ''}</p>
+          </div>
+          ${safeUrl(url) ? html`<a class="btn btn--secondary btn--sm shrink-0" href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer"><span class="btn__label">${cta}</span><span class="btn__icon">${icon('external-link', { size: 16 })}</span></a>` : ''}
+        </div>
+        <div class="mt-3" data-abs-progress data-abs-duration="${dur ?? ''}"${(pct || finished) ? '' : ' hidden'}>
+          <div class="flex justify-between text-caption text-text-2 mb-1">
+            <span data-abs-label>${finished ? 'Finished' : `${pct ?? 0}% complete`}</span>
+            <span data-abs-remaining>${remaining ? `${hoursMins(remaining)} remaining` : ''}</span>
+          </div>
+          ${progressBar({ value: finished ? 100 : (pct ?? 0), size: 'sm', tone: finished ? 'success' : 'info', label: 'Audiobook progress' })}
+        </div>` });
     }
     if (a.service === 'calibre') {
       const formats = a.formats ?? [];
-      const formatsLabel = formats.map(f => f.toUpperCase()).join(', ');
-      const calibreUrl = a.server_url && a.external_id ? `${a.server_url}/book/${a.external_id}` : null;
+      const url = a.server_url && a.external_id ? `${String(a.server_url).replace(/\/+$/, '')}/book/${encodeURIComponent(a.external_id)}` : '';
       const calibreId = a.extra?.calibre_id ?? a.external_id;
-      const downloadBtns = formats.map(fmt =>
-        `<a href="/api/integrations/calibre/download/${encodeURIComponent(calibreId)}/${encodeURIComponent(fmt)}"
-            class="text-xs px-2.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 rounded-lg transition-colors flex-shrink-0">
-            ↓ ${escHtml(fmt.toUpperCase())}
-          </a>`
-      ).join('');
-      return `
-        <div class="bg-surface-2 rounded-xl px-4 py-3 ring-1 ring-border/20">
-          <div class="flex items-center gap-3">
-            <span class="text-2xl">📚</span>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-text">Calibre Library</p>
-              <p class="text-xs text-muted">In your ebook collection${formatsLabel ? ' · ' + escHtml(formatsLabel) : ''}${toSeriesName(a.extra?.series) ? ' · Series: ' + escHtml(toSeriesName(a.extra.series)) : ''}</p>
-            </div>
-            ${calibreUrl ? `<a href="${escHtml(safeUrl(calibreUrl))}" target="_blank" rel="noopener"
-                 class="text-xs px-3 py-1.5 bg-surface-2 hover:bg-border/40 text-muted rounded-lg transition-colors flex-shrink-0">
-                 Open →
-               </a>` : ''}
+      const series = toSeriesName(a.extra?.series);
+      return card({ padding: 'sm', content: html`
+        <div class="flex items-center gap-3">
+          <span class="text-success shrink-0">${icon('book-copy', { size: 24 })}</span>
+          <div class="min-w-0 flex-1">
+            <p class="text-body font-medium">Calibre</p>
+            <p class="text-small text-text-2">In your ebook collection${formats.length ? ` · ${formats.map(f => String(f).toUpperCase()).join(', ')}` : ''}${series ? ` · Series: ${series}` : ''}</p>
           </div>
-          ${downloadBtns ? `<div class="flex flex-wrap gap-2 mt-2.5">${downloadBtns}</div>` : ''}
-        </div>`;
+          ${safeUrl(url) ? html`<a class="btn btn--secondary btn--sm shrink-0" href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer"><span class="btn__label">Open</span><span class="btn__icon">${icon('external-link', { size: 16 })}</span></a>` : ''}
+        </div>
+        ${formats.length ? html`<div class="flex flex-wrap gap-2 mt-3">${formats.map(fmt => html`
+          <a class="btn btn--secondary btn--sm" href="/api/integrations/calibre/download/${encodeURIComponent(calibreId)}/${encodeURIComponent(fmt)}" download aria-label="Download ${String(fmt).toUpperCase()}"><span class="btn__icon">${icon('download', { size: 16 })}</span><span class="btn__label">${String(fmt).toUpperCase()}</span></a>`)}</div>` : ''}` });
     }
     return '';
-  }).filter(Boolean).join('');
-
-  if (!items) return '';
-  return `
-    <section class="mt-10">
-      <h2 class="font-serif text-xl font-semibold mb-4">Where to find this book</h2>
-      <div class="space-y-3">${items}</div>
-    </section>`;
-}
-
-// ── Merge search ──────────────────────────────────────────────────────────────
-
-function runMergeSearch(container, q, currentBook, softReload) {
-  const el = container.querySelector('#merge-results');
-  const msg = container.querySelector('#merge-msg');
-  if (!el) return;
-
-  // Search the already-loaded library in memory
-  const library = getState().library ?? [];
-  const lq = q.toLowerCase();
-  const matches = library.filter(b =>
-    String(b.book_id) !== String(currentBook.id) &&
-    (b.title.toLowerCase().includes(lq) ||
-     (b.authors ?? []).some(a => a.toLowerCase().includes(lq)))
-  ).slice(0, 10);
-
-  if (!matches.length) {
-    el.innerHTML = `<p class="text-muted text-xs italic">No books found matching "${escHtml(q)}".</p>`;
-    return;
   }
 
-  el.innerHTML = matches.map(b => {
-    const cover = b.cover_url
-      ? `<img src="${escHtml(b.cover_url)}" class="w-8 h-11 object-cover rounded flex-shrink-0" />`
-      : `<div class="w-8 h-11 bg-border/40 rounded flex-shrink-0 flex items-center justify-center text-xs">📖</div>`;
-    return `
-      <div class="flex gap-2 items-center bg-surface-2 rounded-lg px-3 py-2">
-        ${cover}
-        <div class="flex-1 min-w-0">
-          <p class="text-xs font-medium line-clamp-1">${escHtml(b.title)}</p>
-          <p class="text-[10px] text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
-        </div>
-        <button class="merge-into-btn text-[10px] px-2 py-1 bg-red-500/20 text-red-300 rounded hover:bg-red-500/40 transition-colors flex-shrink-0"
-                data-keep-id="${b.book_id}" data-keep-title="${escHtml(b.title)}">
-          Merge into →
-        </button>
+  function miniList(title, items) {
+    if (!items.length) return '';
+    return html`
+      <div>
+        ${sectionHeader({ title, level: 3 })}
+        <div class="scroller">${items.map(b => bookCard(b, { variant: 'compact' }))}</div>
       </div>`;
-  }).join('');
+  }
 
-  el.querySelectorAll('.merge-into-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const keepId = btn.dataset.keepId;
-      const keepTitle = btn.dataset.keepTitle;
-
-      // Replace button with confirm row
-      const row = btn.closest('.flex');
-      btn.outerHTML = `
-        <span class="flex items-center gap-1 flex-shrink-0">
-          <span class="text-[10px] text-muted">Keep "${escHtml(keepTitle)}"?</span>
-          <button class="merge-confirm-yes text-[10px] px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded font-medium">Yes, merge</button>
-          <button class="merge-confirm-no text-[10px] px-1.5 py-0.5 text-muted hover:text-text">Cancel</button>
-        </span>`;
-
-      row.querySelector('.merge-confirm-no')?.addEventListener('click', () => {
-        // Re-run to restore list
-        runMergeSearch(container, q, currentBook, softReload);
-      });
-
-      row.querySelector('.merge-confirm-yes')?.addEventListener('click', async (e) => {
-        e.currentTarget.textContent = '…'; e.currentTarget.disabled = true;
-        try {
-          await api.mergeBooks(Number(keepId), Number(currentBook.id));
-          // Navigate to the book we kept
-          location.hash = `#book/${keepId}`;
-        } catch (err) {
-          if (msg) { msg.className = 'text-xs text-red-400'; msg.textContent = err.message; msg.classList.remove('hidden'); }
-        }
-      });
-    });
-  });
-}
-
-// ── Comments ───────────────────────────────────────────────────────────────────
-
-function renderCommentsList(comments, user) {
-  if (!comments.length) return `<p class="text-muted italic text-sm">No comments yet — be the first!</p>`;
-  return comments.map(c => renderComment(c, user)).join('');
-}
-
-function renderComment(c, user) {
-  const date = new Date(c.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  const canDelete = user?.username === c.username;
-  return `
-    <div class="bg-surface rounded-xl p-4 ring-1 ring-border/20" data-comment-id="${c.id}">
-      <div class="flex items-start justify-between gap-2">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 mb-1">
-            <a href="#u/${escHtml(c.username)}" class="text-xs text-amber-400 hover:underline font-medium">@${escHtml(c.username)}</a>
-            <span class="text-xs text-muted">${escHtml(date)}</span>
-          </div>
-          <p class="text-sm text-text leading-relaxed">${escHtml(c.body)}</p>
+  function aboutHTML() {
+    const v = view();
+    const desc = plainText(v.description);
+    const m = aboutModel();
+    const rows = S.availability.map(availabilityRow).filter(r => r !== '');
+    return html`
+      <section aria-labelledby="${ids.about}">
+        ${sectionHeader({ title: 'About', id: ids.about })}
+        <div class="space-y-6">
+          ${desc ? html`
+            <div data-desc>
+              <p class="text-body text-text-1 whitespace-pre-line break-words line-clamp-6" data-desc-text>${desc}</p>
+              <button type="button" class="btn btn--ghost btn--sm -ml-2 mt-1" data-action="toggle-desc" aria-expanded="false" hidden><span class="btn__label">${ACTION.showMore}</span></button>
+            </div>` : html`<p class="text-small text-text-3">No description available.</p>`}
+          ${rows.length ? html`<div>${sectionHeader({ title: LABEL.whereToFindIt, level: 3 })}<div class="space-y-3">${rows}</div></div>` : ''}
+          ${miniList(m.series ? `Also in ${m.series}` : '', m.inSeries)}
+          ${miniList(m.narrator ? `More narrated by ${m.narrator}` : '', m.narrated)}
         </div>
-        ${canDelete ? `<button class="delete-comment text-muted hover:text-red-400 text-xs transition-colors flex-shrink-0">✕</button>` : ''}
-      </div>
-    </div>`;
-}
+      </section>`;
+  }
 
-function attachCommentDeleteHandlers(container, bookId) {
-  container.querySelectorAll('.delete-comment').forEach(btn => {
-    if (btn.dataset.wired) return;
-    btn.dataset.wired = '1';
-    btn.addEventListener('click', async () => {
-      const row = btn.closest('[data-comment-id]');
-      if (!row) return;
+  function measureDesc() {
+    const p = el.querySelector('[data-desc-text]');
+    const btn = el.querySelector('[data-action="toggle-desc"]');
+    if (!p || !btn || !p.classList.contains('line-clamp-6')) return;
+    if (p.clientHeight > 0) btn.hidden = p.scrollHeight <= p.clientHeight + 1;
+  }
+  function renderAbout() {
+    paint(slot('about'), aboutHTML());
+    measureDesc();
+  }
+
+  // ── Community ─────────────────────────────────────────────────────────────
+  function commentHTML(c) {
+    const own = user?.username && user.username === c.username;
+    return html`
+      <li class="flex gap-3" data-comment-id="${Number(c.id)}">
+        ${avatar({ username: c.username, size: 32 })}
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-x-2">
+            <a class="text-small font-medium text-accent-text hover:underline" href="#u/${encodeURIComponent(c.username)}">@${c.username}</a>
+            <time class="text-caption text-text-3" datetime="${c.created_at}" title="${formatDate(c.created_at)}">${timeAgo(c.created_at)}</time>
+          </div>
+          <p class="text-body whitespace-pre-line break-words">${c.body}</p>
+          ${own ? html`<div class="mt-1"><button type="button" class="btn btn--danger-ghost btn--sm -ml-2" data-confirm="Delete comment?" data-confirm-verb="Delete" data-confirm-action="comment" data-id="${Number(c.id)}"><span class="btn__icon">${icon('trash-2', { size: 16 })}</span><span class="btn__label">${ACTION.delete}</span></button></div>` : ''}
+        </div>
+      </li>`;
+  }
+
+  function commentsHTML() {
+    return html`
+      ${sectionHeader({ title: 'Comments', level: 3, count: S.comments.length || undefined })}
+      <div aria-live="polite">
+        ${S.comments.length
+          ? html`<ul class="space-y-4">${S.comments.map(commentHTML)}</ul>`
+          : html`<p class="text-small text-text-3">${user ? 'No comments yet. Be the first.' : 'No comments yet.'}</p>`}
+      </div>`;
+  }
+  function renderComments() {
+    const host = el.querySelector('[data-slot="comments"]');
+    if (host) paint(host, commentsHTML());
+  }
+
+  function communityHTML() {
+    const recEntries = S.recs.map(b => ({ b, href: recHref(b) })).filter(r => r.href);
+    return html`
+      <section aria-labelledby="${ids.community}">
+        ${sectionHeader({ title: 'Community', id: ids.community })}
+        <div class="space-y-6">
+          ${S.social.length ? html`
+            <div>
+              ${sectionHeader({ title: LABEL.friendsOnThisBook, level: 3, count: S.social.length })}
+              <ul class="space-y-3">
+                ${S.social.map(u => html`
+                  <li>${card({ padding: 'sm', content: html`
+                    <div class="flex gap-3">
+                      ${avatar({ username: u.username, size: 32 })}
+                      <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <a class="text-small font-medium text-accent-text hover:underline" href="#u/${encodeURIComponent(u.username)}">@${u.username}</a>
+                          ${statusBadge(u.status)}
+                          ${u.rating ? stars({ value: u.rating, size: 14 }) : ''}
+                        </div>
+                        ${u.review ? html`<p class="text-small text-text-2 mt-1 line-clamp-3 whitespace-pre-line break-words">${u.review}</p>` : ''}
+                      </div>
+                    </div>` })}</li>`)}
+              </ul>
+            </div>` : ''}
+          ${recEntries.length ? html`
+            <div>
+              ${sectionHeader({ title: LABEL.youMightAlsoLike, level: 3 })}
+              <div class="scroller">${recEntries.map(({ b, href }) => bookCard(
+                { title: b.title, authors: b.authors, cover_url: b.cover_url, book_id: b.id ?? null },
+                { variant: 'compact', href },
+              ))}</div>
+            </div>` : ''}
+          <div>
+            <div data-slot="comments">${commentsHTML()}</div>
+            ${user ? html`
+              <form class="mt-4 space-y-2" data-comment-form novalidate>
+                ${field({ name: 'body', label: 'Add a comment', type: 'textarea', rows: 3, maxlength: 2000, placeholder: 'Leave a comment' })}
+                <div class="flex justify-end">${button({ label: 'Post', variant: 'primary', type: 'submit' })}</div>
+              </form>` : html`<p class="mt-4 text-small text-text-2"><a class="text-accent-text hover:underline" href="${safeUrl(authHref())}">Sign in to comment</a></p>`}
+          </div>
+        </div>
+      </section>`;
+  }
+
+  // ── Tabs (mobile) / stacked sections (desktop) ────────────────────────────
+  const mq = matchMedia('(min-width: 768px)');
+  let offTabs = null;
+  S.tab = getEntry() ? 'reading' : 'about';
+
+  function panelAvailable(value) { return value !== 'reading' || !!getEntry(); }
+  function applyPanels() {
+    if (!panelAvailable(S.tab)) S.tab = 'about';
+    el.querySelectorAll('[data-panel]').forEach((p) => {
+      p.hidden = !panelAvailable(p.dataset.panel) || (!mq.matches && p.dataset.panel !== S.tab);
+    });
+    measureDesc();
+  }
+  function renderTabs() {
+    if (!panelAvailable(S.tab)) S.tab = 'about';
+    const items = [
+      ...(getEntry() ? [{ value: 'reading', label: 'Your reading' }] : []),
+      { value: 'about', label: 'About' },
+      { value: 'community', label: 'Community' },
+    ];
+    const host = slot('tabs');
+    offTabs?.();
+    host.innerHTML = String(tabs({ id: tid, items, value: S.tab, label: 'Book sections' }));
+    offTabs = mountTabs(host, (value) => { S.tab = value; applyPanels(); });
+    applyPanels();
+  }
+  cleanups.push(() => offTabs?.());
+  mq.addEventListener('change', applyPanels);
+  cleanups.push(() => mq.removeEventListener('change', applyPanels));
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
+  async function addBook(status, btn) {
+    if (pendingRemoval) { pendingRemoval.undo(); return; }   // "Add" during the undo window = undo
+    if (adding) return;
+    adding = true;
+    setButtonLoading(btn, true);
+    const b = S.book;
+    try {
+      const row = await api.addToLibrary({
+        googleId: b.google_id ?? undefined,
+        openLibraryId: b.open_library_id ?? undefined,
+        appleId: b.apple_id ?? undefined,
+        title: b.title,
+        authors: b.authors,
+        coverUrl: b.cover_url ?? undefined,
+        pageCount: b.page_count ?? undefined,
+        publishedDate: b.published_date ?? undefined,
+        description: b.description ?? undefined,
+        categories: b.categories ?? undefined,
+        status,
+      });
+      upsertLibraryEntry(row);
+      toast(TOAST.addedTo(statusLabel(status)));
+      // A book without any external id is copied rather than shared: follow the user to their own copy
+      if (String(row.book_id) !== String(b.id)) location.hash = `#book/${row.book_id}`;
+    } catch {
+      toast(ERROR.add, { type: 'error' });
+    } finally {
+      adding = false;
+      setButtonLoading(btn, false);
+    }
+  }
+
+  async function changeStatus(next, { message, undo = true } = {}) {
+    const e = getEntry();
+    if (!e || e.status === next) return;
+    const prev = e.status;
+    upsertLibraryEntry({
+      ...e, status: next,
+      ...(next === 'reading' && prev !== 'reading' ? { started_reading_at: new Date().toISOString() } : {}),
+    });
+    try {
+      upsertLibraryEntry(await api.setStatus(e.id, next));
+      toast(message ?? TOAST.movedTo(statusLabel(next)), undo
+        ? { action: { label: ACTION.undo, onClick: () => changeStatus(prev, { undo: false }) } }
+        : undefined);
+    } catch {
+      upsertLibraryEntry(e);
+      toast(ERROR.changeStatus, { type: 'error' });
+    }
+  }
+
+  async function toggleShelf(shelfId, on) {
+    const e = getEntry();
+    const shelf = getShelves().find(s => String(s.id) === String(shelfId));
+    if (!e || !shelf) return;
+    const prevIds = e.shelf_ids ?? [];
+    const nextIds = on
+      ? [...new Set([...prevIds, Number(shelfId)])]
+      : prevIds.filter(x => String(x) !== String(shelfId));
+    upsertLibraryEntry({ ...e, shelf_ids: nextIds });
+    try {
+      if (on) upsertLibraryEntry(await api.addShelfMembership(e.id, Number(shelfId)));
+      else await api.removeShelfMembership(e.id, Number(shelfId));
+      toast(on ? TOAST.shelfAdded(shelf.name) : TOAST.shelfRemoved(shelf.name), {
+        action: { label: ACTION.undo, onClick: () => toggleShelf(shelfId, !on) },
+      });
+    } catch {
+      upsertLibraryEntry({ ...(getEntry() ?? e), shelf_ids: prevIds });
+      toast(ERROR.updateShelves, { type: 'error' });
+    }
+  }
+
+  function removeBook() {
+    const e = getEntry();
+    if (!e || pendingRemoval) return;
+    removeLibraryEntries([e.id]);
+    pendingRemoval = undoToast(TOAST.removed(e.title), {
+      onUndo: () => { pendingRemoval = null; upsertLibraryEntry(e); },
+      onCommit: async () => {
+        pendingRemoval = null;
+        try { await api.removeFromLibrary(e.id); } catch {
+          upsertLibraryEntry(e);
+          toast(ERROR.removeBook, { type: 'error' });
+        }
+      },
+    });
+  }
+
+  // Progress: the live DOM is the source of truth while dragging; the store only sees committed values
+  function paintProgress(pct) {
+    document.querySelectorAll('[data-hero-progress] .progress').forEach((bar) => {
+      bar.style.setProperty('--progress', `${pct}%`);
+      bar.setAttribute('aria-valuenow', String(pct));
+    });
+    document.querySelectorAll('[data-hero-progress] .progress-row__value').forEach((n) => { n.textContent = `${pct}%`; });
+    document.querySelectorAll('.slider__input').forEach((input) => {
+      if (document.activeElement === input || Number(input.value) === pct) return;
+      input.value = String(pct);
+      input.setAttribute('aria-valuetext', `${pct}%`);
+      const out = input.parentElement?.querySelector('.slider__value');
+      if (out) out.textContent = `${pct}%`;
+    });
+  }
+  function flashSaved() {
+    document.querySelectorAll('[data-progress-saved]').forEach((n) => {
+      clearTimeout(n._t);
+      n.textContent = 'Saved';
+      n.classList.remove('opacity-0');
+      n._t = setTimeout(() => { n.classList.add('opacity-0'); n._t = setTimeout(() => { n.textContent = ''; }, 250); }, 1500);
+    });
+  }
+  async function commitProgress(value) {
+    const e = getEntry();
+    if (!e) return;
+    const prev = e.progress_pct ?? 0;
+    if (value === prev) return;
+    const mine = ++progressSeq;
+    paintProgress(value);
+    try {
+      const row = await api.setProgress(e.id, { progress_pct: value });
+      if (mine === progressSeq) upsertLibraryEntry(row);
+      flashSaved();
+    } catch {
+      if (mine === progressSeq) {
+        const sliders = [...document.querySelectorAll('.slider__input')];
+        sliders.forEach((s) => { if (document.activeElement === s) s.blur(); });
+        paintProgress(prev);
+      }
+      toast(ERROR.saveProgress, { type: 'error' });
+    }
+  }
+
+  function openLog(session) {
+    const v = view();
+    openLogReadModal(
+      { id: S.book.id, title: v.title, startedAt: v.e?.started_reading_at ?? undefined, ...(session ? { session } : {}) },
+      () => { reloadSessions(); },
+    );
+  }
+
+  async function reloadSessions() {
+    try { S.sessions = await api.getSessions(S.book.id); } catch { toast(ERROR.generic('refresh your reads'), { type: 'error' }); return; }
+    renderHistory();
+    renderHero();
+  }
+
+  function openProgressPicker(trigger) {
+    const e = getEntry();
+    if (!e) return;
+    const v = view();
+    let offSlider = null;
+    const content = html`
+      <div class="popover__body space-y-3" data-picker>
+        <p class="label">Progress</p>
+        <div class="flex items-center gap-3">
+          <div class="flex-1 min-w-0">${progressSlider({ value: e.progress_pct ?? 0, label: 'Reading progress' })}</div>
+          <span class="text-caption text-success opacity-0 transition-opacity" data-progress-saved role="status"></span>
+        </div>
+        <div class="flex justify-end">${button({ label: ACTION.finish, variant: 'secondary', size: 'sm', icon: 'check', attrs: 'data-picker-finish' })}</div>
+      </div>`;
+    const onClose = () => { offSlider?.(); renderReading(); };   // rebuild the in-page slider so its commit tracking is fresh
+    let handle;
+    let root;
+    if (isMobile()) {
+      handle = openSheet({ title: ACTION.updateProgress, subtitle: v.title, content, onClose });
+      root = handle.body;
+    } else {
+      handle = openPopover({ trigger, content, width: 300, label: ACTION.updateProgress, onClose });
+      root = handle.el;
+    }
+    offSlider = mountProgressSlider(root, commitProgress);
+    root.addEventListener('click', (ev) => {
+      if (ev.target instanceof Element && ev.target.closest('[data-picker-finish]')) { handle.close(); openLog(); }
+    });
+  }
+
+  function ctaAction(btn) {
+    if (!user) return;
+    const e = getEntry();
+    if (!e) addBook('to_read', btn);
+    else if (e.status === 'to_read') changeStatus('reading', { message: TOAST.startedReading });
+    else if (e.status === 'reading') openProgressPicker(btn);
+    else openLog();
+  }
+
+  // ── Secondary actions menu ────────────────────────────────────────────────
+  function menuItems() {
+    const e = getEntry();
+    if (!e) {
+      return [
+        { id: 'add:reading', label: `Add as ${statusLabel('reading')}`, icon: STATUS.reading.icon },
+        { id: 'add:done', label: `Add as ${statusLabel('done')}`, icon: STATUS.done.icon },
+      ];
+    }
+    const stateItems = e.status === 'to_read' ? [{ id: 'log', label: ACTION.logRead, icon: 'plus' }]
+      : e.status === 'reading' ? [
+        { id: 'finish', label: ACTION.markFinished, icon: 'check' },
+        { id: 'status:to_read', label: ACTION.moveTo(statusLabel('to_read')), icon: STATUS.to_read.icon },
+      ]
+        : [{ id: 'status:reading', label: ACTION.moveTo(statusLabel('reading')), icon: STATUS.reading.icon }];
+    return [
+      { id: 'edit', label: 'Edit details & cover', icon: 'pencil' },
+      { id: 'attach', label: 'Attach metadata', icon: 'link' },
+      { id: 'merge', label: 'Merge with another book', icon: 'merge' },
+      { kind: 'separator' },
+      ...stateItems,
+      { kind: 'separator' },
+      { id: 'remove', label: ACTION.removeFromLibrary, icon: 'trash-2', danger: true },
+    ];
+  }
+  function onMenuSelect(id) {
+    if (id === 'edit') openEditDetails();
+    else if (id === 'attach') openAttach();
+    else if (id === 'merge') openMerge();
+    else if (id === 'remove') removeBook();
+    else if (id === 'log' || id === 'finish') openLog();
+    else if (id?.startsWith('status:')) changeStatus(id.slice(7));
+    else if (id?.startsWith('add:')) addBook(id.slice(4), el.querySelector('[data-hero-cta] [data-action="cta"]'));
+  }
+
+  // ── Modals: edit details · attach metadata · merge ────────────────────────
+  function openEditDetails() {
+    const v = view();
+    const e = v.e;
+    if (!e) return;
+    const formId = uid('bk-edit');
+    const offs = [];
+    const modal = openModal({
+      title: 'Edit details & cover',
+      subtitle: 'Changes apply to your copy of this book only.',
+      onClose: () => offs.forEach(off => off()),
+      content: html`
+        <form id="${formId}" class="space-y-4" novalidate>
+          ${field({ name: 'title', label: 'Title', required: true, value: v.title, maxlength: 500, attrs: 'data-autofocus' })}
+          ${field({ name: 'authors', label: 'Authors', value: v.authors.join(', '), hint: 'Separate authors with commas' })}
+          ${field({ name: 'coverUrl', label: 'Cover image URL', type: 'url', value: v.cover ?? '', placeholder: 'https://' })}
+          <div class="grid grid-cols-2 gap-3">
+            ${field({ name: 'pageCount', label: 'Page count', type: 'number', min: 1, max: 100000, step: 1, value: v.pages ?? '' })}
+            ${field({ name: 'publishedDate', label: 'Published', value: v.published ?? '', placeholder: 'e.g. 2021-03-15' })}
+          </div>
+          ${field({ name: 'categories', label: 'Categories', value: v.categories.join(', '), hint: 'Separate categories with commas' })}
+          ${field({ name: 'description', label: 'Description', type: 'textarea', rows: 5, maxlength: 20000, value: plainText(v.description) })}
+          <p class="field__error" role="alert" data-form-error hidden></p>
+        </form>`,
+      footer: html`${button({ label: ACTION.cancel, variant: 'ghost', attrs: 'data-modal-close' })}${button({ label: ACTION.save, variant: 'primary', type: 'submit', attrs: `form="${formId}" data-save` })}`,
+    });
+    offs.push(mountFields(modal.body));
+    const form = modal.body.querySelector('form');
+    const saveBtn = modal.el.querySelector('[data-save]');
+    const errEl = modal.body.querySelector('[data-form-error]');
+    const showError = (msg) => { errEl.textContent = msg; errEl.hidden = !msg; };
+    form.addEventListener('input', (ev) => {
+      showError('');
+      const t = ev.target;
+      if (t instanceof HTMLElement && t.getAttribute('aria-invalid')) setFieldError(t, null);
+    });
+    let saving = false;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (saving) return;
+      const fd = new FormData(form);
+      const get = (k) => String(fd.get(k) ?? '').trim();
+      let ok = true;
+      const fail = (name, msg) => { setFieldError(form.elements.namedItem(name), msg); ok = false; };
+      const title = get('title');
+      const coverUrl = get('coverUrl');
+      const pageRaw = get('pageCount');
+      const pageCount = pageRaw ? Number(pageRaw) : null;
+      if (!title) fail('title', 'Enter a title');
+      if (coverUrl && !(/^https?:\/\//i.test(coverUrl) && safeUrl(coverUrl))) fail('coverUrl', "That URL can't be used");
+      if (pageRaw && !(Number.isInteger(pageCount) && pageCount >= 1 && pageCount <= 100000)) fail('pageCount', 'Enter a number between 1 and 100000');
+      if (!ok) { form.querySelector('[aria-invalid="true"]')?.focus(); return; }
+      const authors = splitList(get('authors'));
+      const categories = splitList(get('categories'));
+      // Only send what changed: every field sent becomes a per-user override of the shared record
+      const changes = {};
+      if (title !== v.title) changes.title = title;
+      if (authors.join('|') !== v.authors.join('|')) changes.authors = authors.length ? authors : null;
+      if (coverUrl !== (v.cover ?? '')) changes.coverUrl = coverUrl || null;
+      if (pageCount !== (v.pages ?? null)) changes.pageCount = pageCount;
+      if (get('publishedDate') !== (v.published ?? '')) changes.publishedDate = get('publishedDate') || null;
+      if (categories.join('|') !== v.categories.join('|')) changes.categories = categories.length ? categories : null;
+      if (get('description') !== plainText(v.description)) changes.description = get('description') || null;
+      if (!Object.keys(changes).length) { modal.close(); return; }
+      saving = true;
+      modal.setBusy(true);
+      setButtonLoading(saveBtn, true);
       try {
-        await api.deleteComment(bookId, row.dataset.commentId);
-        row.remove();
+        const row = await api.updateMetadata(e.id, changes);
+        upsertLibraryEntry(row);
+        modal.close();
+        toast(TOAST.detailsSaved);
       } catch (err) {
-        showToast(err.message, 'error');
+        saving = false;
+        modal.setBusy(false);
+        setButtonLoading(saveBtn, false);
+        showError(err?.message || "Couldn't save details — try again");
       }
     });
-  });
-}
+  }
 
-// ── Metadata search ────────────────────────────────────────────────────────────
-
-async function runMetaSearch(container, q, libId, onAttached) {
-  const el = container.querySelector('#meta-results');
-  if (!el) return;
-  el.innerHTML = `<p class="text-muted text-xs">Searching…</p>`;
-  try {
-    const results = await api.search({ q });
-    if (!results.length) {
-      el.innerHTML = `<p class="text-muted text-xs italic">No results.</p>`;
-      return;
-    }
-    el.innerHTML = results.slice(0, 8).map((b, i) => `
-      <div class="flex gap-2 items-center bg-surface-2 rounded-lg px-3 py-2">
-        ${b.coverUrl
-          ? `<img src="${escHtml(b.coverUrl)}" class="w-8 h-11 object-cover rounded flex-shrink-0" />`
-          : `<div class="w-8 h-11 bg-border/40 rounded flex-shrink-0"></div>`}
-        <div class="flex-1 min-w-0">
-          <p class="text-xs font-medium line-clamp-1">${escHtml(b.title)}</p>
-          <p class="text-[10px] text-muted line-clamp-1">${escHtml((b.authors ?? []).join(', '))}</p>
-          <div class="flex items-center gap-1.5">
-            ${b.publishedDate ? `<p class="text-[10px] text-muted">${escHtml(b.publishedDate)}</p>` : ''}
-            ${sourceBadgeHTML(b.source)}
-          </div>
-        </div>
-        <button class="attach-meta-btn text-[10px] px-2 py-1 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/40 transition-colors flex-shrink-0"
-                data-idx="${i}">Attach</button>
-      </div>`).join('');
-
-    el.querySelectorAll('.attach-meta-btn').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        e.stopPropagation();
-        const b = results[Number(btn.dataset.idx)];
-        btn.textContent = '…'; btn.disabled = true;
-        try {
-          await api.updateMetadata(libId, {
-            googleId:      b.googleId,
-            openLibraryId: b.openLibraryId,
-            appleId:       b.appleId,
-            coverUrl:      b.coverUrl,
-            categories:    b.categories,
-            pageCount:     b.pageCount,
-            publishedDate: b.publishedDate,
-          });
-          btn.textContent = '✓ Done';
-          btn.classList.replace('bg-amber-500/20', 'bg-green-800/40');
-          btn.classList.replace('text-amber-400', 'text-green-400');
-          onAttached();
-        } catch (err) {
-          btn.textContent = '✗'; btn.disabled = false;
-          showToast(err.message, 'error');
-        }
-      });
+  function openAttach() {
+    const v = view();
+    const e = v.e;
+    if (!e) return;
+    const modal = openModal({
+      title: 'Attach metadata',
+      subtitle: 'Pick a match to fill in missing details and link this book to its source.',
+      content: html`
+        <form class="flex items-end gap-2" data-search-form novalidate>
+          <div class="flex-1 min-w-0">${field({ name: 'q', label: 'Search', type: 'search', value: v.title, placeholder: 'Title, author or ISBN', attrs: 'data-autofocus' })}</div>
+          ${button({ label: 'Search', variant: 'secondary', type: 'submit', icon: 'search' })}
+        </form>
+        <div class="mt-4 space-y-2" data-results aria-live="polite"></div>`,
     });
+    const form = modal.body.querySelector('[data-search-form]');
+    const results = modal.body.querySelector('[data-results]');
+    let found = [];
+    let seq = 0;
+
+    async function run(q) {
+      const mine = ++seq;
+      results.innerHTML = String(skeletonList(3));
+      try {
+        found = (await api.search(q)).slice(0, 8);
+      } catch {
+        if (mine === seq) results.innerHTML = String(emptyState({ icon: 'alert-circle', title: ERROR.searchFailed, size: 'sm' }));
+        return;
+      }
+      if (mine !== seq) return;
+      results.innerHTML = String(found.length
+        ? html`<ul class="space-y-2">${found.map((b, i) => html`
+            <li class="flex items-center gap-3 rounded-md bg-surface-2 p-2">
+              ${cover({ url: b.coverUrl, title: b.title, size: 'xs' })}
+              <div class="min-w-0 flex-1">
+                <p class="text-small font-medium line-clamp-1">${b.title}</p>
+                <p class="text-caption text-text-2 line-clamp-1">${[(b.authors ?? []).join(', '), String(b.publishedDate ?? '').slice(0, 4)].filter(Boolean).join(' · ')}</p>
+                ${b.source && SOURCE_LABEL[b.source] ? badge({ label: SOURCE_LABEL[b.source], variant: 'outline' }) : ''}
+              </div>
+              ${button({ label: 'Attach', variant: 'secondary', size: 'sm', attrs: `data-attach="${i}"` })}
+            </li>`)}</ul>`
+        : emptyState({ icon: 'search', title: 'No results', body: 'Try a different title or the ISBN.', size: 'sm' }));
+    }
+
+    form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const q = String(new FormData(form).get('q') ?? '').trim();
+      if (q) run(q);
+    });
+    delegate(modal.body, 'click', '[data-attach]', async (ev, btn) => {
+      const b = found[Number(btn.dataset.attach)];
+      const entry = getEntry();
+      if (!b || !entry) return;
+      setButtonLoading(btn, true);
+      const body = {};
+      for (const [k, val] of Object.entries({
+        googleId: b.googleId, openLibraryId: b.openLibraryId, appleId: b.appleId,
+        coverUrl: b.coverUrl, categories: b.categories, pageCount: b.pageCount, publishedDate: b.publishedDate,
+      })) if (val !== undefined && val !== null && val !== '') body[k] = val;
+      try {
+        upsertLibraryEntry(await api.updateMetadata(entry.id, body));
+        modal.close();
+        toast(TOAST.metadataAttached);
+      } catch {
+        setButtonLoading(btn, false);
+        toast("Couldn't attach metadata", { type: 'error' });
+      }
+    });
+    run(v.title);
+  }
+
+  function openMerge() {
+    const v = view();
+    if (!v.e) return;
+    const offs = [];
+    const modal = openModal({
+      title: 'Merge with another book',
+      subtitle: 'This entry is absorbed into the book you pick: shelves, reads and availability move over.',
+      onClose: () => offs.forEach(off => off()),
+      content: html`
+        ${field({ name: 'q', label: 'Find a book in your library', type: 'search', placeholder: 'Title or author', attrs: 'data-autofocus' })}
+        <div class="mt-4" data-results aria-live="polite"></div>`,
+    });
+    const input = modal.body.querySelector('input[name="q"]');
+    const results = modal.body.querySelector('[data-results]');
+
+    function render() {
+      const q = input.value.trim().toLowerCase();
+      const pool = (getState().library ?? []).filter(b => String(b.book_id) !== String(S.book.id));
+      const matches = (q
+        ? pool.filter(b => String(b.title).toLowerCase().includes(q) || (b.authors ?? []).some(a => String(a).toLowerCase().includes(q)))
+        : pool).slice(0, 8);
+      results.innerHTML = String(matches.length
+        ? html`<ul class="space-y-2">${matches.map(b => html`
+            <li class="flex flex-wrap items-center gap-3 rounded-md bg-surface-2 p-2">
+              ${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, size: 'xs' })}
+              <div class="min-w-0 flex-1">
+                <p class="text-small font-medium line-clamp-1">${b.title}</p>
+                <p class="text-caption text-text-2 line-clamp-1">${(b.authors ?? []).join(', ')}</p>
+              </div>
+              <button type="button" class="btn btn--secondary btn--sm" data-confirm="Merge “${v.title}” into “${b.title}”? This can't be undone." data-confirm-verb="Merge" data-keep-id="${b.book_id}"><span class="btn__label">Merge into this</span></button>
+            </li>`)}</ul>`
+        : emptyState({ icon: 'search', title: EMPTY.noMatch.title, body: EMPTY.noMatch.body, size: 'sm' }));
+    }
+    input.addEventListener('input', render);
+    render();
+
+    offs.push(mountConfirmInline(modal.body, {
+      onConfirm: async (trigger) => {
+        const keepId = Number(trigger.dataset.keepId);
+        const buttons = [...modal.body.querySelectorAll('button')];
+        buttons.forEach((b) => { b.disabled = true; });
+        try {
+          await api.mergeBooks(keepId, Number(S.book.id));
+        } catch {
+          buttons.forEach((b) => { b.disabled = false; });
+          toast("Couldn't merge", { type: 'error' });
+          return;
+        }
+        modal.close();
+        toast(TOAST.booksMerged);
+        location.hash = `#book/${keepId}`;
+        loadLibrary();
+      },
+    }));
+  }
+
+  // ── Notes autosave ────────────────────────────────────────────────────────
+  let notesTimer = null;
+  let notesBusy = false;
+  const notesStatus = (text, tone) => {
+    const n = el.querySelector('[data-notes-status]');
+    if (!n) return;
+    n.textContent = text;
+    n.className = `text-caption mt-1 min-h-4 ${tone === 'error' ? 'text-danger' : tone === 'ok' ? 'text-success' : ''}`;
+  };
+  async function saveNotes() {
+    clearTimeout(notesTimer);
+    const e = getEntry();
+    if (!e || S.notes.draft === null || notesBusy) return;
+    const text = S.notes.draft;
+    if (text === (e.notes ?? '')) { S.notes.draft = null; return; }
+    notesBusy = true;
+    try {
+      upsertLibraryEntry(await api.updateNotes(e.id, text || null));
+      if (S.notes.draft === text) S.notes.draft = null;
+      notesStatus('Saved', 'ok');
+      setTimeout(() => notesStatus('', ''), 1500);
+    } catch {
+      notesStatus('Not saved — try again', 'error');
+    } finally {
+      notesBusy = false;
+      if (S.notes.draft !== null && S.notes.draft !== text) notesTimer = setTimeout(saveNotes, 400);   // typed during the request
+    }
+  }
+  cleanups.push(() => { if (S.notes.draft !== null) saveNotes(); clearTimeout(notesTimer); });
+
+  // ── Comments ──────────────────────────────────────────────────────────────
+  async function postComment(form) {
+    const ta = form.elements.namedItem('body');
+    const btn = form.querySelector('[type="submit"]');
+    const body = ta.value.trim();
+    if (!body) return;
+    setButtonLoading(btn, true);
+    setFieldError(ta, null);
+    try {
+      S.comments = [...S.comments, await api.addComment(S.book.id, body)];
+      ta.value = '';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));   // counter
+      renderComments();
+    } catch {
+      setFieldError(ta, "Couldn't post — try again");
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  }
+
+  async function onConfirmed(trigger) {
+    const kind = trigger.dataset.confirmAction;
+    const id = Number(trigger.dataset.id);
+    if (kind === 'session') {
+      try {
+        await api.deleteSession(S.book.id, id);
+        S.sessions = S.sessions.filter(s => Number(s.id) !== id);
+        renderHistory();
+        renderHero();
+        toast(TOAST.readDeleted);
+      } catch { toast("Couldn't delete read", { type: 'error' }); }
+    } else if (kind === 'comment') {
+      try {
+        await api.deleteComment(S.book.id, id);
+        S.comments = S.comments.filter(c => Number(c.id) !== id);
+        renderComments();
+      } catch { toast("Couldn't delete comment", { type: 'error' }); }
+    }
+  }
+
+  // ── Wiring (delegated, once) ──────────────────────────────────────────────
+  cleanups.push(mountProgressSlider(el, commitProgress));   // before the first render: see openProgressPicker
+  cleanups.push(mountCoverZoom(el, { alt: S.book.title }));
+  cleanups.push(mountFields(el));
+  cleanups.push(mountConfirmInline(el, { onConfirm: onConfirmed }));
+  cleanups.push(mountChipGroup(el, ({ name, value, active }) => {
+    if (name === 'status') changeStatus(value);
+    else if (name === 'shelf') toggleShelf(value, active);
+  }));
+  cleanups.push(mountMenuTriggers(el, { selector: '[data-more]', getItems: menuItems, onSelect: onMenuSelect }));
+  cleanups.push(mountBookGrid(el, {
+    onOpen: (_entry, card) => {
+      const href = card?.querySelector('a.book-card__title')?.getAttribute('href');
+      if (href) location.hash = href;
+    },
+  }));
+
+  cleanups.push(delegate(el, 'click', '[data-action]', (ev, t) => {
+    const action = t.dataset.action;
+    if (action === 'back') {
+      if (history.length > 1) history.back();
+      else location.hash = user ? '#library' : '#community/feed';
+    } else if (action === 'cta') ctaAction(t);
+    else if (action === 'finish' || action === 'log-read') openLog();
+    else if (action === 'edit-read') {
+      const s = S.sessions.find(x => Number(x.id) === Number(t.dataset.sessionId));
+      if (s) openLog(s);
+    } else if (action === 'toggle-desc') {
+      const p = el.querySelector('[data-desc-text]');
+      const expanded = p.classList.toggle('line-clamp-6') === false;
+      t.setAttribute('aria-expanded', String(expanded));
+      t.querySelector('.btn__label').textContent = expanded ? 'Show less' : ACTION.showMore;
+    }
+  }));
+  cleanups.push(delegate(el, 'input', 'textarea[name="notes"]', (ev, ta) => {
+    S.notes.draft = ta.value;
+    notesStatus('', '');
+    clearTimeout(notesTimer);
+    notesTimer = setTimeout(saveNotes, 900);
+  }));
+  cleanups.push(delegate(el, 'focusout', 'textarea[name="notes"]', () => { saveNotes(); }));
+  cleanups.push(delegate(el, 'submit', '[data-comment-form]', (ev, form) => { ev.preventDefault(); postComment(form); }));
+
+  // ── Initial paint + store subscription ────────────────────────────────────
+  const sig = {};
+  const sigs = () => {
+    const v = view();
+    const e = v.e;
+    const m = aboutModel();
+    return {
+      hero: JSON.stringify([e?.id ?? null, e?.status, v.title, v.authors, v.cover, v.pages, v.published, v.categories]),
+      reading: JSON.stringify([e?.id ?? null, e?.status, e?.shelf_ids, getShelves().map(s => [s.id, s.name, s.color])]),
+      about: JSON.stringify([v.description, m.inSeries.map(b => b.book_id), m.narrated.map(b => b.book_id)]),
+      tabs: String(!!e),
+    };
+  };
+  Object.assign(sig, sigs());
+
+  renderHero();
+  renderTabs();
+  renderReading();
+  renderAbout();
+  slot('community').innerHTML = String(communityHTML());
+  applyPanels();
+
+  cleanups.push(subscribe(() => {
+    const next = sigs();
+    if (next.tabs !== sig.tabs) {
+      sig.tabs = next.tabs;
+      if (next.tabs === 'true') S.tab = 'reading';   // just added to the library: show the tracking panel
+      renderTabs();
+    }
+    if (next.hero !== sig.hero) { sig.hero = next.hero; renderHero(); }
+    if (next.reading !== sig.reading) { sig.reading = next.reading; renderReading(); }
+    if (next.about !== sig.about) { sig.about = next.about; renderAbout(); }
+  }));
+
+  // ── Live Audiobookshelf progress ──────────────────────────────────────────
+  const absAvail = S.availability.find(a => a.service === 'audiobookshelf');
+  if (user && absAvail) {
+    cleanups.push(openSse('/api/integrations/sse', (msg) => {
+      try {
+        const m = JSON.parse(msg.data);
+        if (m.type !== 'progress' || m.data?.libraryItemId !== absAvail.external_id) return;
+        const raw = m.data.progress ?? (m.data.duration > 0 ? m.data.currentTime / m.data.duration : null);
+        if (raw == null) return;
+        const pct = Math.round(raw * 100);
+        const wrap = el.querySelector('[data-abs-progress]');
+        if (!wrap) return;
+        wrap.hidden = false;
+        const bar = wrap.querySelector('.progress');
+        bar?.style.setProperty('--progress', `${pct}%`);
+        bar?.setAttribute('aria-valuenow', String(pct));
+        wrap.querySelector('[data-abs-label]').textContent = `${pct}% complete`;
+        const dur = Number(wrap.dataset.absDuration);
+        wrap.querySelector('[data-abs-remaining]').textContent = (dur && pct < 100) ? `${hoursMins(Math.round(dur * (1 - pct / 100)))} remaining` : '';
+      } catch { /* malformed event */ }
+    }));
+  }
+
+  return runCleanups;
   } catch (err) {
-    el.innerHTML = `<p class="text-red-400 text-xs">${escHtml(err.message)}</p>`;
+    runCleanups();
+    throw err;
   }
 }
-

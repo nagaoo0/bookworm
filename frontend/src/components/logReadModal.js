@@ -1,107 +1,128 @@
+// Log-a-read modal (design-system §5.17, §9). The one entry point for creating and editing a read.
+//
+//   openLogReadModal(book, onSaved)
+//     book    { id, title, startedAt?, session? }
+//             startedAt  library entry's started_reading_at; prefills "Started" (new reads only)
+//             session    an existing reading_sessions row -> edit mode (PATCH) instead of create (POST)
+//     onSaved called with the saved session row after the modal has closed
+//
+// The modal owns its feedback: inline error on failure, toast "Read logged" / "Read updated" on success.
+// A new read with a finish date also moves the book to Finished (library entry, store and toast included),
+// so callers only need to refresh their own data in `onSaved` and must not toast themselves.
 import { api } from '../api.js';
-import { starRatingHTML, attachStarHandlers } from './starRating.js';
-import { escHtml, trapFocus, localDayKey } from '../utils.js';
+import { getState } from '../store.js';
+import { upsertLibraryEntry } from '../libraryStore.js';
+import { html, localDayKey } from '../utils.js';
+import {
+  openModal, button, setButtonLoading, field, setFieldError, mountFields, starInput, mountStarInput,
+  toast, uid, ACTION, TOAST, ERROR,
+} from '../ui/index.js';
 
-// book: { id, title, startedAt? } — startedAt (the library entry's
-// started_reading_at) prefills the Started field; Finished defaults to today.
-export function openLogReadModal(book, onSuccess) {
-  document.getElementById('log-read-modal')?.remove();
+/**
+ * YYYY-MM-DD for the date inputs. Date-only values are stored as midnight UTC, so those keep their UTC day;
+ * real timestamps (started_reading_at, integration-created reads) are shown in the viewer's local day.
+ */
+export function dayKey(value) {
+  if (!value) return '';
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T00:00:00(\.0+)?(Z|\+00:00)$/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? '' : localDayKey(d);
+}
+
+export function openLogReadModal(book, onSaved) {
+  const session = book?.session ?? null;
+  const editing = !!session;
   const today = localDayKey();
-  const started = book.startedAt ? String(book.startedAt).slice(0, 10) : '';
-  const modal = document.createElement('div');
-  modal.id = 'log-read-modal';
-  modal.className = 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4';
-  modal.setAttribute('role', 'dialog');
-  modal.setAttribute('aria-modal', 'true');
-  modal.setAttribute('aria-label', `Log a read of ${book.title}`);
-  modal.innerHTML = `
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="log-modal-backdrop"></div>
-    <div class="relative w-full max-w-md rounded-2xl shadow-2xl"
-         style="background:color-mix(in srgb,var(--color-surface) 97%,transparent);border:1px solid var(--color-border)">
-      <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid var(--color-border)">
-        <div>
-          <p class="font-semibold text-sm text-text">Log a read</p>
-          <p class="text-xs text-muted mt-0.5 line-clamp-1">${escHtml(book.title)}</p>
-        </div>
-        <button id="log-modal-close" class="text-muted hover:text-text transition-colors p-1 text-lg leading-none">✕</button>
+  const formId = uid('log-read');
+
+  const content = html`
+    <form id="${formId}" class="space-y-4" novalidate>
+      <div class="grid grid-cols-2 gap-3">
+        ${field({ name: 'startedAt', label: 'Started', type: 'date', value: editing ? dayKey(session.started_at) : dayKey(book.startedAt) })}
+        ${field({ name: 'finishedAt', label: 'Finished', type: 'date', value: editing ? dayKey(session.finished_at) : today })}
       </div>
-      <div class="px-5 py-5">
-        <form id="log-modal-form" class="space-y-4">
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="text-xs text-muted block mb-1">Started</label>
-              <input type="date" name="startedAt" value="${escHtml(started)}" class="field-input w-full" />
-            </div>
-            <div>
-              <label class="text-xs text-muted block mb-1">Finished</label>
-              <input type="date" name="finishedAt" value="${today}" class="field-input w-full" />
-            </div>
-          </div>
-          <div>
-            <label class="text-xs text-muted block mb-1">Rating</label>
-            <div id="log-modal-stars" class="flex gap-1">${starRatingHTML(0, { interactive: true })}</div>
-          </div>
-          <div>
-            <label class="text-xs text-muted block mb-1">Review <span class="text-muted font-normal">(optional)</span></label>
-            <textarea name="review" rows="3" placeholder="Your thoughts…" maxlength="5000"
-              class="field-input w-full resize-none"></textarea>
-          </div>
-          <p id="log-modal-error" class="text-xs text-red-400 hidden"></p>
-          <div class="flex gap-2">
-            <button type="submit"
-              class="flex-1 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-stone-950 font-semibold rounded-xl py-2.5 text-sm transition-all">
-              Save
-            </button>
-            <button type="button" id="log-modal-skip"
-              class="px-5 py-2.5 text-muted hover:text-text text-sm transition-colors rounded-xl border border-border hover:border-muted">
-              Skip
-            </button>
-          </div>
-        </form>
+      <div class="space-y-1.5">
+        <p class="label">Rating</p>
+        ${starInput({ name: 'rating', value: editing ? (session.rating ?? 0) : 0, size: 28 })}
       </div>
-    </div>`;
-  document.body.appendChild(modal);
+      ${field({ name: 'review', label: 'Review (optional)', type: 'textarea', rows: 4, maxlength: 5000, value: editing ? (session.review ?? '') : '', placeholder: 'Your thoughts' })}
+      <p class="field__error" role="alert" data-form-error hidden></p>
+    </form>`;
 
-  const untrap = trapFocus(modal);
-  const closeModal = () => {
-    document.removeEventListener('keydown', onKeyDown);
-    untrap();
-    modal.remove();
+  const footer = html`${button({ label: ACTION.cancel, variant: 'ghost', attrs: 'data-modal-close' })}${
+    button({ label: ACTION.save, variant: 'primary', type: 'submit', attrs: `form="${formId}" data-save` })}`;
+
+  const offs = [];
+  const modal = openModal({
+    title: editing ? 'Edit read' : ACTION.logRead,
+    subtitle: book?.title ?? '',
+    content,
+    footer,
+    onClose: () => offs.forEach(off => off()),
+  });
+  offs.push(mountFields(modal.body), mountStarInput(modal.body));
+
+  const form = modal.body.querySelector('form');
+  const saveBtn = modal.el.querySelector('[data-save]');
+  const errEl = modal.body.querySelector('[data-form-error]');
+  const startedEl = form.elements.startedAt;
+  const finishedEl = form.elements.finishedAt;
+
+  const showError = (msg) => { errEl.textContent = msg; errEl.hidden = !msg; };
+  const checkDates = () => {
+    const bad = !!(startedEl.value && finishedEl.value && finishedEl.value < startedEl.value);
+    setFieldError(finishedEl, bad ? "Finished date can't be before the started date" : null);
+    return !bad;
   };
-  const onKeyDown = e => {
-    // The router may have removed the modal on navigation; just drop the listener then
-    if (!modal.isConnected) { document.removeEventListener('keydown', onKeyDown); untrap(); return; }
-    if (e.key === 'Escape') closeModal();
-  };
-  document.addEventListener('keydown', onKeyDown);
-  modal.querySelector('#log-modal-backdrop')?.addEventListener('click', closeModal);
-  modal.querySelector('#log-modal-close')?.addEventListener('click', closeModal);
-  modal.querySelector('#log-modal-skip')?.addEventListener('click', closeModal);
+  form.addEventListener('input', () => { showError(''); if (finishedEl.getAttribute('aria-invalid')) checkDates(); });
 
-  let modalRating = 0;
-  const starsEl = modal.querySelector('#log-modal-stars');
-  if (starsEl) attachStarHandlers(starsEl, val => { modalRating = val; });
-
-  modal.querySelector('#log-modal-form')?.addEventListener('submit', async e => {
+  let saving = false;
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const fd = new FormData(e.target);
-    const errEl = modal.querySelector('#log-modal-error');
-    const submitBtn = modal.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Saving…';
+    if (saving || !checkDates()) return;
+    const fd = new FormData(form);
+    const payload = {
+      startedAt: fd.get('startedAt') || null,
+      finishedAt: fd.get('finishedAt') || null,
+      rating: Number(fd.get('rating')) || null,
+      review: String(fd.get('review') ?? '').trim() || null,
+    };
+    saving = true;
+    showError('');
+    modal.setBusy(true);
+    setButtonLoading(saveBtn, true);
+    let saved;
     try {
-      await api.addSession(book.id, {
-        startedAt:  fd.get('startedAt')  || null,
-        finishedAt: fd.get('finishedAt') || null,
-        rating:     modalRating || null,
-        review:     fd.get('review')     || null,
-      });
-      closeModal();
-      onSuccess?.();
+      saved = editing
+        ? await api.updateSession(book.id, session.id, payload)
+        : await api.addSession(book.id, payload);
     } catch (err) {
-      if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Save';
+      saving = false;
+      modal.setBusy(false);
+      setButtonLoading(saveBtn, false);
+      showError(err?.message || "Couldn't save this read — try again");
+      return;
     }
+
+    // A finished read moves the book to Finished (no-op when it already is, or when it isn't in the library)
+    let movedToFinished = false;
+    let statusFailed = false;
+    if (!editing && payload.finishedAt) {
+      const entry = (getState().library ?? []).find(b => String(b.book_id) === String(book.id));
+      if (entry && entry.status !== 'done') {
+        try {
+          upsertLibraryEntry(await api.setStatus(entry.id, 'done'));
+          movedToFinished = true;
+        } catch { statusFailed = true; }
+      }
+    }
+
+    modal.close();
+    toast(editing ? TOAST.readUpdated : TOAST.readLogged);
+    if (movedToFinished) toast(TOAST.markedFinished);
+    if (statusFailed) toast(ERROR.changeStatus, { type: 'error' });
+    try { onSaved?.(saved); } catch { /* the caller's refresh must not break the modal */ }
   });
 }
