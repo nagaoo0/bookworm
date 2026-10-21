@@ -2,7 +2,7 @@
 
 # Bookworm
 
-A self-hosted personal reading tracker. Track what you're reading, what you want to read, and what you've finished. Log multiple reads of the same book with individual ratings and reviews. Organise books into custom shelves. Search Google Books, Open Library and Apple Books (all queried side by side for redundancy), or add books manually.
+A self-hosted personal reading tracker. Track what you're reading, what you want to read, and what you've finished. Log multiple reads of the same book with individual ratings and reviews. Organise books into custom shelves. Search Google Books, Open Library and Apple Books (all queried side by side for redundancy), or add books manually. Share your shelves on a public profile, follow other readers, join challenges and reading groups, and sync reading progress from Audiobookshelf or Calibre-Web.
 
 ## Stack
 
@@ -53,6 +53,8 @@ docker compose down -v       # wipe data (fresh start)
 
 ## Local development (without Docker)
 
+### With your own Postgres
+
 Start Postgres however you like, then:
 
 ```bash
@@ -67,6 +69,22 @@ npm install
 npm run dev
 # Open http://localhost:5173
 ```
+
+### Without Docker or Postgres: embedded database
+
+`scripts/dev-pglite.mjs` runs the real API against an embedded [PGlite](https://pglite.dev) database (Postgres compiled to WASM), stored in `backend/.pglite-data`. Install the backend dependencies first (`cd backend && npm install`), then, from the repo root:
+
+```bash
+# Terminal 1 — API on localhost:3000, backed by the embedded database
+node scripts/dev-pglite.mjs
+
+# Terminal 2 — frontend (proxies /api to localhost:3000)
+cd frontend && npm install && npm run dev
+# Open http://localhost:5173
+```
+
+- `PGLITE_FRESH=1 node scripts/dev-pglite.mjs` deletes `backend/.pglite-data` and starts from an empty database.
+- `DEV_WATCH=1 node scripts/dev-pglite.mjs` restarts the API when files change. It is opt-in: PGlite serves a single connection, and a watch restart can leave it unreachable, in which case stop and start the script.
 
 ### Tests
 
@@ -134,7 +152,7 @@ Profiles are public by default. A user marked private (`isPublic: false` via `PA
 
 ### reCAPTCHA v3 (optional but recommended for open registration)
 
-Bookworm can require a reCAPTCHA v3 token when users register. This repository now ships with support for reCAPTCHA v3: the frontend will load the site key and call grecaptcha.execute before sending a registration request; the backend verifies the token with Google's siteverify endpoint.
+Bookworm can require a reCAPTCHA v3 token when users register. The frontend loads the site key and call grecaptcha.execute before sending a registration request; the backend verifies the token with Google's siteverify endpoint.
 
 Set the following environment variables to enable reCAPTCHA:
 

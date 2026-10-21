@@ -17,31 +17,170 @@ browser
     └── pgdata volume
 ```
 
-In development the frontend Vite dev server proxies `/api` to `localhost:3000` (configured in `frontend/vite.config.js`), so no CORS setup is needed.
+In development the frontend Vite dev server proxies `/api` to `localhost:3000` (configured in `frontend/vite.config.js`), so no CORS setup is needed. Without Docker, `node scripts/dev-pglite.mjs` runs the same API against an embedded PGlite database instead of the `db` container (see "Running locally" below).
 
 ## Frontend
+
+Vanilla JS (ES modules) built with Vite, styled with Tailwind CSS v4, Chart.js on the Stats views. No framework: a view is a function that renders into a root element, and the router owns navigation.
 
 **`frontend/src/`**
 
 ```
-main.js           Hash router (#home / #search / #stats), app shell, nav
-store.js          Tiny in-memory state store with subscribe/setState
-api.js            fetch() wrapper — all HTTP calls go through here
+main.js           Shell (header, bottom bar, account menu, notifications, quick-add sheet),
+                  hash router, session bootstrap (GET /auth/me), offline banner
+store.js          Global state: getState / setState / subscribe (keys below)
+libraryStore.js   loadLibrary(), upsertLibraryEntry(), removeLibraryEntries(), resetLibraryStore()
+api.js            fetch wrapper for every /api call; a 401 on a live session fires the session-expired handler
+sse.js            openSse(url, onMessage): EventSource with exponential reconnect (1 s → 30 s)
+prefs.js          Theme / accent / card size in localStorage (bw_prefs); applyPrefs(), savePrefs()
+utils.js          html`` template, raw(), safeUrl(), safeColor(), coverProxySrc(), trapFocus()
+styles.css        Design tokens (per theme and accent), Tailwind entry, component CSS
+index.html        Pre-paint theme script, font links, service-worker registration
 
 views/
-  home.js         Library view — renders shelves and shelf manager
-  search.js       Search view — quick search, advanced search, manual add
-  stats.js        Stats view — totals, per-year bar chart, avg rating
+  auth.js         Sign in / create account (rendered by the router, not a hash route)
+  home.js         #home dashboard: currently reading, up next, yearly goal, followed activity, integration widgets
+  library.js      #library: status and shelf views, filter/sort, grid/list, bulk actions, shelf manager
+  discover.js     #discover: online search (quick + advanced), recent searches, recommendations, manual add
+  book.js         #book/:id: sessions, notes, status and shelves, progress, comments, availability, "readers also have"
+  community.js    #community/:tab: feed, people, challenges, groups
+  feedCard.js     Activity card and follow button, used by Home, Community and Profile
+  profile.js      #u/:username: hero, reading / shelves / history / stats / grid tabs, Year in review
+  stats.js        #stats/overview and #stats/year: totals, charts, heatmap, yearly goal
+  settings/       index.js (section shell) plus account, admin, appearance, integrations, libraryTools,
+                  profile, reading; common.js holds shared helpers (patchUser, ...)
 
 components/
-  bookCard.js     Book cover card HTML (used in both library and search)
-  starRating.js   Star rating HTML + interactive click handlers
-  modal.js        Book detail modal — reading sessions list and log form
+  logReadModal.js openLogReadModal(book, onSaved): the log-a-read dialog (Home, Library, Discover, Book)
+
+ui/               Component kit (below). The only place new components come from
 ```
 
-**State flow:** `loadLibrary()` fetches shelves + library from the API and calls `setState()`. The store notifies all subscribers; `main.js` subscribes and re-renders the active view.
+`sse.js` is used by Home and Book. `#discover/scan` and `?scan=1` are parsed by the router, but no view handles them yet (barcode scanning is on the roadmap).
 
-**Routing:** Hash-based (`#home`, `#search`, `#stats`). No framework — `location.hash` + `hashchange` event.
+**Routing** (`main.js`)
+
+Hash routes, matched in order by `resolveRoute()`. An unknown hash goes to `#home`, an invalid sub-route redirects to its parent, and redirects are applied with `history.replaceState` (at most 4 hops).
+
+| Hash route | View → export | Params | Public (no session) |
+|---|---|---|---|
+| `#home` (default) | `home.js` → `renderHome` | — | no |
+| `#library`, `#library/status/<to_read\|reading\|done>`, `#library/shelf/:id` | `library.js` → `renderLibrary` | `status?`, `shelfId?` | no |
+| `#discover`, `#discover?q=…`, `#discover/manual` or `?manual=1` | `discover.js` → `renderDiscover` | `q?`, `manual?` | no |
+| `#book/:id`: local numeric id, or `g:` / `ol:` / `a:` + external id | `book.js` → `renderBook` | `id` | yes |
+| `#community/<feed\|people\|challenges\|groups>` | `community.js` → `renderCommunity` | `tab` | `feed` and `people` only |
+| `#u/:username`, `#u/:username/<reading\|shelves\|history\|stats\|grid\|year>`, `#u/:username/year/:yyyy` | `profile.js` → `renderProfile` | `username`, `tab?`, `year?` | yes |
+| `#stats/overview`, `#stats/year`, `#stats/year/:yyyy` | `stats.js` → `renderStats` | `tab`, `year?` | no |
+| `#settings`, `#settings/<profile\|account\|appearance\|reading\|integrations\|library-tools\|admin>` | `settings/index.js` → `renderSettings` | `section?` | no |
+| `#auth`, `#auth/register`, `#auth?next=<hash>` | `auth.js` → `renderAuth` | `mode`, `next` | yes (the sign-in screen) |
+
+Legacy and invalid URLs:
+
+| URL | Goes to |
+|---|---|
+| `#search` (query kept) | `#discover` |
+| `#users` | `#community/feed` |
+| `#wrapped`, `#u/:username/wrapped` | `#stats/year`, `#u/:username/year` |
+| `#admin` | `#settings/admin` (non-admins: `#settings/profile`) |
+| unknown `#community/…`, `#library/status/…`, `#stats/…`, `#settings/…` | the route's default (`feed`, `#library`, `overview`, `#settings`) |
+
+A non-public route reached without a session shows the sign-in screen with `next` set to the requested hash, and signing in returns there.
+
+**View contract** (full table in `docs/redesign-contract.md`)
+
+```js
+export function renderX(el, params) → (cleanup: () => void) | Promise<cleanup> | void
+```
+
+| Rule | Detail |
+|---|---|
+| Root | `el` is a fresh, empty `<div>` for each navigation; render only into it |
+| Cleanup | Tear down everything started: document/window listeners, `subscribe()` unsubscribers, `openSse` closers, observers, chart instances, timers |
+| Overlays | The router calls `closeAllOverlays()` before every view and on `hashchange` |
+| Stale renders | `renderToken` increments on every navigation and session change. A render that finishes late runs its own cleanup and writes into a detached root |
+| Lazy loading | Views load through `import.meta.glob` (code-split). A missing view file shows a "being rebuilt" state instead of breaking the build |
+| Errors | A render that throws shows the load-error state with a retry button |
+| Focus | After render, focus moves to the view's `<h1>` (also announced); a view that focuses an element itself is left alone |
+| Current user | `getState().user` (null when signed out) |
+
+**State** (`store.js`, `libraryStore.js`)
+
+One object. `setState(patch)` shallow-merges and notifies every subscriber with the new state.
+
+| Key | Written by | Meaning |
+|---|---|---|
+| `route`, `routeParams` | router | current route id and params |
+| `user` | shell (sign-in, theme) and Settings (`patchUser`) | `{ id, username, isAdmin, isPublic, bio, avatarUrl, bannerUrl, accent, prefs }`, or null |
+| `unreadCount` | shell | header bell badge; polled every 60 s and on tab focus |
+| `shelves`, `library`, `libraryLoaded`, `loading`, `error` | `libraryStore.js` only | library data |
+| `searchResults`, `searchQuery`, `stats`, `modal`, `selectedShelfId` | none | legacy, unused by the redesign |
+
+Library helpers (`libraryStore.js`, the only writers of library data):
+
+| Function | Use |
+|---|---|
+| `loadLibrary()` | Fetch shelves and library in parallel; a newer load supersedes an older one |
+| `upsertLibraryEntry(row)` | After a single-entry PATCH that returns the full row: replace or insert locally, no refetch |
+| `removeLibraryEntries(ids)` | After removals |
+| `resetLibraryStore()` | On sign-out: clear state and drop in-flight writes from the old session |
+
+Views that render library data call `subscribe()` and unsubscribe in their cleanup.
+
+**`ui/` component kit**
+
+`ui/` is the component library for every screen (`import { … } from '../ui/index.js'`). It implements [`docs/design-system.md`](design-system.md) §4–§5, and [`frontend/src/ui/README.md`](../frontend/src/ui/README.md) lists the exports and rules. The short version:
+
+- Render functions return `html` output. Behaviour lives in `mount*(root, …)` functions that attach delegated listeners and return a cleanup.
+- Overlays (modal, sheet, menu, popover, command palette) register in `ui/overlay.js`, so the router can close them all.
+- Statuses come from `ui/status.js`, copy and labels from `ui/copy.js`, icons from `icons.js` (Lucide subset).
+- The old `components/*` files (bookCard, modal, starRating, toast, …) have been removed. Only `logReadModal.js` remains in `components/`, and new code uses `ui/` for everything else.
+
+**Theming**
+
+| Setting | Values (default first) | Where it is applied |
+|---|---|---|
+| Theme: `data-theme` on `<html>` | `dark`, `light`, `sepia`, `system` | Token blocks `html[data-theme="…"]` in `styles.css`. `system` follows `prefers-color-scheme`; `prefs.js` listens for changes |
+| Accent: `data-accent` | `amber`, `blue`, `teal`, `rose` | Accent tokens in `styles.css`. `.accent-scope[data-accent]` scopes an accent to one subtree (used for another user's profile) |
+| Card size | `medium`, `miniature`, `small`, `large` | `--grid-min-col` on `:root`, read by `.book-grid` |
+
+- **Pre-paint:** the inline script in `index.html` reads `localStorage.bw_prefs` and sets `data-theme`, `data-accent` and `theme-color` before any CSS is parsed, so there is no flash. It repeats the page-background colours from `styles.css` and `prefs.js`; keep all three in sync.
+- **`prefs.js`:** `savePrefs(patch)` stores only the keys that were set, re-applies them, and dispatches `bw:prefs` and `prefs:change` (detail includes `resolvedTheme`) so canvas charts can redraw.
+- **Server sync:** `api.updatePrefs()` sends `PATCH /api/auth/me` with `prefs` and is best effort. On sign-in the server copy wins (`applyServerPrefs()` in `main.js`); the accent comes from the `users.accent` column.
+
+**Escaping and URLs** (`utils.js`)
+
+| Helper | Rule |
+|---|---|
+| `` html`…` `` | Escapes every interpolated value. Arrays are joined; `null` and `false` render empty. Returns a SafeHTML value: use `String(x)` or `innerHTML = x` |
+| `raw(str)` | Marks trusted markup (component output) so `html` does not escape it. Never wrap user data |
+| `escHtml(str)` | Low-level escaping that `html` uses |
+| `safeUrl(url)` | Allows `http(s)://` URLs and in-app `/…` or `#…` paths. Anything else becomes `''` |
+| `safeColor(c)` | Accepts `#` followed by 3–8 hex digits. Anything else becomes a neutral grey |
+| `coverProxySrc(url, bookId)` | Routes an external cover through `/api/covers/:bookId` when a book id is known; otherwise returns the URL as is |
+| `attrs` strings in `ui/` | Trusted. Built in code, never from user input |
+
+**PWA and service worker**
+
+- `public/manifest.json` and the icons (`logo.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`). `index.html` registers `/sw.js` on window `load`.
+- `public/sw.js` (cache `bookworm-v2`) precaches the shell (`/`, `/index.html`, manifest, logo, icons), so a cold offline launch opens the app.
+- Navigations are network first. A successful HTML response refreshes the cached `/index.html`; if the network fails, the cached page is served.
+- `/assets/*` (hashed bundles) is cache first. `/api/*` and `/.well-known/*` are never intercepted.
+- The shell shows an offline banner from the `offline` and `online` events.
+
+**Running locally**
+
+```bash
+# API: the Docker-free embedded database (from the repo root; see README), or your own Postgres
+node scripts/dev-pglite.mjs                                  # API on :3000
+cd backend && npm install && DATABASE_URL=postgres://… npm run dev
+
+# Frontend
+cd frontend && npm install && npm run dev                    # http://localhost:5173
+```
+
+- Vite proxies `/api` to `localhost:3000` (`frontend/vite.config.js`), so the browser sees one origin.
+- `npm run build` writes `frontend/dist`. The frontend image serves it through nginx (`frontend/nginx.conf`).
+- There is no frontend test suite. Check UI changes in a browser, at desktop and 375 px widths, in dark and light.
 
 ## Backend
 
