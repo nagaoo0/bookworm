@@ -151,7 +151,7 @@ function openAddSheet() {
   const rows = [
     { icon: 'search', label: 'Search books', href: '#discover' },
     { icon: 'pencil', label: 'Add manually', href: '#discover?manual=1' },
-    { icon: 'upload', label: 'Import from Goodreads or StoryGraph', href: '#settings/library-tools' },
+    { icon: 'upload', label: 'Import a library file', href: '#settings/library-tools' },
   ];
   const content = document.createElement('div');
   content.innerHTML = String(html`<ul class="flex flex-col gap-1">${rows.map(r => html`<li>

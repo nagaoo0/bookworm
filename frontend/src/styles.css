@@ -218,19 +218,6 @@ html[data-accent],
 .accent-scope[data-accent] {
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   --focus-ring: var(--accent-text);
-  /* legacy names still read by un-migrated views (var(--color-accent), getPropertyValue) */
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-}
-
-/* Legacy aliases of the new tokens — delete at migration step 8 (spec §12.2).
-   Plain custom properties so inline styles and getComputedStyle() keep working. */
-html {
-  --color-bg: var(--surface-0);
-  --color-surface: var(--surface-1);
-  --color-border: var(--border-2);
-  --color-text: var(--text-1);
-  --color-muted: var(--text-2);
 }
 
 /* ── 3. Tailwind bindings ─────────────────────────────────────────────────────
@@ -282,26 +269,6 @@ html {
   /* existing markup keeps rendering sensibly: serif = book voice, sans = UI voice */
   --font-serif: 'Lora', Georgia, serif;
   --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-
-  /* ── Migration aliases (old names → new tokens); delete at step 8 ── */
-  --color-bg: var(--surface-0);
-  --color-surface: var(--surface-1);
-  --color-border: var(--border-2);
-  --color-text: var(--text-1);
-  --color-muted: var(--text-2);
-  /* amber-* follows the accent. The `var(--color-amber-N, …)` fallback form lets
-     views that still set --color-amber-N inline (profile accent) keep working. */
-  --color-amber-300: var(--color-amber-300, var(--accent-hover));
-  --color-amber-400: var(--color-amber-400, var(--accent-hover));
-  --color-amber-500: var(--color-amber-500, var(--accent));
-  /* status-ish palette colours used as text → semantic foregrounds (readable in every theme) */
-  --color-green-400: var(--success-fg);
-  --color-emerald-300: var(--success-fg);
-  --color-red-300: var(--danger-fg);
-  --color-red-400: var(--danger-fg);
-  --color-blue-200: var(--info-fg);
-  --color-blue-300: var(--info-fg);
-  --color-blue-400: var(--info-fg);
 }
 
 /* Type scale (design-system §3). Family / tracking / case come from .h1 .h2 … below. */
@@ -371,13 +338,11 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--text-2); }
 
 /* Hidden-scrollbar horizontal scrollers */
-.shelf-bar,
 .scroller,
 .chip-group__scroll {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.shelf-bar::-webkit-scrollbar,
 .scroller::-webkit-scrollbar,
 .chip-group__scroll::-webkit-scrollbar { display: none; }
 .scroller {
@@ -405,17 +370,11 @@ body {
   from { opacity: 0; transform: translateY(-6px) scale(.98); }
   to   { opacity: 1; transform: none; }
 }
-@keyframes barSlideIn { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-@keyframes notifPulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 50%, transparent); }
-  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 0%, transparent); }
-}
 
-/* Page enter: class added by the router once per mount (.fade-in kept for old views) */
-.page-enter,
-.fade-in { animation: fadeInUp var(--dur-base) var(--ease-out) both; }
+/* Page enter: class added by the router once per mount */
+.page-enter { animation: fadeInUp var(--dur-base) var(--ease-out) both; }
 
 /* Card stagger: first mount only, capped at 12 children (spec §11) */
 .stagger > * { animation: fadeInUp var(--dur-slow) var(--ease-out) both; }
@@ -575,46 +534,6 @@ svg.icon { flex-shrink: 0; }
 .field__select { appearance: none; -webkit-appearance: none; padding-right: 2.25rem; cursor: pointer; }
 .field__select-icon { position: absolute; right: .75rem; display: inline-flex; color: var(--text-3); pointer-events: none; }
 
-/* Legacy input classes used by un-migrated views */
-.field-input {
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--border-2);
-  border-radius: var(--radius-md);
-  padding: .5rem .75rem;
-  font-size: .875rem;
-  color: var(--text-1);
-  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
-  outline: none;
-}
-.field-input::placeholder { color: var(--text-3); }
-.field-input:focus { border-color: var(--accent-text); box-shadow: 0 0 0 3px var(--accent-soft); }
-.glass-input {
-  background: var(--surface-2);
-  border: 1px solid var(--border-2);
-  color: var(--text-1);
-  outline: none;
-  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
-}
-.glass-input::placeholder { color: var(--text-3); }
-.glass-input:focus { border-color: var(--accent-text); box-shadow: 0 0 0 3px var(--accent-soft); }
-.library-search {
-  background: var(--surface-1);
-  border: 1px solid var(--border-2);
-  color: var(--text-1);
-  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
-  outline: none;
-}
-.library-search::placeholder { color: var(--text-3); }
-.library-search:focus { border-color: var(--accent-text); box-shadow: 0 0 0 3px var(--accent-soft); }
-.section-sort-select {
-  background: var(--surface-1);
-  border: 1px solid var(--border-2);
-  color: var(--text-2);
-  transition: border-color var(--dur-fast), color var(--dur-fast);
-}
-.section-sort-select:focus { outline: none; border-color: var(--accent-text); color: var(--text-1); }
-
 /* ── Switch / Checkbox ────────────────────────────────────────────────────── */
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 44px; }
 .switch-row__text { min-width: 0; }
@@ -755,39 +674,6 @@ svg.icon { flex-shrink: 0; }
 .segmented--block { display: flex; }
 .segmented--block .segmented__item { flex: 1; }
 
-/* Legacy chips/pills (un-migrated views) */
-.shelf-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: .25rem .75rem;
-  border-radius: var(--radius-full);
-  border: 1px solid;
-  font-size: .75rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
-  white-space: nowrap;
-  user-select: none;
-}
-.shelf-chip-active { background: var(--accent-soft); border-color: var(--accent-text); color: var(--accent-text); }
-.shelf-chip-idle { background: transparent; border-color: var(--border-2); color: var(--text-2); }
-.shelf-chip-idle:hover { border-color: var(--text-3); color: var(--text-1); }
-.year-pill-group { display: flex; gap: .375rem; flex-wrap: wrap; }
-.year-pill {
-  padding: .375rem .875rem;
-  border-radius: var(--radius-full);
-  font-size: .8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid var(--border-2);
-  background: transparent;
-  color: var(--text-2);
-  transition: background-color var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
-  -webkit-tap-highlight-color: transparent;
-}
-.year-pill:hover { border-color: var(--text-3); color: var(--text-1); }
-.year-pill-active { background: var(--accent-soft); border-color: var(--accent-text); color: var(--accent-text); }
-
 /* ── Badge / StatusBadge ──────────────────────────────────────────────────── */
 .badge {
   display: inline-flex;
@@ -814,20 +700,6 @@ svg.icon { flex-shrink: 0; }
 .status-done    { background: var(--status-done-soft);    color: var(--status-done-fg); }
 .status-to-read { background: var(--status-to-read-soft); color: var(--status-to-read-fg); }
 
-/* Legacy count pill */
-.count-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.5rem;
-  height: 1.25rem;
-  padding: 0 .375rem;
-  border-radius: var(--radius-full);
-  font-size: .75rem;
-  font-weight: 600;
-  line-height: 1;
-}
-
 /* ── Card / SectionHeader / EmptyState / StatCard ─────────────────────────── */
 .card {
   display: block;
@@ -848,22 +720,6 @@ svg.icon { flex-shrink: 0; }
 .card--interactive:hover { border-color: var(--border-2); transform: translateY(-2px); box-shadow: var(--shadow-2); }
 .card--glass {
   background: color-mix(in srgb, var(--surface-1) 92%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-/* Legacy card classes */
-.card-section {
-  background: var(--surface-1);
-  border-radius: var(--radius-lg);
-  padding: 1.25rem;
-  border: 1px solid var(--border-1);
-  transition: border-color var(--dur-base);
-}
-.card-section:focus-within { border-color: color-mix(in srgb, var(--accent-text) 40%, transparent); }
-.glass-card {
-  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
-  border: 1px solid var(--border-1);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -968,8 +824,7 @@ svg.icon { flex-shrink: 0; }
 .cover.is-broken .cover__placeholder { display: flex; }
 .cover.is-broken .cover__img { display: none; }
 
-.cover__placeholder,
-.cover-placeholder {
+.cover__placeholder {
   position: absolute;
   inset: 0;
   align-items: center;
@@ -984,9 +839,7 @@ svg.icon { flex-shrink: 0; }
   line-height: 1.1;
   background: linear-gradient(160deg, var(--surface-2) 0%, var(--surface-1) 60%, color-mix(in srgb, var(--surface-2) 80%, var(--accent)) 100%);
 }
-.cover-placeholder { position: relative; display: flex; inset: auto; font-size: .6875rem; }
-.cover__placeholder::before,
-.cover-placeholder::before {
+.cover__placeholder::before {
   content: '';
   position: absolute;
   left: 0;
@@ -1028,7 +881,6 @@ svg.icon { flex-shrink: 0; }
 }
 .avatar__img { width: 100%; height: 100%; object-fit: cover; }
 .avatar--ring { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--accent); }
-.avatar-glow { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px color-mix(in srgb, var(--accent) 50%, transparent); }
 
 /* ── Book card ────────────────────────────────────────────────────────────── */
 .book-card { position: relative; transition: transform var(--dur-base) var(--ease-out); }
@@ -1081,8 +933,6 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 .book-card--compact { flex: 0 0 8rem; width: 8rem; }
 @media (min-width: 768px) { .book-card--compact { flex-basis: 10rem; width: 10rem; } }
 
-.finish-reading-btn, .remove-card-btn { transition: opacity var(--dur-fast); }
-
 /* ── Progress ─────────────────────────────────────────────────────────────── */
 .progress { position: relative; width: 100%; height: 8px; border-radius: var(--radius-full); background: var(--surface-2); overflow: hidden; }
 .progress--sm { height: 4px; }
@@ -1092,7 +942,6 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 .progress--success .progress__fill { background: var(--success-fg); }
 .progress--info .progress__fill { background: var(--info-fg); }
 .progress__tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--surface-0); opacity: .7; }
-.progress-fill { transition: width var(--dur-slow) var(--ease-out); }
 .progress-row { display: flex; align-items: center; gap: .75rem; }
 .progress-row__value { font-size: .8125rem; font-variant-numeric: tabular-nums; color: var(--text-2); min-width: 2.5rem; text-align: right; }
 
@@ -1142,11 +991,6 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 }
 .star-input__btn[data-on="true"] { color: var(--accent); }
 .star-input__btn:hover { transform: scale(1.12); }
-/* legacy */
-.star-btn { cursor: pointer; transition: color .1s, transform .1s; }
-.star-btn.filled { color: var(--accent); }
-.star-btn.empty  { color: var(--border-2); }
-.star-btn:hover  { color: var(--accent-hover); transform: scale(1.2); }
 
 /* ── Overlay plumbing, Modal / Sheet ──────────────────────────────────────── */
 .modal {
@@ -1217,11 +1061,6 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 .modal--sheet .modal__handle { display: block; }
 .modal.is-closing .modal__scrim { opacity: 0; transition: opacity var(--dur-fast); }
 .modal.is-closing .modal__panel { opacity: 0; transition: opacity var(--dur-fast); }
-
-/* Legacy modal animation hooks */
-.modal-backdrop { animation: backdropIn var(--dur-base) ease both; }
-.modal-card { animation: modalScaleIn var(--dur-slow) var(--ease-spring) both; }
-.panel-enter { animation: panelDown var(--dur-base) var(--ease-out) both; }
 
 /* ── Menu / Popover ───────────────────────────────────────────────────────── */
 .menu,
@@ -1350,18 +1189,6 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 .tabs--pills .tabs__tab[aria-selected="true"] { background: var(--accent-soft); }
 .tabs--pills .tabs__indicator { display: none; }
 .tab-panel[hidden] { display: none; }
-/* legacy indicator (un-migrated views) */
-.tab-active-indicator {
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 2px 2px 0 0;
-  transform-origin: left center;
-  animation: barSlideIn var(--dur-base) var(--ease-out) both;
-}
 
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 #toast-container {
@@ -1454,30 +1281,23 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
   border-bottom: 1px solid var(--border-1);
   transition: background-color var(--dur-base);
 }
-.glass-dropdown {
-  background: color-mix(in srgb, var(--surface-0) 97%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
 
-.nav-link-inactive,
-.nav-link-mob-inactive,
 .nav__link {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 .75rem;
   color: var(--text-2);
   border-radius: var(--radius-md);
+  font-size: .9375rem;
+  font-weight: 500;
+  text-decoration: none;
   transition: color var(--dur-fast), background-color var(--dur-fast);
 }
-.nav__link { display: inline-flex; align-items: center; height: 36px; padding: 0 .75rem; font-size: .9375rem; font-weight: 500; text-decoration: none; }
-.nav-link-mob-inactive { border-radius: var(--radius-lg); }
-.nav-link-inactive:hover,
-.nav-link-mob-inactive:hover,
 .nav__link:hover { color: var(--text-1); background: var(--surface-2); }
-.nav-link-active,
 .nav__link[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
-.nav-link-mob-active { background: var(--accent-soft); color: var(--accent-text); border-radius: var(--radius-lg); }
 
-/* Bottom bar. NOTE: legacy markup hides it at ≥ 640px; the converted shell moves this to md (768). */
-#bottom-nav,
+/* Bottom bar: shown below md (768px) only. */
 .bottom-bar {
   position: fixed;
   bottom: 0;
@@ -1493,10 +1313,8 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .bottom-bar { display: flex; }
-@media (min-width: 640px) { #bottom-nav { display: none !important; } }
 @media (min-width: 768px) { .bottom-bar { display: none !important; } }
 
-.bot-nav-item,
 .bottom-bar__item {
   position: relative;
   display: flex;
@@ -1512,14 +1330,8 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
   -webkit-tap-highlight-color: transparent;
   border-radius: 0;
 }
-.bot-nav-icon { width: 1.375rem; height: 1.375rem; flex-shrink: 0; transition: transform var(--dur-fast) var(--ease-spring); }
-.bot-nav-label,
 .bottom-bar__label { font-size: 11px; font-weight: 500; letter-spacing: .01em; line-height: 14px; }
-.bot-nav-item-active,
 .bottom-bar__item[aria-current="page"] { color: var(--accent-text); }
-.bot-nav-item-active .bot-nav-icon { transform: translateY(-1px) scale(1.1); }
-.bot-nav-item-active .bot-nav-label { font-weight: 600; }
-.bot-nav-item-active::before,
 .bottom-bar__item[aria-current="page"]::before {
   content: '';
   position: absolute;
@@ -1532,9 +1344,7 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
   border-radius: var(--radius-full);
   pointer-events: none;
 }
-.bot-nav-item-inactive,
 .bottom-bar__item { color: var(--text-2); }
-.bot-nav-item-inactive:hover,
 .bottom-bar__item:hover { color: var(--text-1); background: var(--surface-2); }
 .bottom-bar__item[aria-current="page"]:hover { background: transparent; color: var(--accent-text); }
 .bottom-bar__item > svg { position: relative; }
@@ -1564,149 +1374,20 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
   #main-content { padding-bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + 1rem); }
 }
 
-/* Legacy mobile FAB (replaced by .bottom-bar__add after the shell conversion) */
-#mobile-fab {
-  position: fixed;
-  right: 1rem;
-  bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + .75rem);
-  z-index: var(--z-sticky);
-  width: 3.25rem;
-  height: 3.25rem;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-2);
-  transition: transform var(--dur-fast) var(--ease-spring), background-color var(--dur-fast);
-  -webkit-tap-highlight-color: transparent;
-}
-#mobile-fab:active { transform: scale(.9); }
-#mobile-fab:hover { background: var(--accent-hover); }
-@media (min-width: 640px) { #mobile-fab { display: none !important; } }
-
-/* ── Misc legacy / page-level blocks ──────────────────────────────────────── */
-/* Reading carousel → .scroller + bookCard({variant:'compact'}) */
-.reading-carousel {
-  display: flex;
-  gap: .875rem;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  padding-bottom: 2px;
-}
-.reading-carousel::-webkit-scrollbar { display: none; }
-.reading-carousel-card {
-  scroll-snap-align: start;
-  flex-shrink: 0;
-  width: 10rem;
-  display: flex;
-  flex-direction: column;
-  gap: .5rem;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-@media (max-width: 639px) { .reading-carousel-card { width: 8.5rem; } }
-
-#cover-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--lightbox-scrim);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  animation: backdropIn var(--dur-base) ease both;
-  cursor: zoom-out;
-}
-#cover-lightbox img {
-  max-width: min(90vw, 400px);
-  max-height: 90vh;
-  object-fit: contain;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-3);
-  animation: modalScaleIn var(--dur-slow) var(--ease-spring) both;
-}
-
 /* Sticky book CTA (mobile) */
-#sticky-book-cta,
 .book-cta--sticky {
   position: fixed;
   bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + .75rem);
   left: 1rem;
-  right: 4.25rem;
+  right: 1rem;
   z-index: var(--z-sticky);
   animation: fadeInUp var(--dur-base) var(--ease-out) both;
 }
-.book-cta--sticky { right: 1rem; }
-@media (min-width: 640px) { #sticky-book-cta { display: none !important; } }
 @media (min-width: 768px) { .book-cta--sticky { display: none !important; } }
-
-.recent-searches-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: var(--surface-1);
-  border: 1px solid var(--border-1);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-3);
-  z-index: var(--z-menu);
-  overflow: hidden;
-  animation: panelDown var(--dur-base) var(--ease-out) both;
-}
-.recent-search-item {
-  display: flex;
-  align-items: center;
-  gap: .625rem;
-  padding: .625rem .875rem;
-  font-size: .875rem;
-  color: var(--text-1);
-  cursor: pointer;
-  transition: background-color var(--dur-fast);
-  border: none;
-  background: none;
-  width: 100%;
-  text-align: left;
-  -webkit-tap-highlight-color: transparent;
-}
-.recent-search-item:hover { background: var(--surface-2); }
-
-.follow-btn-transition { transition: background-color var(--dur-base), color var(--dur-base), transform var(--dur-fast), box-shadow var(--dur-base); }
-.follow-btn-transition:active { transform: scale(.95); }
-.notif-pulse { animation: notifPulse 1.8s ease-in-out infinite; }
-.reading-section-heading { position: relative; }
-.reading-section-heading::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  width: 100%;
-  height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent-text) 40%, transparent) 0%, transparent 100%);
-}
-.gradient-text {
-  background: linear-gradient(135deg, var(--accent-text) 0%, color-mix(in srgb, var(--accent-text) 70%, var(--text-1)) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
 
 /* Profile hero: always light-on-dark, whatever the theme (scrim guarantees contrast) */
 .hero { position: relative; color: #fff; }
 .hero__scrim { position: absolute; inset: 0; background: var(--hero-scrim); pointer-events: none; }
-
-/* Touch: always show the quick actions on legacy cards */
-@media (hover: none) {
-  .finish-reading-btn,
-  .remove-card-btn { opacity: 1 !important; }
-}
 
 /* ── Offline banner ───────────────────────────────────────────────────────── */
 #offline-banner {
@@ -1730,16 +1411,6 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 }
 #offline-banner.offline-visible { transform: translateY(0); }
 
-/* ═════════════════════════════════════════════════════════════════════════════
-   7. Migration compat — delete with the aliases at step 8 (spec §12.2)
-   Un-migrated views use `text-amber-*` for accent-coloured TEXT. A palette alias
-   can't tell text from fills, so remap text uses to --accent-text (readable in
-   light / sepia) while fills (`bg-amber-*`) keep following --accent.
-   ═════════════════════════════════════════════════════════════════════════════ */
-[class^="text-amber-"],
-[class*=" text-amber-"] { color: var(--color-amber-400, var(--accent-text)); }
-[class*="hover:text-amber-"]:hover { color: var(--color-amber-400, var(--accent-text)); }
-
 /* ── Accessibility: respect reduced-motion preference ─────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1751,6 +1422,5 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
   .skeleton { animation: none; }
   .book-card:hover,
   .card--interactive:hover,
-  .star-input__btn:hover,
-  .star-btn:hover { transform: none; }
+  .star-input__btn:hover { transform: none; }
 }

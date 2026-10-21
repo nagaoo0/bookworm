@@ -276,7 +276,7 @@ export function onboardingHTML() {
       ${emptyState({ icon: EMPTY.libraryEmpty.icon, title: EMPTY.libraryEmpty.title, body: EMPTY.libraryEmpty.body })}
       <div class="mt-4 grid gap-3 sm:grid-cols-3">
         ${tile('search', 'Add a book', 'Search by title, author or ISBN.', '#discover')}
-        ${tile('upload', 'Import from Goodreads or StoryGraph', 'Bring in your history from a CSV export.', '#settings/library-tools')}
+        ${tile('upload', 'Import a library file', 'Bring in your history from a file exported from Bookworm.', '#settings/library-tools')}
         ${tile('headphones', 'Connect Audiobookshelf or Calibre', 'Sync the books you already own.', '#settings/integrations')}
       </div>
     </div>`;
