@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { getState } from '../store.js';
 import { showToast } from '../components/toast.js';
 import { avatarHTML } from '../components/avatar.js';
+import { inlineConfirm } from '../components/inlineConfirm.js';
 import { escHtml, coverProxySrc } from '../utils.js';
 
 let feedFilter = 'all'; // 'all' | 'following'
@@ -102,19 +103,21 @@ function render(container, users, feed, challenges, groups) {
     btn.addEventListener('click', () => setTab(btn.dataset.tab));
   });
 
-  // Feed filter
+  // Feed filter. The delegated feed listeners were bound once to #feed-content
+  // above; swapping its innerHTML here must not bind them again.
+  let feedReq = 0;
   container.querySelectorAll('.feed-filter-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       feedFilter = btn.dataset.filter;
       feedFilterSetByUser = true;
+      const req = ++feedReq;
       const feedContent = container.querySelector('#feed-content');
       feedContent.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
       try {
         const newFeed = await api.getFeed(feedFilter === 'following' ? 'following' : undefined);
-        feedContent.innerHTML = renderFeed(newFeed);
-        attachFeedInteractions(feedContent);
+        if (req === feedReq) feedContent.innerHTML = renderFeed(newFeed);
       } catch {
-        feedContent.innerHTML = `<p class="text-muted italic text-center py-10">Could not load feed.</p>`;
+        if (req === feedReq) feedContent.innerHTML = `<p class="text-muted italic text-center py-10">Could not load feed.</p>`;
       }
       container.querySelectorAll('.feed-filter-btn').forEach(b => {
         const active = b.dataset.filter === feedFilter;
@@ -543,13 +546,15 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
 
   // ── Delete ──
   el.querySelectorAll('.delete-challenge-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Delete this challenge? This cannot be undone.')) return;
-      try {
-        await api.deleteChallenge(btn.dataset.id);
-        showToast('Challenge deleted', 'success');
-        await reload();
-      } catch (err) { showToast(err.message, 'error'); }
+    btn.addEventListener('click', () => {
+      inlineConfirm(btn, {
+        label: 'Delete challenge?',
+        onConfirm: async () => {
+          await api.deleteChallenge(btn.dataset.id);
+          showToast('Challenge deleted', 'success');
+          await reload();
+        },
+      });
     });
   });
 
@@ -590,7 +595,7 @@ function renderChallengesTab(el, challenges, rootContainer, users, feed, groups)
           ).slice(0, 4);
 
           // External results, deduplicated against library
-          const extResults = await api.search(q);
+          const extResults = await api.search({ q });
           const libExternalIds = new Set(libMatches.flatMap(b =>
             [b.google_id && `g:${b.google_id}`, b.open_library_id && `ol:${b.open_library_id}`, b.apple_id && `a:${b.apple_id}`].filter(Boolean)
           ));
@@ -734,8 +739,8 @@ function challengeCard(c, isPast = false) {
             <input name="title" class="field-input w-full text-sm" value="${escHtml(c.title)}" required />
             <textarea name="description" class="field-input w-full text-sm resize-none" rows="2">${escHtml(c.description ?? '')}</textarea>
             <div class="flex gap-2">
-              <input name="startDate" type="date" class="field-input flex-1 text-sm" value="${c.start_date}" />
-              <input name="endDate"   type="date" class="field-input flex-1 text-sm" value="${c.end_date}" />
+              <input name="startDate" type="date" class="field-input flex-1 text-sm" value="${escHtml(c.start_date)}" />
+              <input name="endDate"   type="date" class="field-input flex-1 text-sm" value="${escHtml(c.end_date)}" />
             </div>
             <div class="flex gap-2">
               <button type="submit" class="flex-1 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-semibold rounded-lg text-xs transition-colors">Save</button>
@@ -770,7 +775,7 @@ function challengeCard(c, isPast = false) {
                 </a>
                 <div class="flex-1 min-w-0">
                   <a href="#book/${b.book_id}" class="text-xs font-medium text-text hover:text-amber-400 transition-colors line-clamp-1">${escHtml(b.title)}</a>
-                  <p class="text-[11px] text-muted line-clamp-1">${Array.isArray(b.authors) ? b.authors.slice(0, 2).join(', ') : (b.authors ?? '')}</p>
+                  <p class="text-[11px] text-muted line-clamp-1">${escHtml(Array.isArray(b.authors) ? b.authors.slice(0, 2).join(', ') : (b.authors ?? ''))}</p>
                 </div>
                 <span class="flex-shrink-0 text-sm ${b.done ? 'text-green-400' : b.in_library ? 'text-amber-400' : 'text-border'}"
                       title="${b.done ? 'Finished' : b.in_library ? 'In your library' : 'Not in your library'}">
@@ -881,7 +886,7 @@ function renderGroupsTab(el, groups, rootContainer, _users, _feed, _challenges) 
     btn.addEventListener('click', async () => {
       try {
         await api.leaveGroup(btn.dataset.id);
-        renderUsers(rootContainer);
+        if (el.isConnected) renderUsers(rootContainer); // not if the user already left this view
       } catch (err) { showToast(err.message, 'error'); }
     });
   });
@@ -957,7 +962,7 @@ function showGroupForm(el, mode, rootContainer) {
       try {
         await api.createGroup({ name: fd.get('name'), description: fd.get('description') });
         showToast('Group created!', 'success');
-        renderUsers(rootContainer);
+        if (wrap.isConnected) renderUsers(rootContainer);
       } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
     });
   } else {
@@ -968,7 +973,7 @@ function showGroupForm(el, mode, rootContainer) {
       try {
         await api.joinGroup(fd.get('code'));
         showToast('Joined group!', 'success');
-        renderUsers(rootContainer);
+        if (wrap.isConnected) renderUsers(rootContainer);
       } catch (err) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
     });
   }

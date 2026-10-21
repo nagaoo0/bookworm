@@ -1,8 +1,10 @@
 import { api } from '../api.js';
+import { escHtml, localDayKey } from '../utils.js';
 import { Chart, ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend, PieController, BarController } from 'chart.js';
 
 Chart.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend, PieController, BarController);
 
+// Returns the view's cleanup (destroys the Chart.js instances)
 export async function renderStats(container) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
@@ -12,19 +14,23 @@ export async function renderStats(container) {
       api.getGoal(currentYear).catch(() => null),
       api.getIntegrationStatus('audiobookshelf').catch(() => null),
     ]);
-    render(container, s, {}, goal, absStatus);
+    return render(container, s, {}, goal, absStatus);
   } catch (err) {
-    container.innerHTML = `<p class="text-red-400 text-center py-20">${err.message}</p>`;
+    container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
   }
 }
 
+// Renders the stats content and returns a cleanup that destroys its charts.
 export function render(container, s, opts = {}, goal = null, absStatus = null) {
   const allYearKeys = new Set([
     ...Object.keys(s.perYear ?? {}),
     ...Object.keys(s.absSessionsByYear ?? {}),
   ]);
   const years = [...allYearKeys].map(Number).sort((a, b) => b - a);
+  // Year shown in the charts / listening card: the latest year with data
   const currentYear = years[0] ?? new Date().getFullYear();
+  // The reading goal belongs to the real current year (that is what was fetched)
+  const goalYear = goal?.year ?? new Date().getFullYear();
 
   const hasCats = Object.keys(s.categoriesByYear ?? {}).length > 0;
   const streak = computeStreak(s.dailySessions ?? {});
@@ -35,7 +41,7 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
     return `
       <section class="bg-surface rounded-xl p-5 ring-1 ring-border/20">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="font-serif text-lg font-semibold">${currentYear} Reading Goal</h2>
+          <h2 class="font-serif text-lg font-semibold">${goalYear} Reading Goal</h2>
           <span class="text-sm text-muted">${goal.booksRead} / ${goal.target} books</span>
         </div>
         <div class="relative w-full bg-surface-2 rounded-full h-3 overflow-hidden">
@@ -120,6 +126,12 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
 
   const barId = opts.barCanvasId ?? 'monthly-chart';
   const pieId = opts.pieCanvasId ?? 'pie-chart';
+  const cleanup = () => {
+    for (const id of [barId, pieId]) {
+      chartInstances[id]?.destroy();
+      delete chartInstances[id];
+    }
+  };
 
   drawMonthlyChart(s.monthly ?? {}, currentYear, barId);
   drawPieChart(s.categoriesByYear ?? {}, currentYear, pieId);
@@ -136,19 +148,24 @@ export function render(container, s, opts = {}, goal = null, absStatus = null) {
       if (listeningCardWrapper) listeningCardWrapper.innerHTML = renderListeningCard(s, y);
     });
   });
+
+  return cleanup;
 }
 
 function computeStreak(dailySessions) {
+  // Day keys are local calendar days; walk back with setDate so DST changes
+  // (23h / 25h days) can't skip or repeat a day
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayKey = today.toISOString().slice(0, 10);
-  const yesterdayKey = new Date(today.getTime() - 86400000).toISOString().slice(0, 10);
-  if (!dailySessions[todayKey] && !dailySessions[yesterdayKey]) return 0;
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const todayKey = localDayKey(today);
+  if (!dailySessions[todayKey] && !dailySessions[localDayKey(yesterday)]) return 0;
   let cur = new Date(today);
   if (!dailySessions[todayKey]) cur.setDate(cur.getDate() - 1);
   let streak = 0;
   while (true) {
-    const key = cur.toISOString().slice(0, 10);
+    const key = localDayKey(cur);
     if ((dailySessions[key] ?? 0) > 0) {
       streak++;
       cur.setDate(cur.getDate() - 1);
@@ -313,7 +330,7 @@ function drawHeatmap(dailySessions, containerId) {
   while (cur <= today) {
     const week = [];
     for (let d = 0; d < 7; d++) {
-      const key = cur.toISOString().slice(0, 10);
+      const key = localDayKey(cur);
       const count = dailySessions[key] ?? 0;
       const isFuture = cur > today;
       week.push({ key, count, isFuture, date: new Date(cur) });

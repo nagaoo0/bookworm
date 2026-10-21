@@ -1,5 +1,49 @@
 export function escHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Trusted-HTML wrapper: `html` returns one of these, and `raw()` creates one,
+// so interpolating either into `html` passes through unescaped.
+class SafeHTML {
+  constructor(str) { this.str = str; }
+  toString() { return this.str; }
+}
+
+export function raw(str) {
+  return new SafeHTML(String(str ?? ''));
+}
+
+function htmlValue(v) {
+  if (v == null || v === false) return '';
+  if (v instanceof SafeHTML) return v.str;
+  if (Array.isArray(v)) return v.map(htmlValue).join('');
+  return escHtml(v);
+}
+
+// Tagged template: escapes every interpolated value (see raw() to opt out).
+export function html(strings, ...values) {
+  let out = strings[0];
+  for (let i = 0; i < values.length; i++) out += htmlValue(values[i]) + strings[i + 1];
+  return new SafeHTML(out);
+}
+
+// YYYY-MM-DD for a Date in the viewer's local time zone (toISOString() would
+// give the UTC date, which is off by one near midnight outside UTC).
+export function localDayKey(date = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// Only http(s) URLs and in-app relative paths (/..., #...) are allowed.
+export function safeUrl(url) {
+  const u = String(url ?? '').trim();
+  if (/^https?:\/\//i.test(u)) return u;
+  if (/^\/(?![/\\])/.test(u) || u.startsWith('#')) return u;
+  return '';
+}
+
+export function safeColor(c) {
+  return typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c) ? c : '#78716c';
 }
 
 // Route external cover URLs through the backend cache (/api/covers) when we

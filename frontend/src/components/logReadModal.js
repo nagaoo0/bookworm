@@ -1,12 +1,12 @@
 import { api } from '../api.js';
 import { starRatingHTML, attachStarHandlers } from './starRating.js';
-import { escHtml, trapFocus } from '../utils.js';
+import { escHtml, trapFocus, localDayKey } from '../utils.js';
 
 // book: { id, title, startedAt? } — startedAt (the library entry's
 // started_reading_at) prefills the Started field; Finished defaults to today.
 export function openLogReadModal(book, onSuccess) {
   document.getElementById('log-read-modal')?.remove();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDayKey();
   const started = book.startedAt ? String(book.startedAt).slice(0, 10) : '';
   const modal = document.createElement('div');
   modal.id = 'log-read-modal';
@@ -68,7 +68,11 @@ export function openLogReadModal(book, onSuccess) {
     untrap();
     modal.remove();
   };
-  const onKeyDown = e => { if (e.key === 'Escape') closeModal(); };
+  const onKeyDown = e => {
+    // The router may have removed the modal on navigation; just drop the listener then
+    if (!modal.isConnected) { document.removeEventListener('keydown', onKeyDown); untrap(); return; }
+    if (e.key === 'Escape') closeModal();
+  };
   document.addEventListener('keydown', onKeyDown);
   modal.querySelector('#log-modal-backdrop')?.addEventListener('click', closeModal);
   modal.querySelector('#log-modal-close')?.addEventListener('click', closeModal);

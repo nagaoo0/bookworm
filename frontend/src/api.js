@@ -1,23 +1,40 @@
 const BASE = '/api';
 
 let _onUnauthorized = null;
+let _loggedIn = false;
 export function setOnUnauthorized(fn) { _onUnauthorized = fn; }
+// The app tells us whether a session is believed to exist; a 401 only means
+// "session expired" when it does.
+export function setLoggedIn(v) { _loggedIn = !!v; }
 
+// A 401 from these is a normal answer (wrong password, anonymous bootstrap),
+// not an expired session.
+const NO_SESSION_EXPIRY = new Set(['POST /auth/login', 'POST /auth/register', 'PATCH /auth/me', 'GET /auth/me']);
+
+// options: method, body (JSON-encoded), headers, signal,
+//   silent401 - never trigger the session-expired handler for this call
+//   raw       - resolve with the Response (after the error checks) instead of parsed JSON
 async function request(path, options = {}) {
+  const { silent401, raw, body, headers, ...rest } = options;
   const res = await fetch(`${BASE}${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    ...rest,
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: body ? JSON.stringify(body) : undefined,
   });
-  if (res.status === 401) {
-    _onUnauthorized?.();
-    throw new Error('Unauthorized');
-  }
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? res.statusText);
+    const data = await res.json().catch(() => null);
+    const err = new Error(data?.error ?? (res.statusText || (res.status === 401 ? 'Unauthorized' : `Request failed (${res.status})`)));
+    err.status = res.status;
+    const key = `${(rest.method ?? 'GET').toUpperCase()} ${path.split('?')[0]}`;
+    if (res.status === 401 && _loggedIn && !silent401 && !NO_SESSION_EXPIRY.has(key)) {
+      _loggedIn = false; // several in-flight requests may 401 together; react once
+      _onUnauthorized?.();
+    }
+    throw err;
   }
+  if (raw) return res;
   if (res.status === 204) return null;
   return res.json();
 }
@@ -33,15 +50,22 @@ export const api = {
 
   getInvites: () => request('/invites'),
   createInvite: () => request('/invites', { method: 'POST' }),
-  deleteInvite: (code) => request(`/invites/${code}`, { method: 'DELETE' }),
+  deleteInvite: (code) => request(`/invites/${encodeURIComponent(code)}`, { method: 'DELETE' }),
 
-  getProfile: (username) => request(`/profiles/${username}`),
+  getProfile: (username) => request(`/profiles/${encodeURIComponent(username)}`),
   getProfileFollowers: (username) => request(`/profiles/${encodeURIComponent(username)}/followers`),
   getProfileFollowing: (username) => request(`/profiles/${encodeURIComponent(username)}/following`),
   getProfileShelf: (username) => request(`/profiles/${encodeURIComponent(username)}/shelf`),
   setShelfSlot: (slot, bookId) => request(`/profile-shelf/${encodeURIComponent(slot)}`, { method: 'PUT', body: { bookId: bookId ?? null } }),
 
-  search: (q) => request(`/search?${typeof q === 'string' && !q.includes('=') ? `q=${encodeURIComponent(q)}` : q}`),
+  // q: a plain query string (-> ?q=...), or a params object / URLSearchParams
+  search: (q, { signal } = {}) => {
+    const src = typeof q === 'string' ? { q } : q;
+    const entries = src instanceof URLSearchParams ? [...src.entries()] : Object.entries(src ?? {});
+    const p = new URLSearchParams();
+    for (const [k, v] of entries) if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
+    return request(`/search?${p}`, { signal });
+  },
 
   getShelves: () => request('/shelves'),
   createShelf: (data) => request('/shelves', { method: 'POST', body: data }),
@@ -82,7 +106,7 @@ export const api = {
   getStats: () => request('/stats'),
 
   getUsers: () => request('/users'),
-  getFeed: (filter) => request(`/feed${filter ? `?filter=${filter}` : ''}`),
+  getFeed: (filter) => request(`/feed${filter ? `?filter=${encodeURIComponent(filter)}` : ''}`),
 
   // Follows
   getFollows: () => request('/follows'),
@@ -131,7 +155,7 @@ export const api = {
   leaveGroup: (id) => request(`/groups/${id}/leave`, { method: 'POST' }),
   getGroupFeed: (id) => request(`/groups/${id}/feed`),
 
-  exportLibrary: () => fetch('/api/import-export/export', { credentials: 'include' }),
+  exportLibrary: () => request('/import-export/export', { raw: true }),
   importLibrary: (csv) => request('/import-export/import', { method: 'POST', body: { csv } }),
 
   // Likes

@@ -1,9 +1,10 @@
 import { api } from '../api.js';
-import { setState, getState } from '../store.js';
+import { setState, getState, subscribe } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
-import { escHtml, coverProxySrc } from '../utils.js';
+import { escHtml, safeUrl, safeColor, coverProxySrc } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
-import { showUndoToast } from '../components/toast.js';
+import { showToast, showUndoToast } from '../components/toast.js';
+import { openSse } from '../sse.js';
 
 // Persists collapse/sort state across re-renders
 const sectionState = {
@@ -21,15 +22,18 @@ const selectedLibIds = new Set();
 // only sent after the toast expires; until then the card is just filtered out.
 const pendingRemovals = new Set();
 
+// The mounted home view (null when another route is showing)
+let _mount = null;
+
 function queueRemoval(libIds, message) {
   const ids = libIds.map(String);
   ids.forEach(id => pendingRemovals.add(id));
-  setState({}); // re-render without the queued cards
+  _mount?.repaintContent(); // re-render the cards without the queued ones (no refetch)
 
   showUndoToast(message, {
     onUndo: () => {
       ids.forEach(id => pendingRemovals.delete(id));
-      setState({});
+      _mount?.repaintContent();
     },
     onCommit: async () => {
       await Promise.all(ids.map(id => api.removeFromLibrary(id).catch(() => {})));
@@ -59,24 +63,114 @@ function sortBooks(books, sort) {
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────────
+// One state change per load. The skeleton (loading: true) is only used for the
+// very first load; later refreshes swap the data in place.
+let _libraryLoadSeq = 0;
 export async function loadLibrary() {
-  setState({ loading: true });
+  const seq = ++_libraryLoadSeq;
+  if (!getState().libraryLoaded) setState({ loading: true, error: null });
   try {
     const [shelves, library] = await Promise.all([api.getShelves(), api.getLibrary()]);
-    setState({ shelves, library, loading: false });
+    if (seq !== _libraryLoadSeq) return; // a newer load is in flight and wins
+    setState({ shelves, library, loading: false, error: null, libraryLoaded: true });
   } catch (err) {
-    setState({ error: err.message, loading: false });
+    if (seq !== _libraryLoadSeq) return;
+    if (getState().libraryLoaded) showToast(`Could not refresh your library: ${err.message}`, 'error');
+    else setState({ error: err.message, loading: false });
   }
 }
 
 // ── Main render ────────────────────────────────────────────────────────────────
-export function renderHome(container) {
-  const { shelves, library: fullLibrary, loading, error } = getState();
-  const library = pendingRemovals.size
-    ? fullLibrary.filter(b => !pendingRemovals.has(String(b.id)))
-    : fullLibrary;
+// Mounts the home view and returns its cleanup. The view subscribes to the store
+// while mounted and repaints only when the library, shelves, loading or error
+// state actually changed. The Now Playing / Recently Added banners (and the SSE
+// connection feeding the former) are created once per mount and survive repaints.
+const NOW_PLAYING_HTML = `
+  <div id="now-playing-banner" class="hidden items-center gap-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl px-4 py-3">
+    <div id="now-playing-cover" class="w-10 h-14 rounded-md overflow-hidden bg-surface-2 flex-shrink-0"></div>
+    <div class="flex-1 min-w-0">
+      <p class="text-xs text-blue-300 font-medium uppercase tracking-wider mb-0.5">Now Listening</p>
+      <p id="now-playing-title" class="text-sm font-semibold text-text truncate"></p>
+      <div class="mt-1.5 w-full bg-blue-500/20 rounded-full h-1">
+        <div id="now-playing-bar" class="h-1 bg-blue-400 rounded-full transition-all duration-500" style="width:0%"></div>
+      </div>
+      <p id="now-playing-pct" class="text-xs text-muted mt-1"></p>
+    </div>
+    <a id="now-playing-link" href="#" class="text-xs text-blue-300 hover:text-blue-200 transition-colors flex-shrink-0">Open →</a>
+  </div>`;
 
-  if (loading) {
+export function renderHome(container) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = NOW_PLAYING_HTML.trim();
+  const recentlyAdded = document.createElement('div');
+  recentlyAdded.id = 'recently-added-banner';
+
+  const mount = {
+    container,
+    nowPlaying: tpl.content.firstElementChild,
+    recentlyAdded,
+    last: null,          // store values the current paint was based on
+    disposed: false,
+    closeSse: null,
+    unsubscribe: null,
+    repaintContent: () => repaintContent(mount),
+  };
+
+  _mount = mount;
+  mount.unsubscribe = subscribe(state => {
+    const l = mount.last;
+    if (l && state.library === l.library && state.shelves === l.shelves
+          && state.loading === l.loading && state.error === l.error) return;
+    paintHome(mount);
+  });
+
+  paintHome(mount);
+
+  // Once per mount, not per paint
+  initNowPlaying(mount);
+  initRecentlyAdded(mount);
+
+  return () => {
+    mount.disposed = true;
+    mount.unsubscribe?.();
+    mount.closeSse?.();
+    resetGridPagers();
+    selectedLibIds.clear();
+    bulkState.selectMode = false;
+    bulkState.updateBulkBar = () => {};
+    if (_mount === mount) _mount = null;
+  };
+}
+
+// Library minus entries hidden behind a pending undo toast
+function visibleLibrary() {
+  const { library } = getState();
+  return pendingRemovals.size ? library.filter(b => !pendingRemovals.has(String(b.id))) : library;
+}
+
+// Re-render just the books area from the data already in memory
+function repaintContent(mount) {
+  if (mount.disposed) return;
+  const { container } = mount;
+  const contentEl = container.querySelector('#shelf-content');
+  if (!contentEl) return;
+  const { shelves, selectedShelfId } = getState();
+  const library = visibleLibrary();
+  renderShelfContent(contentEl, library, shelves, selectedShelfId, container);
+  attachCardHandlers(container, shelves, library);
+}
+
+function paintHome(mount) {
+  const { container } = mount;
+  const { shelves, library: fullLibrary, loading, error } = getState();
+  mount.last = { library: fullLibrary, shelves, loading, error };
+  const library = visibleLibrary();
+
+  // The old DOM (and any selection / pagers on it) is about to go away
+  resetGridPagers();
+  selectedLibIds.clear();
+
+  if (loading && !fullLibrary.length) {
     const count = 12;
     container.innerHTML = `
       <div class="flex flex-col gap-6">
@@ -93,30 +187,17 @@ export function renderHome(container) {
     return;
   }
   if (error) {
-    container.innerHTML = `<div class="text-red-400 text-center py-20">${error}</div>`;
+    container.innerHTML = `<div class="text-red-400 text-center py-20">${escHtml(error)}</div>`;
     return;
   }
 
-  // Persist selected shelf across re-renders
-  const prev = getState().selectedShelfId;
-  const selectedShelfId = prev;
+  const selectedShelfId = getState().selectedShelfId;
 
   container.innerHTML = `
     <div class="flex flex-col gap-6">
 
-      <!-- Now Playing banner (ABS real-time) -->
-      <div id="now-playing-banner" class="hidden items-center gap-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl px-4 py-3">
-        <div id="now-playing-cover" class="w-10 h-14 rounded-md overflow-hidden bg-surface-2 flex-shrink-0"></div>
-        <div class="flex-1 min-w-0">
-          <p class="text-xs text-blue-300 font-medium uppercase tracking-wider mb-0.5">Now Listening</p>
-          <p id="now-playing-title" class="text-sm font-semibold text-text truncate"></p>
-          <div class="mt-1.5 w-full bg-blue-500/20 rounded-full h-1">
-            <div id="now-playing-bar" class="h-1 bg-blue-400 rounded-full transition-all duration-500" style="width:0%"></div>
-          </div>
-          <p id="now-playing-pct" class="text-xs text-muted mt-1"></p>
-        </div>
-        <a id="now-playing-link" href="#" class="text-xs text-blue-300 hover:text-blue-200 transition-colors flex-shrink-0">Open →</a>
-      </div>
+      <!-- Now Playing banner (ABS real-time) — persistent node, swapped in below -->
+      <div data-slot="now-playing"></div>
 
       <!-- Library search + select toggle -->
       <div class="flex gap-2 items-center">
@@ -147,8 +228,8 @@ export function renderHome(container) {
         <button id="bulk-cancel-btn" class="px-2 py-1.5 text-muted hover:text-text transition-colors">✕</button>
       </div>
 
-      <!-- Recently added from integrations (filled async) -->
-      <div id="recently-added-banner"></div>
+      <!-- Recently added from integrations (persistent node, filled async) -->
+      <div data-slot="recently-added"></div>
 
       <!-- Shelf selector bar -->
       <div class="shelf-bar flex items-center gap-2 overflow-x-auto">
@@ -166,8 +247,8 @@ export function renderHome(container) {
         })()}
         ${shelves.map(s => `
           <button class="shelf-chip ${selectedShelfId === s.id ? 'shelf-chip-active' : 'shelf-chip-idle'}"
-                  data-shelf="${s.id}" style="${selectedShelfId === s.id ? `background:${escHtml(s.color)}22;border-color:${escHtml(s.color)};color:${escHtml(s.color)}` : ''}">
-            <span class="inline-block w-2 h-2 rounded-full mr-1.5 flex-shrink-0" style="background:${escHtml(s.color)}"></span>${escHtml(s.name)}
+                  data-shelf="${s.id}" style="${selectedShelfId === s.id ? `background:${safeColor(s.color)}22;border-color:${safeColor(s.color)};color:${safeColor(s.color)}` : ''}">
+            <span class="inline-block w-2 h-2 rounded-full mr-1.5 flex-shrink-0" style="background:${safeColor(s.color)}"></span>${escHtml(s.name)}
           </button>`).join('')}
         <button id="new-shelf-btn" class="shelf-chip shelf-chip-idle text-muted border-dashed">+ New shelf</button>
       </div>
@@ -181,30 +262,18 @@ export function renderHome(container) {
       </div>
     </div>`;
 
-  renderShelfContent(container.querySelector('#shelf-content'), library, shelves, selectedShelfId, container);
-  attachShelfBar(container, shelves, library);
-  attachCardHandlers(container, shelves, library);
+  // Put the persistent banners back in their slots
+  container.querySelector('[data-slot="now-playing"]')?.replaceWith(mount.nowPlaying);
+  container.querySelector('[data-slot="recently-added"]')?.replaceWith(mount.recentlyAdded);
 
-  // Carousel card clicks → book detail
-  container.querySelectorAll('.reading-carousel-card[data-book-id]').forEach(card => {
-    card.addEventListener('click', () => {
-      location.hash = `#book/${card.dataset.bookId}`;
-    });
-  });
+  renderShelfContent(container.querySelector('#shelf-content'), library, shelves, selectedShelfId, container);
+  attachShelfBar(mount, shelves);
+  attachCardHandlers(container, shelves, library);
   attachShelfManagerHandlers(container, shelves);
 
-  // Now Playing: fetch current ABS session and subscribe to SSE for live updates
-  initNowPlaying(container);
-  initRecentlyAdded(container);
-
-  const searchInput = container.querySelector('#library-search');
-  searchInput?.addEventListener('input', e => {
+  container.querySelector('#library-search')?.addEventListener('input', e => {
     libraryQuery = e.target.value;
-    const contentEl = container.querySelector('#shelf-content');
-    if (contentEl) {
-      renderShelfContent(contentEl, library, shelves, getState().selectedShelfId, container);
-      attachCardHandlers(container, shelves, library);
-    }
+    repaintContent(mount);
   });
 
   container.querySelectorAll('.avail-filter-chip').forEach(chip => {
@@ -214,11 +283,7 @@ export function renderHome(container) {
         const active = (c.dataset.avail || null) === availFilter;
         c.className = `avail-filter-chip flex-shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${active ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-border text-muted hover:border-border/80 hover:text-text'}`;
       });
-      const contentEl = container.querySelector('#shelf-content');
-      if (contentEl) {
-        renderShelfContent(contentEl, library, shelves, getState().selectedShelfId, container);
-        attachCardHandlers(container, shelves, library);
-      }
+      repaintContent(mount);
     });
   });
 
@@ -249,7 +314,7 @@ export function renderHome(container) {
       : 'flex-shrink-0 px-3 py-2.5 rounded-xl border border-border text-xs text-muted hover:border-amber-500 hover:text-amber-400 transition-colors';
     bulkBar.classList.add('hidden');
     // Re-attach to toggle checkbox visibility (existing cards stay bound)
-    attachCardHandlers(container, shelves, library, { selectMode, updateBulkBar });
+    attachCardHandlers(container, getState().shelves, visibleLibrary(), { selectMode, updateBulkBar });
   });
 
   bulkBar?.querySelector('#bulk-cancel-btn')?.addEventListener('click', () => {
@@ -279,7 +344,8 @@ export function renderHome(container) {
 }
 
 // ── Shelf bar ─────────────────────────────────────────────────────────────────
-function attachShelfBar(container, shelves, library) {
+function attachShelfBar(mount, shelves) {
+  const { container } = mount;
   container.querySelectorAll('.shelf-chip[data-shelf]').forEach(chip => {
     chip.addEventListener('click', () => {
       const raw = chip.dataset.shelf;
@@ -295,8 +361,7 @@ function attachShelfBar(container, shelves, library) {
       }
 
       // Re-render content from already-loaded state — no network round-trip needed
-      const contentEl = container.querySelector('#shelf-content');
-      if (contentEl) renderShelfContent(contentEl, library, shelves, id, container);
+      repaintContent(mount);
       // Update active chip styles
       container.querySelectorAll('.shelf-chip[data-shelf]').forEach(c => {
         const cId = c.dataset.shelf === 'all' ? null : Number(c.dataset.shelf);
@@ -304,13 +369,11 @@ function attachShelfBar(container, shelves, library) {
         c.className = `shelf-chip ${isActive ? 'shelf-chip-active' : 'shelf-chip-idle'}`;
         if (isActive && cId !== null) {
           const s = shelves.find(s => s.id === cId);
-          if (s) c.style.cssText = `background:${escHtml(s.color)}22;border-color:${escHtml(s.color)};color:${escHtml(s.color)}`;
+          if (s) c.style.cssText = `background:${safeColor(s.color)}22;border-color:${safeColor(s.color)};color:${safeColor(s.color)}`;
         } else {
           c.style.cssText = '';
         }
       });
-      // Re-attach card handlers for the newly rendered content
-      attachCardHandlers(container, shelves, library);
     });
   });
 
@@ -345,8 +408,12 @@ function showInlineShelfCreate(container) {
     e.preventDefault();
     const name = new FormData(form).get('name').trim();
     if (!name) return;
-    await api.createShelf({ name });
-    loadLibrary();
+    try {
+      await api.createShelf({ name });
+      loadLibrary();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   });
 
   form.querySelector('#cancel-shelf-create').addEventListener('click', () => {
@@ -523,7 +590,7 @@ function renderAllBooks(el, library, container, shelves, onAppend) {
 }
 
 function renderShelfGrid(el, shelf, books, onAppend) {
-  const dot = shelf ? `<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${escHtml(shelf.color)}"></span>` : '';
+  const dot = shelf ? `<span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${safeColor(shelf.color)}"></span>` : '';
   const title = shelf?.name ?? 'Unknown shelf';
 
   el.innerHTML = `
@@ -615,7 +682,12 @@ function attachCardHandlers(container, shelves, library, bulk = {}) {
       const libId  = card.dataset.libId;
       const bookId = card.dataset.bookId;
       if (!libId) return;
-      await api.setStatus(libId, 'done');
+      try {
+        await api.setStatus(libId, 'done');
+      } catch (err) {
+        showToast(err.message, 'error');
+        return;
+      }
       await loadLibrary();
       const entry = (getState().library ?? []).find(b => String(b.book_id) === String(bookId));
       openLogReadModal({ id: bookId, title: entry?.title ?? '', startedAt: entry?.started_reading_at }, null);
@@ -671,7 +743,7 @@ function showContextMenu(x, y, card, shelves, library) {
       <button class="ctx-status w-full text-left px-3 py-2 flex items-center gap-2
                      ${libEntry.status === s.key ? 'text-amber-400' : 'hover:bg-border/40 text-text'}"
               data-status="${s.key}">
-        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${s.color}"></span>
+        <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${safeColor(s.color)}"></span>
         ${s.label}
         ${libEntry.status === s.key ? '<span class="ml-auto text-xs">✓</span>' : ''}
       </button>`).join('')}
@@ -687,9 +759,9 @@ function showContextMenu(x, y, card, shelves, library) {
                   data-shelf-id="${s.id}" data-on="${on}">
             <span class="w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-xs
                          ${on ? 'bg-amber-500 border-amber-500 text-stone-950' : 'border-border'}"
-              ${on ? '✓' : ''}
+              >${on ? '✓' : ''}
             </span>
-            <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${escHtml(s.color)}"></span>
+            <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${safeColor(s.color)}"></span>
             ${escHtml(s.name)}
           </button>`;
       }).join('')}
@@ -721,7 +793,12 @@ function showContextMenu(x, y, card, shelves, library) {
     btn.addEventListener('click', async () => {
       menu.remove();
       const newStatus = btn.dataset.status;
-      await api.setStatus(libId, newStatus);
+      try {
+        await api.setStatus(libId, newStatus);
+      } catch (err) {
+        showToast(err.message, 'error');
+        return;
+      }
       loadLibrary();
       if (newStatus === 'done') {
         openLogReadModal({ id: libEntry.book_id, title: libEntry.title, startedAt: libEntry.started_reading_at }, null);
@@ -735,10 +812,12 @@ function showContextMenu(x, y, card, shelves, library) {
       menu.remove();
       const shelfId = Number(btn.dataset.shelfId);
       const on = btn.dataset.on === 'true';
-      if (on) {
-        await api.removeShelfMembership(libId, shelfId);
-      } else {
-        await api.addShelfMembership(libId, shelfId);
+      try {
+        if (on) await api.removeShelfMembership(libId, shelfId);
+        else await api.addShelfMembership(libId, shelfId);
+      } catch (err) {
+        showToast(err.message, 'error');
+        return;
       }
       loadLibrary();
     });
@@ -759,8 +838,12 @@ function showContextMenu(x, y, card, shelves, library) {
       label.textContent = slider.value + '%';
       clearTimeout(saveTimer);
       saveTimer = setTimeout(async () => {
-        await api.setProgress(libId, { progress_pct: Number(slider.value) });
-        loadLibrary();
+        try {
+          await api.setProgress(libId, { progress_pct: Number(slider.value) });
+          loadLibrary();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       }, 600);
     });
   }
@@ -790,7 +873,9 @@ function showBulkStatusMenu(anchor, libIds, onDone) {
   menu.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', async () => {
       menu.remove();
-      await Promise.all(libIds.map(id => api.setStatus(id, btn.dataset.status).catch(() => {})));
+      const results = await Promise.allSettled(libIds.map(id => api.setStatus(id, btn.dataset.status)));
+      const failed = results.filter(r => r.status === 'rejected');
+      if (failed.length) showToast(`${failed.length} of ${libIds.length} books could not be updated: ${failed[0].reason?.message ?? 'error'}`, 'error');
       onDone();
     });
   });
@@ -813,7 +898,7 @@ function renderShelfManager(shelves) {
         ${shelves.length ? shelves.map(s => `
           <div class="flex flex-col gap-1" data-shelf-row="${s.id}">
             <div class="flex items-center gap-2 bg-surface-2 rounded-lg px-3 py-2">
-              <input type="color" value="${escHtml(s.color)}" class="shelf-color-input w-7 h-7 rounded cursor-pointer bg-transparent border-none" data-shelf-id="${s.id}" />
+              <input type="color" value="${safeColor(s.color)}" class="shelf-color-input w-7 h-7 rounded cursor-pointer bg-transparent border-none" data-shelf-id="${s.id}" />
               <span class="flex-1 text-sm font-medium">${escHtml(s.name)}</span>
               <button class="rename-shelf-btn text-xs text-muted hover:text-amber-400 px-2 transition-colors" data-shelf-id="${s.id}" data-shelf-name="${escHtml(s.name)}">Rename</button>
               <button class="delete-shelf-btn text-xs text-muted hover:text-red-400 px-1 transition-colors" data-shelf-id="${s.id}">✕</button>
@@ -841,9 +926,13 @@ function attachShelfManagerHandlers(container) {
     const fd = new FormData(e.target);
     const name = fd.get('name').trim();
     if (!name) return;
-    await api.createShelf({ name, color: fd.get('color') });
-    e.target.reset();
-    loadLibrary();
+    try {
+      await api.createShelf({ name, color: fd.get('color') });
+      e.target.reset();
+      loadLibrary();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   });
 
   container.querySelectorAll('.rename-shelf-btn').forEach(btn => {
@@ -860,8 +949,12 @@ function attachShelfManagerHandlers(container) {
 
   container.querySelectorAll('.shelf-color-input').forEach(input => {
     input.addEventListener('change', async () => {
-      await api.updateShelf(input.dataset.shelfId, { color: input.value });
-      loadLibrary();
+      try {
+        await api.updateShelf(input.dataset.shelfId, { color: input.value });
+        loadLibrary();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
     });
   });
 }
@@ -893,7 +986,12 @@ function showInlineRename(btn) {
   const doSave = async () => {
     const newName = input.value.trim();
     if (!newName || newName === btn.dataset.shelfName) { loadLibrary(); return; }
-    await api.updateShelf(btn.dataset.shelfId, { name: newName });
+    try {
+      await api.updateShelf(btn.dataset.shelfId, { name: newName });
+    } catch (err) {
+      showToast(err.message, 'error');
+      return;
+    }
     loadLibrary();
   };
 
@@ -936,10 +1034,7 @@ function showInlineDeleteConfirm(btn) {
 
 // ── Now Playing (Audiobookshelf real-time) ────────────────────────────────────
 
-let _sseSource = null;
-
-function updateNowPlayingBanner(container, data) {
-  const banner = container.querySelector('#now-playing-banner');
+function updateNowPlayingBanner(banner, data) {
   if (!banner) return;
 
   if (!data) {
@@ -951,11 +1046,11 @@ function updateNowPlayingBanner(container, data) {
   banner.classList.remove('hidden');
   banner.classList.add('flex');
 
-  const title = container.querySelector('#now-playing-title');
-  const bar   = container.querySelector('#now-playing-bar');
-  const pct   = container.querySelector('#now-playing-pct');
-  const cover = container.querySelector('#now-playing-cover');
-  const link  = container.querySelector('#now-playing-link');
+  const title = banner.querySelector('#now-playing-title');
+  const bar   = banner.querySelector('#now-playing-bar');
+  const pct   = banner.querySelector('#now-playing-pct');
+  const cover = banner.querySelector('#now-playing-cover');
+  const link  = banner.querySelector('#now-playing-link');
 
   if (title) title.textContent = data.title ?? 'Unknown';
   const progress = data.progressPercent ?? 0;
@@ -965,65 +1060,53 @@ function updateNowPlayingBanner(container, data) {
     const imgUrl = data.coverPath && data.serverUrl
       ? `${data.serverUrl}/api/items/${data.absItemId}/cover`
       : null;
-    cover.innerHTML = imgUrl
-      ? `<img src="${imgUrl}" class="w-full h-full object-cover" />`
+    cover.innerHTML = imgUrl && safeUrl(imgUrl)
+      ? `<img src="${escHtml(safeUrl(imgUrl))}" class="w-full h-full object-cover" />`
       : '<div class="w-full h-full bg-border/40"></div>';
   }
   if (link && data.bookId) link.href = `#book/${data.bookId}`;
 }
 
-async function initNowPlaying(container) {
-  const { user } = getState();
-  if (!user) return;
+// Runs once per mount: initial fetch, then a live SSE feed (auto-reconnecting)
+// that is closed by the view's cleanup.
+async function initNowPlaying(mount) {
+  if (!getState().user) return;
+  const banner = mount.nowPlaying;
 
-  // Initial fetch
   try {
     const data = await api.getNowPlaying();
-    updateNowPlayingBanner(container, data);
+    if (mount.disposed) return;
+    updateNowPlayingBanner(banner, data);
   } catch { /* not connected, ignore */ }
+  if (mount.disposed) return;
 
-  // Subscribe to SSE for real-time progress
-  if (_sseSource) { _sseSource.close(); _sseSource = null; }
-
-  try {
-    const es = new EventSource('/api/integrations/sse', { withCredentials: true });
-    _sseSource = es;
-
-    es.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'progress' && msg.data) {
-          const d = msg.data;
-          const rawPct = d.progress != null
-            ? d.progress
-            : (d.duration > 0 ? d.currentTime / d.duration : null);
-          updateNowPlayingBanner(container, {
-            absItemId:       d.libraryItemId,
-            bookId:          null, // resolved on next full fetch
-            title:           d.mediaMetadata?.title ?? null,
-            progressPercent: rawPct != null ? Math.round(rawPct * 100) : null,
-            serverUrl:       null,
-          });
-        }
-      } catch { /* malformed event */ }
-    };
-
-    es.onerror = () => {
-      // SSE closed (user navigated away) — close gracefully
-      es.close();
-      if (_sseSource === es) _sseSource = null;
-    };
-  } catch { /* SSE not available */ }
+  mount.closeSse = openSse('/api/integrations/sse', e => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'progress' && msg.data) {
+        const d = msg.data;
+        const rawPct = d.progress != null
+          ? d.progress
+          : (d.duration > 0 ? d.currentTime / d.duration : null);
+        updateNowPlayingBanner(banner, {
+          absItemId:       d.libraryItemId,
+          bookId:          null, // resolved on next full fetch
+          title:           d.mediaMetadata?.title ?? null,
+          progressPercent: rawPct != null ? Math.round(rawPct * 100) : null,
+          serverUrl:       null,
+        });
+      }
+    } catch { /* malformed event */ }
+  });
 }
 
 const RECENTLY_ADDED_KEY = 'recentlyAddedDismissedAt';
 
-async function initRecentlyAdded(container) {
-  const { user } = getState();
-  if (!user) return;
+async function initRecentlyAdded(mount) {
+  if (!getState().user) return;
   try {
     const books = await api.getRecentlyAdded();
-    if (!books?.length) return;
+    if (mount.disposed || !books?.length) return;
 
     // Only show books added after the last dismissal
     const dismissedAt = localStorage.getItem(RECENTLY_ADDED_KEY);
@@ -1032,8 +1115,7 @@ async function initRecentlyAdded(container) {
       : books;
     if (!unseen.length) return;
 
-    const el = container.querySelector('#recently-added-banner');
-    if (!el) return;
+    const el = mount.recentlyAdded;
 
     const SERVICE_LABEL = { audiobookshelf: '🎧', calibre: '📚' };
     el.innerHTML = `
@@ -1060,9 +1142,8 @@ async function initRecentlyAdded(container) {
       </section>`;
 
     el.querySelector('#dismiss-recently-added')?.addEventListener('click', () => {
-      localStorage.setItem(RECENTLY_ADDED_KEY, new Date().toISOString());
+      try { localStorage.setItem(RECENTLY_ADDED_KEY, new Date().toISOString()); } catch { /* storage unavailable */ }
       el.innerHTML = '';
     });
   } catch { /* integrations not configured */ }
 }
-

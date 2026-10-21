@@ -160,45 +160,42 @@ function attachHandlers(container, users) {
     }
   });
 
-  container.querySelectorAll('[data-user-id]').forEach(row => {
+  // One delegated listener on the (per-render) list element. Rows are replaced
+  // via outerHTML after a toggle, so per-row listeners would have to be re-bound
+  // and would stack; delegation survives row replacement.
+  container.querySelector('#admin-users-list')?.addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    const row = btn?.closest('[data-user-id]');
+    if (!btn || !row) return;
     const id = parseInt(row.dataset.userId, 10);
     const username = row.dataset.username;
     const user = users.find(u => u.id === id);
+    if (!user) return;
 
-    row.querySelector('.admin-toggle-admin').addEventListener('click', async () => {
+    if (btn.classList.contains('admin-toggle-admin')) {
       const newVal = !user.is_admin;
-      try {
-        await api.adminSetAdmin(id, newVal);
+      btn.disabled = true;
+      api.adminSetAdmin(id, newVal).then(() => {
         user.is_admin = newVal;
         row.outerHTML = renderUserRow(user);
-        // re-attach on the new row
-        attachHandlers(container, users);
         showToast(`${username} is ${newVal ? 'now' : 'no longer'} an admin.`);
-      } catch (err) {
+      }).catch(err => {
+        btn.disabled = false;
         showToast(err.message, 'error');
-      }
-    });
-
-    row.querySelector('.admin-revoke-sessions').addEventListener('click', async () => {
-      try {
-        await api.adminRevokeSessions(id);
-        showToast(`Sessions revoked for ${username}.`);
-      } catch (err) {
-        showToast(err.message, 'error');
-      }
-    });
-
-    row.querySelector('.admin-reset-pw').addEventListener('click', () => {
+      });
+    } else if (btn.classList.contains('admin-revoke-sessions')) {
+      api.adminRevokeSessions(id)
+        .then(() => showToast(`Sessions revoked for ${username}.`))
+        .catch(err => showToast(err.message, 'error'));
+    } else if (btn.classList.contains('admin-reset-pw')) {
       resetTargetId = id;
       pwUsername.textContent = username;
       pwInput.value = '';
       pwError.classList.add('hidden');
       modal.classList.remove('hidden');
       pwInput.focus();
-    });
-
-    row.querySelector('.admin-delete-user').addEventListener('click', () => {
-      const btn = row.querySelector('.admin-delete-user');
+    } else if (btn.classList.contains('admin-delete-user')) {
+      // Two-click confirm: first click arms the button, second click deletes
       if (btn.dataset.confirming) {
         api.adminDeleteUser(id).then(() => {
           row.remove();
@@ -218,7 +215,6 @@ function attachHandlers(container, users) {
           }
         }, 4000);
       }
-    });
+    }
   });
 }
-

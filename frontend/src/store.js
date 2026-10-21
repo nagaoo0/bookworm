@@ -3,6 +3,7 @@ let _state = {
   user: null,         // { id, username, isAdmin, isPublic } or null
   shelves: [],
   library: [],
+  libraryLoaded: false,   // true once the first loadLibrary() succeeded
   searchResults: [],
   searchQuery: '',
   stats: null,

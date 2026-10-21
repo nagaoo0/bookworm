@@ -4,6 +4,7 @@ import { bookCardHTML } from '../components/bookCard.js';
 import { loadLibrary } from './home.js';
 import { loadPrefs } from '../prefs.js';
 import { escHtml } from '../utils.js';
+import { showToast } from '../components/toast.js';
 import { openLogReadModal } from '../components/logReadModal.js';
 
 const LANGUAGES = [
@@ -24,6 +25,18 @@ function shelfSelectHTML(shelves, name = '_shelfId') {
 }
 
 let debounceTimer;
+let manualResetTimer;
+
+// Only the newest search may touch the page: each runSearch takes a sequence id
+// and an AbortController; typing, clearing or leaving the view invalidates both.
+let searchSeq = 0;
+let searchAbort = null;
+function cancelSearch() {
+  searchSeq++;
+  searchAbort?.abort();
+  searchAbort = null;
+  clearTimeout(debounceTimer);
+}
 
 const RECENT_KEY = 'bw_recent_searches';
 const MAX_RECENT = 8;
@@ -49,7 +62,10 @@ function renderSkeletonResults() {
   </div>`;
 }
 
+// Returns the view's cleanup (cancels pending / in-flight searches and timers)
 export function renderSearch(container) {
+  cancelSearch();
+  clearTimeout(manualResetTimer);
   const { searchResults, searchQuery } = getState();
   const { searchLanguage: prefLang } = loadPrefs();
 
@@ -150,7 +166,7 @@ export function renderSearch(container) {
   });
 
   input.addEventListener('input', e => {
-    clearTimeout(debounceTimer);
+    cancelSearch(); // drops the debounce and any response still in flight
     const q = e.target.value.trim();
     setState({ searchQuery: q });
     if (!q) {
@@ -211,6 +227,11 @@ export function renderSearch(container) {
   });
 
   if (searchResults.length) renderResults(container, searchResults);
+
+  return () => {
+    cancelSearch();
+    clearTimeout(manualResetTimer);
+  };
 }
 
 function advField(id, label, placeholder) {
@@ -223,23 +244,32 @@ function advField(id, label, placeholder) {
 }
 
 async function runSearch(params, container) {
+  const seq = ++searchSeq;
+  searchAbort?.abort();
+  const ctrl = new AbortController();
+  searchAbort = ctrl;
+
   const resultsEl = container.querySelector('#search-results');
   if (resultsEl && !resultsEl.innerHTML.includes('skeleton')) {
     resultsEl.innerHTML = `<div class="flex justify-center py-10"><div class="spinner"></div></div>`;
   }
   if (params.q) saveRecentSearch(params.q);
   try {
-    const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);
-    const results = await api.search(qs.toString());
+    const results = await api.search(params, { signal: ctrl.signal });
+    if (seq !== searchSeq) return; // a newer search (or the view being left) owns the page now
     setState({ searchResults: results });
     renderResults(container, results);
   } catch (err) {
-    resultsEl.innerHTML = `
+    if (err.name === 'AbortError' || seq !== searchSeq) return;
+    const errEl = container.querySelector('#search-results');
+    if (!errEl) return;
+    errEl.innerHTML = `
       <div class="text-center py-8 space-y-2">
         <p class="text-red-400 text-sm">${escHtml(err.message)}</p>
         <p class="text-muted text-xs">Book search unavailable — use the manual form above.</p>
       </div>`;
+  } finally {
+    if (searchAbort === ctrl) searchAbort = null;
   }
 }
 
@@ -357,6 +387,7 @@ function renderResults(container, results) {
       } catch (err) {
         btn.textContent = '✗ Error';
         btn.disabled = false;
+        showToast(err.message, 'error');
       }
     });
   });
@@ -406,7 +437,7 @@ function renderManualForm(wrapper) {
         ${shelves.length ? `
         <div class="sm:col-span-2">
           <label class="text-xs text-muted block mb-1">Add to shelf (optional)</label>
-          <select name="shelfId" class="field-input"
+          <select name="shelfId" class="field-input">
             <option value="">No shelf</option>
             ${shelves.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('')}
           </select>
@@ -440,7 +471,8 @@ function renderManualForm(wrapper) {
         <div class="text-green-400 text-sm text-center py-3 bg-surface-2 rounded-xl">
           ✓ Book added to your library
         </div>`;
-      setTimeout(() => renderManualForm(wrapper), 2000);
+      clearTimeout(manualResetTimer);
+      manualResetTimer = setTimeout(() => renderManualForm(wrapper), 2000);
     } catch (err) {
       errEl.textContent = err.message;
       errEl.classList.remove('hidden');

@@ -3,17 +3,15 @@ import { getState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from '../components/starRating.js';
 import { showToast } from '../components/toast.js';
 import { loadLibrary } from './home.js';
-import { escHtml, sourceBadgeHTML, coverProxySrc } from '../utils.js';
+import { escHtml, safeUrl, safeColor, sourceBadgeHTML, coverProxySrc } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
-
-// SSE connection for live ABS progress on the currently viewed book
-let _bookSse = null;
+import { openSse } from '../sse.js';
 
 function recHref(b) {
-  if (b.id) return '#book/' + b.id;
-  if (b.google_id) return '#book/g:' + b.google_id;
-  if (b.open_library_id) return '#book/ol:' + b.open_library_id;
-  if (b.apple_id) return '#book/a:' + b.apple_id;
+  if (b.id) return '#book/' + encodeURIComponent(b.id);
+  if (b.google_id) return '#book/g:' + encodeURIComponent(b.google_id);
+  if (b.open_library_id) return '#book/ol:' + encodeURIComponent(b.open_library_id);
+  if (b.apple_id) return '#book/a:' + encodeURIComponent(b.apple_id);
   return null;
 }
 
@@ -27,7 +25,7 @@ function recCard(b) {
        </div>`;
   const authors = Array.isArray(b.authors) ? b.authors.join(', ') : (b.authors ?? '');
   return `
-    <a href="${href}" class="group flex flex-col">
+    <a href="${escHtml(href)}" class="group flex flex-col">
       <div class="relative w-full aspect-[2/3] rounded overflow-hidden bg-surface-2 shadow
                   ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all">
         ${cover}
@@ -37,11 +35,15 @@ function recCard(b) {
     </a>`;
 }
 
+// Returns the view's cleanup (closes the live-progress SSE, drops the lightbox)
 export async function renderBook(container, bookId) {
-  // Close any SSE connection from a previous book view
-  if (_bookSse) { _bookSse.close(); _bookSse = null; }
-  // Clean up any leftover sticky CTA from a previous book view
-  document.getElementById('sticky-book-cta')?.remove();
+  let closeSse = null;
+  const cleanup = () => {
+    closeSse?.();
+    closeSse = null;
+    document.getElementById('cover-lightbox')?.remove();
+    document.getElementById('sticky-book-cta')?.remove();
+  };
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
 
   try {
@@ -55,7 +57,9 @@ export async function renderBook(container, bookId) {
                    : bookId.startsWith('a:') ? ['apple', bookId.slice(2)]
                    : null;
     if (external) {
-      const resolved = await api.getBookByExternalId(external[0], external[1]);
+      let extId = external[1];
+      try { extId = decodeURIComponent(extId); } catch { /* keep raw */ }
+      const resolved = await api.getBookByExternalId(external[0], extId);
       resolvedId = resolved.id;
       // Rewrite hash without triggering another navigation
       history.replaceState(null, '', `#book/${resolvedId}`);
@@ -64,7 +68,7 @@ export async function renderBook(container, bookId) {
     const [book, sessions, comments, recs, social, availability] = await Promise.all([
       api.getBookDetail(resolvedId),
       user ? api.getSessions(resolvedId).catch(() => []) : Promise.resolve([]),
-      api.getComments(resolvedId),
+      api.getComments(resolvedId).catch(() => []),
       api.getRecommendations(resolvedId).catch(() => []),
       user ? api.getBookSocial(resolvedId).catch(() => []) : Promise.resolve([]),
       user ? api.getBookAvailability(resolvedId).catch(() => []) : Promise.resolve([]),
@@ -74,29 +78,26 @@ export async function renderBook(container, bookId) {
     // Subscribe to live ABS progress if this book is in Audiobookshelf
     const absAvail = availability.find(a => a.service === 'audiobookshelf');
     if (user && absAvail) {
-      try {
-        const es = new EventSource('/api/integrations/sse', { withCredentials: true });
-        _bookSse = es;
-        es.onmessage = (e) => {
-          try {
-            const msg = JSON.parse(e.data);
-            if (msg.type !== 'progress') return;
-            if (msg.data?.libraryItemId !== absAvail.external_id) return;
-            const raw = msg.data.progress ?? (msg.data.duration > 0 ? msg.data.currentTime / msg.data.duration : null);
-            if (raw == null) return;
-            const pct = Math.round(raw * 100);
-            // Update progress bar fill
-            const fill = container.querySelector('.abs-progress-fill');
-            if (fill) fill.style.width = `${pct}%`;
-            // Update label text
-            const label = container.querySelector('.abs-progress-label');
-            if (label) label.textContent = `${pct}% complete`;
-          } catch { /* malformed */ }
-        };
-        es.onerror = () => { es.close(); if (_bookSse === es) _bookSse = null; };
-      } catch { /* SSE unavailable */ }
+      closeSse = openSse('/api/integrations/sse', (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type !== 'progress') return;
+          if (msg.data?.libraryItemId !== absAvail.external_id) return;
+          const raw = msg.data.progress ?? (msg.data.duration > 0 ? msg.data.currentTime / msg.data.duration : null);
+          if (raw == null) return;
+          const pct = Math.round(raw * 100);
+          // Update progress bar fill
+          const fill = container.querySelector('.abs-progress-fill');
+          if (fill) fill.style.width = `${pct}%`;
+          // Update label text
+          const label = container.querySelector('.abs-progress-label');
+          if (label) label.textContent = `${pct}% complete`;
+        } catch { /* malformed */ }
+      });
     }
+    return cleanup;
   } catch (err) {
+    cleanup();
     container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
   }
 }
@@ -293,7 +294,7 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
           ${recs.filter(b => recHref(b)).map(b => {
             const href = recHref(b);
             return `
-            <a href="${href}" class="group flex flex-col flex-shrink-0" style="width:7rem">
+            <a href="${escHtml(href)}" class="group flex flex-col flex-shrink-0" style="width:7rem">
               <div class="relative w-full rounded overflow-hidden bg-surface-2 shadow ring-1 ring-border/20 group-hover:ring-amber-500/40 transition-all" style="aspect-ratio:2/3">
                 ${b.cover_url
                   ? `<img src="${escHtml(coverProxySrc(b.cover_url, b.id))}" alt="${escHtml(b.title)}" class="w-full h-full object-cover" loading="lazy" />`
@@ -329,11 +330,14 @@ function mount(container, book, sessions, comments, library, shelves, recs = [],
   container.querySelector('#book-cover-img')?.addEventListener('click', () => {
     const src = container.querySelector('#book-cover-img')?.src;
     if (!src) return;
+    document.getElementById('cover-lightbox')?.remove();
     const lb = document.createElement('div');
     lb.id = 'cover-lightbox';
     lb.innerHTML = `<img src="${escHtml(src)}" alt="${escHtml(book.title)}" />`;
-    lb.addEventListener('click', () => lb.remove());
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') lb.remove(); }, { once: true });
+    const onKey = e => { if (e.key === 'Escape') closeLightbox(); };
+    function closeLightbox() { document.removeEventListener('keydown', onKey); lb.remove(); }
+    lb.addEventListener('click', closeLightbox);
+    document.addEventListener('keydown', onKey);
     document.body.appendChild(lb);
   });
 
@@ -472,7 +476,7 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
                 ? 'ring-2 ring-offset-1 ring-offset-surface text-stone-950'
                 : 'bg-surface-2 hover:bg-border/40 text-text'}"
               data-status="${s.key}"
-              style="${libEntry.status === s.key ? `background:${s.color};ring-color:${s.color}` : ''}">
+              style="${libEntry.status === s.key ? `background:${s.color};--tw-ring-color:${s.color}` : ''}">
               ${s.label}
             </button>`).join('')}
         </div>
@@ -489,8 +493,8 @@ function renderLibraryPanelHTML(book, libEntry, shelves) {
               <button class="lib-shelf-btn flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors
                 ${on ? 'text-stone-950' : 'bg-surface-2 hover:bg-border/40 text-muted'}"
                 data-shelf-id="${s.id}" data-on="${on}"
-                style="${on ? `background:${escHtml(s.color)}` : ''}">
-                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${escHtml(s.color)}"></span>
+                style="${on ? `background:${safeColor(s.color)}` : ''}">
+                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${safeColor(s.color)}"></span>
                 ${escHtml(s.name)}
               </button>`;
           }).join('')}
@@ -617,9 +621,14 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
   container.querySelectorAll('.lib-status-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const newStatus = btn.dataset.status;
-      await api.setStatus(libEntry.id, newStatus);
-      // await so the log-read modal sees the refreshed entry (started_reading_at)
-      await softReload();
+      try {
+        await api.setStatus(libEntry.id, newStatus);
+        // await so the log-read modal sees the refreshed entry (started_reading_at)
+        await softReload();
+      } catch (err) {
+        showToast(err.message, 'error');
+        return;
+      }
       if (newStatus === 'done' && onMarkDone) onMarkDone();
     });
   });
@@ -629,12 +638,13 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
     btn.addEventListener('click', async () => {
       const shelfId = Number(btn.dataset.shelfId);
       const on = btn.dataset.on === 'true';
-      if (on) {
-        await api.removeShelfMembership(libEntry.id, shelfId).catch(() => {});
-      } else {
-        await api.addShelfMembership(libEntry.id, shelfId).catch(() => {});
+      try {
+        if (on) await api.removeShelfMembership(libEntry.id, shelfId);
+        else await api.addShelfMembership(libEntry.id, shelfId);
+        await softReload();
+      } catch (err) {
+        showToast(err.message, 'error');
       }
-      softReload();
     });
   });
 
@@ -647,8 +657,12 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
       if (label) label.textContent = slider.value + '%';
       clearTimeout(saveTimer);
       saveTimer = setTimeout(async () => {
-        await api.setProgress(libEntry.id, { progress_pct: Number(slider.value) });
-        loadLibrary();
+        try {
+          await api.setProgress(libEntry.id, { progress_pct: Number(slider.value) });
+          loadLibrary();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       }, 600);
     });
   }
@@ -656,7 +670,12 @@ function attachLibraryPanelHandlers(container, book, libEntry, shelves, softRelo
   // Notes
   container.querySelector('#save-notes-btn')?.addEventListener('click', async () => {
     const text = container.querySelector('#book-notes')?.value ?? '';
-    await api.updateNotes(libEntry.id, text || null);
+    try {
+      await api.updateNotes(libEntry.id, text || null);
+    } catch (err) {
+      showToast(err.message, 'error');
+      return;
+    }
     const savedEl = container.querySelector('#notes-saved');
     if (savedEl) { savedEl.style.opacity = '1'; setTimeout(() => { savedEl.style.opacity = '0'; }, 1500); }
     loadLibrary();
@@ -799,9 +818,16 @@ function attachSessionDeleteHandlers(container, bookId, reload) {
           <button class="sess-del-yes text-[10px] px-1.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded">Delete</button>
           <button class="sess-del-no text-[10px] px-1 text-muted hover:text-text">Cancel</button>
         </span>`;
-      row.querySelector('.sess-del-yes').addEventListener('click', async () => {
-        await api.deleteSession(bookId, row.dataset.sessionId);
-        await reload();
+      row.querySelector('.sess-del-yes').addEventListener('click', async e => {
+        const yes = e.currentTarget;
+        yes.disabled = true;
+        try {
+          await api.deleteSession(bookId, row.dataset.sessionId);
+          await reload();
+        } catch (err) {
+          yes.disabled = false;
+          showToast(err.message, 'error');
+        }
       });
       row.querySelector('.sess-del-no').addEventListener('click', () => {
         row.querySelector('.sess-confirm').outerHTML = orig;
@@ -910,7 +936,7 @@ function renderAvailabilitySection(availability = []) {
               <p class="text-sm font-medium text-text">Audiobookshelf</p>
               <p class="text-xs text-muted">Audiobook available${a.extra?.narrator ? ' · Narrated by ' + escHtml(a.extra.narrator) : ''}${durationMins ? ' · ' + Math.round(durationMins / 60) + ' hrs' : ''}</p>
             </div>
-            ${absUrl ? `<a href="${escHtml(absUrl)}" target="_blank" rel="noopener"
+            ${absUrl ? `<a href="${escHtml(safeUrl(absUrl))}" target="_blank" rel="noopener"
                  class="text-xs px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-colors flex-shrink-0">
                  ${isFinished ? 'Listen Again →' : (pct > 0 ? `Resume (${pct}%) →` : 'Open in ABS →')}
                </a>` : ''}
@@ -935,10 +961,10 @@ function renderAvailabilitySection(availability = []) {
             <span class="text-2xl">📚</span>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium text-text">Calibre Library</p>
-              <p class="text-xs text-muted">In your ebook collection${formatsLabel ? ' · ' + formatsLabel : ''}${a.extra?.series ? ' · Series: ' + escHtml(a.extra.series) : ''}</p>
+              <p class="text-xs text-muted">In your ebook collection${formatsLabel ? ' · ' + escHtml(formatsLabel) : ''}${toSeriesName(a.extra?.series) ? ' · Series: ' + escHtml(toSeriesName(a.extra.series)) : ''}</p>
             </div>
-            ${calibreUrl ? `<a href="${escHtml(calibreUrl)}" target="_blank" rel="noopener"
-                 class="text-xs px-3 py-1.5 bg-surface-3 hover:bg-border/40 text-muted rounded-lg transition-colors flex-shrink-0">
+            ${calibreUrl ? `<a href="${escHtml(safeUrl(calibreUrl))}" target="_blank" rel="noopener"
+                 class="text-xs px-3 py-1.5 bg-surface-2 hover:bg-border/40 text-muted rounded-lg transition-colors flex-shrink-0">
                  Open →
                </a>` : ''}
           </div>
@@ -1077,7 +1103,7 @@ async function runMetaSearch(container, q, libId, onAttached) {
   if (!el) return;
   el.innerHTML = `<p class="text-muted text-xs">Searching…</p>`;
   try {
-    const results = await api.search(`q=${encodeURIComponent(q)}`);
+    const results = await api.search({ q });
     if (!results.length) {
       el.innerHTML = `<p class="text-muted text-xs italic">No results.</p>`;
       return;
@@ -1118,8 +1144,9 @@ async function runMetaSearch(container, q, libId, onAttached) {
           btn.classList.replace('bg-amber-500/20', 'bg-green-800/40');
           btn.classList.replace('text-amber-400', 'text-green-400');
           onAttached();
-        } catch {
+        } catch (err) {
           btn.textContent = '✗'; btn.disabled = false;
+          showToast(err.message, 'error');
         }
       });
     });

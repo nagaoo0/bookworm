@@ -1,6 +1,6 @@
 import './styles.css';
 import { applyPrefs, savePrefs, loadPrefs } from './prefs.js';
-import { getState, setState, subscribe } from './store.js';
+import { getState, setState } from './store.js';
 import { escHtml } from './utils.js';
 
 applyPrefs();
@@ -15,7 +15,8 @@ import { renderBook } from './views/book.js';
 import { renderAdmin } from './views/admin.js';
 import { renderWrapped } from './views/wrapped.js';
 import { setOnSessionSaved } from './components/modal.js';
-import { api, setOnUnauthorized } from './api.js';
+import { api, setOnUnauthorized, setLoggedIn } from './api.js';
+import { showToast } from './components/toast.js';
 
 setOnSessionSaved(loadLibrary);
 
@@ -228,20 +229,20 @@ async function refreshNotifBadge() {
 
 function updateNavAvatar(user) {
   const letter = user.username[0].toUpperCase();
-  const avatarEl = document.getElementById('nav-avatar-letter');
-  const avatarMobEl = document.getElementById('nav-avatar-letter-mob');
-  if (user.avatarUrl) {
-    const imgHtml = `<img src="${escHtml(user.avatarUrl)}" alt="" class="w-full h-full object-cover rounded-full"
-      onerror="this.style.display='none';this.nextSibling.style.display='inline'"/><span style="display:none">${escHtml(letter)}</span>`;
-    if (avatarEl) { avatarEl.parentElement.innerHTML = imgHtml; }
-    if (avatarMobEl) { avatarMobEl.parentElement.innerHTML = imgHtml; }
-  } else {
-    if (avatarEl) avatarEl.textContent = letter;
-    if (avatarMobEl) avatarMobEl.textContent = letter;
+  const cls = 'text-amber-400 text-xs font-bold leading-none';
+  // Rebuild the avatar slot every time (the ids must survive for the next login)
+  for (const suffix of ['', '-mob']) {
+    const el = document.getElementById(`nav-avatar-letter${suffix}`);
+    if (!el?.parentElement) continue;
+    el.parentElement.innerHTML = user.avatarUrl
+      ? `<img src="${escHtml(user.avatarUrl)}" alt="" class="w-full h-full object-cover rounded-full"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"/><span id="nav-avatar-letter${suffix}" class="${cls}" style="display:none">${escHtml(letter)}</span>`
+      : `<span id="nav-avatar-letter${suffix}" class="${cls}">${escHtml(letter)}</span>`;
   }
 }
 
 function showApp(user) {
+  setLoggedIn(true);
   setState({ user });
   headerEl.classList.remove('hidden');
   pubHeader.classList.add('hidden');
@@ -263,24 +264,23 @@ function showApp(user) {
   document.getElementById('bottom-nav').style.display = 'flex';
   document.getElementById('mobile-fab').style.display = 'flex';
 
-  if (user.isAdmin) {
-    document.getElementById('admin-nav-link')?.classList.remove('hidden');
-    document.getElementById('admin-nav-link-mob')?.classList.remove('hidden');
-  }
+  document.getElementById('admin-nav-link')?.classList.toggle('hidden', !user.isAdmin);
+  document.getElementById('admin-nav-link-mob')?.classList.toggle('hidden', !user.isAdmin);
 
-  // Notification bell
-  const notifBtn = document.getElementById('notif-btn');
-  notifBtn?.classList.remove('hidden');
+  // Notification bell (click handler is bound once, below)
+  document.getElementById('notif-btn')?.classList.remove('hidden');
   refreshNotifBadge();
-  if (_notifInterval) clearInterval(_notifInterval);
+  clearInterval(_notifInterval);
   _notifInterval = setInterval(refreshNotifBadge, 60_000);
 
-  notifBtn?.addEventListener('click', () => openNotifPanel());
-
-  wireLogout();
-  loadLibrary().then(() => navigate(getRoute()));
+  // Show a spinner (not an empty "library is empty" home) until the library is in
+  renderToken++;
+  runCleanup();
+  mainEl.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
+  loadLibrary().then(() => navigate());
 }
 
+// ── Notifications panel ────────────────────────────────────────────────────────
 function openNotifPanel() {
   document.getElementById('notif-panel')?.remove();
   const panel = document.createElement('div');
@@ -298,7 +298,7 @@ function openNotifPanel() {
   document.body.appendChild(panel);
 
   api.getNotifications().then(items => {
-    const list = document.getElementById('notif-list');
+    const list = panel.querySelector('#notif-list');
     if (!list) return;
     if (!items.length) {
       list.innerHTML = `<p class="text-muted text-sm italic text-center py-6">No notifications.</p>`;
@@ -321,7 +321,10 @@ function openNotifPanel() {
         </div>
       </div>`;
     }).join('');
-  }).catch(() => {});
+  }).catch(err => {
+    const list = panel.querySelector('#notif-list');
+    if (list) list.innerHTML = `<p class="text-red-400 text-sm text-center py-6 px-4">Could not load notifications${err?.message ? `: ${escHtml(err.message)}` : ''}.</p>`;
+  });
 
   panel.querySelector('#mark-all-read')?.addEventListener('click', async () => {
     await api.markAllRead().catch(() => {});
@@ -331,6 +334,7 @@ function openNotifPanel() {
   });
 
   const dismiss = e => {
+    if (!panel.isConnected) { document.removeEventListener('click', dismiss); return; }
     if (!panel.contains(e.target) && e.target !== document.getElementById('notif-btn')) {
       panel.remove();
       document.removeEventListener('click', dismiss);
@@ -349,176 +353,202 @@ function formatTimeAgo(isoDate) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+// Bound once, here — not in showApp, which runs on every login
+document.getElementById('notif-btn')?.addEventListener('click', openNotifPanel);
+
+async function doLogout() {
+  try {
+    await api.logout();
+  } catch (err) {
+    // A 401 here means the session is already gone, which showAuth handles
+    if (err.status !== 401) { showToast(`Could not sign out: ${err.message}`, 'error'); return; }
+  }
+  showAuth();
+}
+document.getElementById('logout-btn')?.addEventListener('click', doLogout);
+document.getElementById('logout-btn-mob')?.addEventListener('click', doLogout);
+
+// ── Overlays & per-route cleanup ───────────────────────────────────────────────
+// Body-level UI that views open and that must not outlive the view (or the session)
+const OVERLAY_SELECTORS = ['.ctx-menu', '#notif-panel', '#log-read-modal', '#cover-lightbox', '.bulk-status-menu', '#shelf-picker'];
+const VIEW_ACCENT_PROPS = ['--color-accent', '--color-accent-hover', '--color-amber-500', '--color-amber-400'];
+
+function closeOverlays() {
+  document.querySelectorAll(OVERLAY_SELECTORS.join(',')).forEach(el => el.remove());
+}
+
+let currentCleanup = null;
+
+// Tear down whatever the current view started (SSE, observers, charts, ...)
+// plus anything global a view may have left behind.
+function runCleanup() {
+  const fn = currentCleanup;
+  currentCleanup = null;
+  try { fn?.(); } catch (err) { console.error('View cleanup failed', err); }
+  closeOverlays();
+  for (const prop of VIEW_ACCENT_PROPS) mainEl.style.removeProperty(prop);
+}
+
 function showAuth() {
+  renderToken++;            // discard any render still in flight
+  runCleanup();
+  clearInterval(_notifInterval);
+  _notifInterval = null;
+  setLoggedIn(false);
+  document.getElementById('mobile-menu')?.classList.add('hidden');
   headerEl.classList.add('hidden');
   pubHeader.classList.add('hidden');
   document.getElementById('bottom-nav').style.display = 'none';
   document.getElementById('mobile-fab').style.display = 'none';
+  document.getElementById('notif-btn')?.classList.add('hidden');
+  document.getElementById('notif-badge')?.classList.add('hidden');
   // Ensure admin-only nav links are hidden when logged out
   document.getElementById('admin-nav-link')?.classList.add('hidden');
   document.getElementById('admin-nav-link-mob')?.classList.add('hidden');
-  setState({ user: null, shelves: [], library: [], selectedShelfId: null });
-  renderAuth(mainEl, showApp);
-}
-
-function showPublicProfile(username) {
-  headerEl.classList.add('hidden');
-  pubHeader.classList.remove('hidden');
-  renderProfile(mainEl, username);
+  setState({
+    user: null, shelves: [], library: [], libraryLoaded: false, loading: false, error: null,
+    selectedShelfId: null, searchResults: [], searchQuery: '',
+  });
+  const root = document.createElement('div');
+  mainEl.replaceChildren(root);
+  renderAuth(root, showApp);
 }
 
 setOnUnauthorized(showAuth);
 
-let _logoutWired = false;
-function wireLogout() {
-  if (_logoutWired) return;
-  _logoutWired = true;
-  const doLogout = async () => {
-    await api.logout();
-    _logoutWired = false;
-    showAuth();
-  };
-  document.getElementById('logout-btn')?.addEventListener('click', doLogout);
-  document.getElementById('logout-btn-mob')?.addEventListener('click', doLogout);
-}
-
 // ── Router ─────────────────────────────────────────────────────────────────────
-const ROUTES = ['home', 'search', 'stats', 'users', 'settings', 'admin'];
+// match(path) -> params object or null. render(el, params) may return a cleanup
+// function (or a promise of one). public: reachable while logged out;
+// publicHeader: show the slim "Sign in" header in that case.
+const byPattern = (rx, toParams) => path => {
+  const m = rx.exec(path);
+  return m ? toParams(m) : null;
+};
 
-function getRoute() {
-  const hash = location.hash.slice(1) || 'home';
-  if (ROUTES.includes(hash)) return hash;
-  if (hash === 'wrapped') return hash;
-  if (hash.startsWith('u/')) return hash;
-  if (hash.startsWith('book/')) return hash;
-  return 'home';
+const ROUTES = [
+  { id: 'home',     nav: 'home',     match: p => p === 'home' ? {} : null,
+    render: el => renderHome(el) },
+  { id: 'search',   nav: 'search',   match: p => p === 'search' ? {} : null,
+    render: async el => {
+      if (!getState().libraryLoaded) await loadLibrary();
+      return renderSearch(el);
+    } },
+  { id: 'stats',    nav: 'stats',    match: p => p === 'stats' ? {} : null,
+    render: el => renderStats(el) },
+  { id: 'users',    nav: 'users',    match: p => p === 'users' ? {} : null,
+    render: el => renderUsers(el), public: true, publicHeader: true },
+  { id: 'settings', nav: 'settings', match: p => p === 'settings' ? {} : null,
+    render: el => renderSettings(el) },
+  { id: 'admin',    nav: 'admin',    match: p => p === 'admin' ? {} : null,
+    render: el => renderAdmin(el) },
+  { id: 'wrapped',  match: p => p === 'wrapped' ? {} : null,
+    render: el => renderWrapped(el, null) },
+  { id: 'profile-wrapped', match: byPattern(/^u\/(.+)\/wrapped$/, m => ({ name: decodeName(m[1]) })),
+    render: (el, { name }) => renderWrapped(el, name), public: true, publicHeader: true },
+  { id: 'profile-grid', match: byPattern(/^u\/(.+)\/grid$/, m => ({ name: decodeName(m[1]) })),
+    render: (el, { name }) => renderBookGrid(el, name), public: true, publicHeader: true },
+  { id: 'profile',  match: byPattern(/^u\/(.+)$/, m => ({ name: decodeName(m[1]) })),
+    nav: (_params, user) => (user ? 'profile' : null),
+    render: (el, { name }) => renderProfile(el, name), public: true, publicHeader: true },
+  { id: 'book',     match: byPattern(/^book\/(.+)$/, m => ({ bookId: m[1] })),
+    render: (el, { bookId }) => renderBook(el, bookId) },
+];
+
+function decodeName(s) {
+  try { return decodeURIComponent(s); } catch { return s; }
 }
 
-async function navigate(route) {
-  setState({ route });
+function resolveRoute(path) {
+  for (const route of ROUTES) {
+    const params = route.match(path);
+    if (params) return { route, params };
+  }
+  return { route: ROUTES[0], params: {} }; // unknown hash -> home
+}
 
-  // Refresh active state on all nav bars
+function getPath() {
+  return location.hash.slice(1) || 'home';
+}
+
+function setActiveNav(navKey) {
   document.querySelectorAll('.nav-link').forEach(a => {
-    const active = a.dataset.route === route;
+    const active = a.dataset.route === navKey;
     a.classList.toggle('nav-link-active',   active);
     a.classList.toggle('nav-link-inactive', !active);
   });
   document.querySelectorAll('.nav-link-mob').forEach(a => {
-    const active = a.dataset.route === route;
+    const active = a.dataset.route === navKey;
     a.classList.toggle('nav-link-mob-active',   active);
     a.classList.toggle('nav-link-mob-inactive', !active);
   });
-
-  const user = getState().user;
   document.querySelectorAll('.bot-nav-item').forEach(a => {
-    const itemRoute = a.dataset.route;
-    const active = itemRoute === route ||
-      (itemRoute === 'profile' && user && route === `u/${user.username}`);
+    const active = a.dataset.route === navKey;
     a.classList.toggle('bot-nav-item-active', active);
     a.classList.toggle('bot-nav-item-inactive', !active);
   });
+}
+
+let renderToken = 0;
+
+async function navigate() {
+  const token = ++renderToken;
+  const { route, params } = resolveRoute(getPath());
+  const user = getState().user;
+
+  if (!user && !route.public) { showAuth(); return; }
+
+  // Previous view out first: its cleanup, then body-level overlays
+  runCleanup();
+  setState({ route: route.id });
+
+  if (user) {
+    headerEl.classList.remove('hidden');
+    pubHeader.classList.add('hidden');
+  } else {
+    headerEl.classList.add('hidden');
+    pubHeader.classList.toggle('hidden', !route.publicHeader);
+  }
+  const navKey = typeof route.nav === 'function' ? route.nav(params, user) : route.nav;
+  // "profile" is only the bottom-bar highlight for the user's own page
+  setActiveNav(navKey === 'profile' && params.name !== user?.username ? null : navKey);
 
   mainEl.classList.remove('fade-in');
   void mainEl.offsetWidth;
   mainEl.classList.add('fade-in');
 
-  if (route === 'home') {
-    renderHome(mainEl);
-  } else if (route === 'search') {
-    if (!getState().shelves.length) await loadLibrary();
-    renderSearch(mainEl);
-  } else if (route === 'stats') {
-    await renderStats(mainEl);
-  } else if (route === 'settings') {
-    await renderSettings(mainEl);
-  } else if (route === 'users') {
-    await renderUsers(mainEl);
-  } else if (route === 'admin') {
-    await renderAdmin(mainEl);
-  } else if (route === 'wrapped') {
-    await renderWrapped(mainEl, null);
-  } else if (route.startsWith('u/')) {
-    const path = route.slice(2);
-    if (path.endsWith('/wrapped')) {
-      const username = path.slice(0, -8);
-      if (!getState().user) {
-        headerEl.classList.add('hidden');
-        pubHeader.classList.remove('hidden');
-      }
-      await renderWrapped(mainEl, username);
-    } else if (path.endsWith('/grid')) {
-      const username = path.slice(0, -5);
-      if (!getState().user) {
-        headerEl.classList.add('hidden');
-        pubHeader.classList.remove('hidden');
-      }
-      await renderBookGrid(mainEl, username);
-    } else if (getState().user) {
-      await renderProfile(mainEl, path);
-    } else {
-      showPublicProfile(path);
+  // Each navigation renders into its own root. If a newer navigation replaces it
+  // while an async render is in flight, the stale render keeps writing into a
+  // detached element and cannot overwrite the new view.
+  const root = document.createElement('div');
+  mainEl.replaceChildren(root);
+
+  let cleanup;
+  try {
+    cleanup = await route.render(root, params);
+  } catch (err) {
+    console.error(err);
+    if (token === renderToken) {
+      root.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
     }
-  } else if (route.startsWith('book/')) {
-    const bookId = route.slice(5);
-    await renderBook(mainEl, bookId);
   }
+
+  if (token !== renderToken) {
+    // Superseded while rendering: release whatever it started
+    if (typeof cleanup === 'function') { try { cleanup(); } catch (err) { console.error(err); } }
+    return;
+  }
+  currentCleanup = typeof cleanup === 'function' ? cleanup : null;
 }
 
-subscribe(state => {
-  if (state.route === 'home') renderHome(mainEl);
-});
+window.addEventListener('hashchange', () => { navigate(); });
 
-window.addEventListener('hashchange', () => {
-  const route = getRoute();
-  if (route.startsWith('u/') && !getState().user) {
-    const path = route.slice(2);
-    if (path.endsWith('/wrapped')) {
-      headerEl.classList.add('hidden');
-      pubHeader.classList.remove('hidden');
-      renderWrapped(mainEl, path.slice(0, -8));
-    } else if (path.endsWith('/grid')) {
-      headerEl.classList.add('hidden');
-      pubHeader.classList.remove('hidden');
-      renderBookGrid(mainEl, path.slice(0, -5));
-    } else {
-      showPublicProfile(path);
-    }
-  } else if (route === 'users' && !getState().user) {
-    pubHeader.classList.remove('hidden');
-    headerEl.classList.add('hidden');
-    renderUsers(mainEl);
-  } else if (getState().user) {
-    navigate(route);
-  } else {
-    showAuth();
-  }
-});
-
-// Bootstrap — try to restore session via /me
+// Bootstrap — try to restore the session via /me. An anonymous visitor is not an
+// error: public routes render as-is, everything else shows the sign-in screen.
 (async () => {
-  const route = getRoute();
-  try {
-    const user = await api.me();
-    showApp(user);
-  } catch {
-    if (route.startsWith('u/')) {
-      const path = route.slice(2);
-      if (path.endsWith('/wrapped')) {
-        pubHeader.classList.remove('hidden');
-        renderWrapped(mainEl, path.slice(0, -8));
-      } else if (path.endsWith('/grid')) {
-        pubHeader.classList.remove('hidden');
-        renderBookGrid(mainEl, path.slice(0, -5));
-      } else {
-        showPublicProfile(path);
-      }
-    } else if (route === 'users') {
-      pubHeader.classList.remove('hidden');
-      renderUsers(mainEl);
-    } else {
-      showAuth();
-    }
-  }
+  let user = null;
+  try { user = await api.me(); } catch { /* not signed in */ }
+  if (user) showApp(user);
+  else navigate();
 })();
 
 // ── Global keyboard shortcuts ───────────────────────────────────────────────────
@@ -557,4 +587,3 @@ function offlineBanner() {
 }
 window.addEventListener('offline', () => offlineBanner().classList.add('offline-visible'));
 window.addEventListener('online', () => offlineBanner().classList.remove('offline-visible'));
-if (!navigator.onLine) offlineBanner().classList.add('offline-visible');

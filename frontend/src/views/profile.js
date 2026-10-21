@@ -5,10 +5,19 @@ import { render as renderStatsContent } from './stats.js';
 import { showToast } from '../components/toast.js';
 import { avatarHTML } from '../components/avatar.js';
 import { ACCENT_COLORS } from '../prefs.js';
-import { escHtml, coverProxySrc } from '../utils.js';
+import { escHtml, safeUrl, safeColor, coverProxySrc } from '../utils.js';
 
 const lastTab = new Map();
 
+const ACCENT_PROPS = ['--color-accent', '--color-accent-hover', '--color-amber-500', '--color-amber-400'];
+
+// The profile owner's accent is applied to the view's container only; this puts
+// the container back the way it was.
+function clearProfileAccent(container) {
+  for (const prop of ACCENT_PROPS) container.style.removeProperty(prop);
+}
+
+// Returns the view's cleanup (accent vars, stats charts, open book picker)
 export async function renderProfile(container, username) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
 
@@ -17,9 +26,9 @@ export async function renderProfile(container, username) {
       api.getProfile(username),
       api.getFollowStatus(username).catch(() => ({ following: false })),
     ]);
-    renderTabs(container, data, followStatus.following);
+    return renderTabs(container, data, followStatus.following);
   } catch (err) {
-    if (err.message.includes('404') || err.message.toLowerCase().includes('not found')) {
+    if (err.status === 404 || err.message.includes('404') || err.message.toLowerCase().includes('not found')) {
       container.innerHTML = `
         <div class="text-center py-24 space-y-3 fade-in">
           <div class="text-5xl mb-4">📚</div>
@@ -45,6 +54,8 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
   const { user, library: myLibrary } = getState();
   const myBookIds = new Set((myLibrary ?? []).map(b => String(b.book_id)));
   const isOwnProfile = user?.username === username;
+  // Percent-encode characters that could break out of a CSS url('...')
+  const bannerCssUrl = safeUrl(bannerUrl).replace(/['()\s]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
 
   const hue = [...username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
   const accentMain = (accent && ACCENT_COLORS[accent]) ? ACCENT_COLORS[accent].main : `hsl(${hue},60%,50%)`;
@@ -67,7 +78,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
       <!-- Hero -->
       <div class="relative rounded-2xl overflow-hidden m-1 p-2 sm:p-2"
            style="${bannerUrl
-             ? `background:url(${escHtml(bannerUrl)}) center/cover no-repeat;border:1px solid rgba(255,255,255,0.06)`
+             ? `background:url('${escHtml(bannerCssUrl)}') center/cover no-repeat;border:1px solid rgba(255,255,255,0.06)`
              : `background:linear-gradient(135deg, hsl(${hue},30%,10%) 0%, hsl(${(hue+40)%360},25%,8%) 100%);border:1px solid rgba(255,255,255,0.06)`}">
         <div class="absolute inset-0 ${bannerUrl ? 'opacity-60' : 'opacity-30'}"
              style="background:${bannerUrl
@@ -117,6 +128,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
 
   let statsRendered = false;
   let bookshelfLoaded = false;
+  let cleanupStats = null;
 
   function refreshTabs(active) {
     lastTab.set(username, active);
@@ -147,7 +159,7 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
     if (active === 'stats' && !statsRendered && stats) {
       statsRendered = true;
       const statsEl = container.querySelector('#tab-stats');
-      renderStatsContent(statsEl, stats, {
+      cleanupStats = renderStatsContent(statsEl, stats, {
         compact: true,
         barCanvasId: 'profile-monthly-chart',
         pieCanvasId: 'profile-pie-chart',
@@ -281,6 +293,12 @@ function renderTabs(container, { username, bio, avatarUrl, bannerUrl, accent, sh
       }
     });
   }
+
+  return () => {
+    clearProfileAccent(container);
+    cleanupStats?.();
+    document.getElementById('shelf-picker')?.remove();
+  };
 }
 
 function renderShelvesTab(shelves, library, myBookIds = new Set(), isOwnProfile = false) {
@@ -326,7 +344,7 @@ function renderShelvesTab(shelves, library, myBookIds = new Set(), isOwnProfile 
     return `
       <section class="mb-10">
         <div class="flex items-center gap-2.5 mb-5">
-          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${escHtml(shelf.color)};box-shadow:0 0 6px ${escHtml(shelf.color)}80"></span>
+          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${safeColor(shelf.color)};box-shadow:0 0 6px ${safeColor(shelf.color)}80"></span>
           <h2 class="font-serif text-lg font-semibold">${escHtml(shelf.name)}</h2>
           <span class="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded-full">${books.length}</span>
         </div>
@@ -635,7 +653,7 @@ function renderFollowList(users, type, isOwnProfile) {
     <div class="space-y-2 max-w-lg">
       ${users.map(u => {
         const hue = [...u.username].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
-        const initial = u.username[0].toUpperCase();
+        const initial = escHtml(u.username[0].toUpperCase());
         const avatar = u.avatar_url
           ? `<img src="${escHtml(u.avatar_url)}" alt="" class="w-10 h-10 rounded-full object-cover flex-shrink-0" />`
           : `<div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-sm"
@@ -683,12 +701,13 @@ function attachFollowListHandlers(panelEl) {
       } catch (err) {
         btn.disabled = false;
         btn.style.opacity = '';
-        import('../components/toast.js').then(({ showToast }) => showToast(err.message, 'error'));
+        showToast(err.message, 'error');
       }
     });
   });
 }
 
+// Returns the view's cleanup (accent vars, open book picker)
 export async function renderBookGrid(container, username) {
   container.innerHTML = `<div class="flex justify-center py-20"><div class="spinner"></div></div>`;
   try {
@@ -718,6 +737,10 @@ export async function renderBookGrid(container, username) {
     const panelEl = container.querySelector('#grid-panel');
     panelEl.innerHTML = renderBookShelfGrid(slots, isOwnProfile);
     if (isOwnProfile) attachBookShelfHandlers(panelEl, username, slots);
+    return () => {
+      clearProfileAccent(container);
+      document.getElementById('shelf-picker')?.remove();
+    };
   } catch (err) {
     container.innerHTML = `<p class="text-red-400 text-center py-20">${escHtml(err.message)}</p>`;
   }

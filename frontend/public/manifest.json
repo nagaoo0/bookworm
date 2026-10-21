@@ -1,24 +1,17 @@
 {
+  "id": "/",
   "name": "Bookworm",
   "short_name": "Bookworm",
   "description": "Track and discover your reading journey",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0c0a09",
   "theme_color": "#0c0a09",
   "orientation": "portrait",
   "icons": [
-    {
-      "src": "/logo.png",
-      "sizes": "any",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/logo.png",
-      "sizes": "any",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

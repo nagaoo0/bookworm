@@ -1,5 +1,5 @@
 import { starRatingHTML } from './starRating.js';
-import { escHtml, sourceBadgeHTML, coverProxySrc } from '../utils.js';
+import { escHtml, safeUrl, sourceBadgeHTML, coverProxySrc } from '../utils.js';
 
 export function bookCardHTML(book, { showStatus = false, searchMode = false, isReading = false, readOnly = false, alsoRead = false } = {}) {
   const coverSrc = coverProxySrc(
@@ -7,7 +7,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
     book.book_id ?? (searchMode ? null : book.id)
   );
   const coverImg = coverSrc
-    ? `<img src="${coverSrc}" alt="${escHtml(book.title)}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />`
+    ? `<img src="${escHtml(safeUrl(coverSrc))}" alt="${escHtml(book.title)}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />`
     : `<div class="cover-placeholder w-full h-full font-serif text-xs">${escHtml(book.title)}</div>`;
 
   const authors = Array.isArray(book.authors) ? book.authors.join(', ') : (book.authors ?? '');
@@ -77,7 +77,7 @@ export function bookCardHTML(book, { showStatus = false, searchMode = false, isR
           if (a.service === 'audiobookshelf') return `<span title="In Audiobookshelf" class="text-[10px] bg-blue-500/15 text-blue-300 ring-1 ring-blue-500/20 px-1 py-0.5 rounded-full">🎧 ABS</span>`;
           if (a.service === 'calibre') {
             const fmts = (a.formats ?? []).map(f => f.toUpperCase()).join(' · ');
-            return `<span title="In Calibre library${fmts ? ': ' + fmts : ''}" class="text-[10px] bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20 px-1 py-0.5 rounded-full">📚${fmts ? ' ' + fmts : ''}</span>`;
+            return `<span title="${escHtml(`In Calibre library${fmts ? ': ' + fmts : ''}`)}" class="text-[10px] bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/20 px-1 py-0.5 rounded-full">📚${fmts ? ' ' + escHtml(fmts) : ''}</span>`;
           }
           return '';
         }).join('')}

@@ -3,6 +3,7 @@ import { getState, setState } from '../store.js';
 import { loadPrefs, savePrefs, ACCENT_COLORS } from '../prefs.js';
 import { showToast } from '../components/toast.js';
 import { avatarHTML } from '../components/avatar.js';
+import { inlineConfirm } from '../components/inlineConfirm.js';
 import { escHtml } from '../utils.js';
 
 const SEARCH_LANGUAGES = [
@@ -396,6 +397,10 @@ function attachLibraryManagementHandlers(container) {
   });
 
   // ── Find duplicates ──
+  // The pair data lives here; the delegated listener (bound once) reads it at click time
+  let currentPairs = [];
+  attachDupeHandlers(container.querySelector('#dupes-list'), () => currentPairs);
+
   container.querySelector('#find-dupes-btn')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     const msg = container.querySelector('#find-dupes-msg');
@@ -406,6 +411,7 @@ function attachLibraryManagementHandlers(container) {
     list.innerHTML = '';
     try {
       const pairs = await api.findDuplicates();
+      currentPairs = pairs;
       if (!pairs.length) {
         msg.className = 'text-xs text-green-400';
         msg.textContent = 'No duplicate books found.';
@@ -416,7 +422,6 @@ function attachLibraryManagementHandlers(container) {
         msg.classList.remove('hidden');
         list.innerHTML = pairs.map((p, i) => renderDupePair(p, i)).join('');
         list.classList.remove('hidden');
-        attachDupeHandlers(container, list, pairs);
       }
     } catch (err) {
       msg.className = 'text-xs text-red-400';
@@ -478,14 +483,17 @@ function renderDupePair(pair, index) {
     </div>`;
 }
 
-function attachDupeHandlers(container, list, pairs) {
-  list.querySelectorAll('.dupe-merge-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const keepId = parseInt(btn.dataset.keep, 10);
-      const removeId = parseInt(btn.dataset.remove, 10);
-      const row = btn.closest('[data-dupe-index]');
+// Bound exactly once per #dupes-list. Rows are swapped via outerHTML (Swap) and
+// the whole list is rebuilt on every scan, so per-button listeners would stack.
+function attachDupeHandlers(list, getPairs) {
+  list?.addEventListener('click', async e => {
+    const mergeBtn = e.target.closest('.dupe-merge-btn');
+    if (mergeBtn) {
+      const keepId = parseInt(mergeBtn.dataset.keep, 10);
+      const removeId = parseInt(mergeBtn.dataset.remove, 10);
+      const row = mergeBtn.closest('[data-dupe-index]');
       const status = row.querySelector('.dupe-status');
-      btn.disabled = true; btn.textContent = 'Merging…';
+      mergeBtn.disabled = true; mergeBtn.textContent = 'Merging…';
       try {
         await api.mergeBooks(keepId, removeId);
         row.classList.add('opacity-40', 'pointer-events-none');
@@ -496,26 +504,23 @@ function attachDupeHandlers(container, list, pairs) {
         status.className = 'dupe-status text-xs text-red-400';
         status.textContent = err.message;
         status.classList.remove('hidden');
-        btn.disabled = false; btn.textContent = 'Merge';
+        mergeBtn.disabled = false; mergeBtn.textContent = 'Merge';
       }
-    });
-  });
+      return;
+    }
 
-  list.querySelectorAll('.dupe-swap-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.dataset.index, 10);
-      const pair = pairs[idx];
+    const swapBtn = e.target.closest('.dupe-swap-btn');
+    if (swapBtn) {
+      const idx = parseInt(swapBtn.dataset.index, 10);
+      const pair = getPairs()[idx];
+      if (!pair) return;
       // Swap keep/remove in the local data structure
       [pair.keep_id, pair.remove_id] = [pair.remove_id, pair.keep_id];
       [pair.keep_title, pair.remove_title] = [pair.remove_title, pair.keep_title];
       [pair.keep_authors, pair.remove_authors] = [pair.remove_authors, pair.keep_authors];
       [pair.keep_cover, pair.remove_cover] = [pair.remove_cover, pair.keep_cover];
-      // Re-render the row
-      const row = btn.closest('[data-dupe-index]');
-      row.outerHTML = renderDupePair(pair, idx);
-      // Re-attach handlers to the new element
-      attachDupeHandlers(container, list, pairs);
-    });
+      swapBtn.closest('[data-dupe-index]').outerHTML = renderDupePair(pair, idx);
+    }
   });
 }
 
@@ -558,7 +563,6 @@ function attachImportExportHandlers(container) {
     btn.textContent = '…';
     try {
       const res = await api.exportLibrary();
-      if (!res.ok) throw new Error('Export failed');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -653,7 +657,7 @@ function renderIntegrationsSection(integrations = []) {
           </div>
           <div class="flex items-center gap-2 text-xs text-muted">
             <input type="checkbox" id="abs-auto-sessions" class="rounded"
-              ${abs ? '' : 'checked'} />
+              ${abs && (abs.auto_sessions === 'false' || abs.auto_sessions === false) ? '' : 'checked'} />
             <label for="abs-auto-sessions">Auto-create reading session when I finish a book in ABS</label>
           </div>
           ${abs ? `<p class="text-xs text-muted">Last synced: ${fmtDate(abs.last_synced_at)}</p>` : ''}
@@ -797,15 +801,16 @@ function attachIntegrationsHandlers(container) {
     }
   });
 
-  container.querySelector('#abs-disconnect-btn')?.addEventListener('click', async () => {
-    if (!confirm('Disconnect Audiobookshelf? Availability data will be removed.')) return;
-    try {
-      await api.disconnectIntegration('audiobookshelf');
-      showToast('Audiobookshelf disconnected.');
-      location.reload();
-    } catch (err) {
-      showIntMsg(container, 'abs-msg', err.message, true);
-    }
+  container.querySelector('#abs-disconnect-btn')?.addEventListener('click', e => {
+    inlineConfirm(e.currentTarget, {
+      label: 'Disconnect? Availability data will be removed.',
+      yes: 'Disconnect',
+      onConfirm: async () => {
+        await api.disconnectIntegration('audiobookshelf');
+        showToast('Audiobookshelf disconnected.');
+        location.reload();
+      },
+    });
   });
 
   // ── Calibre ──
@@ -847,15 +852,16 @@ function attachIntegrationsHandlers(container) {
     }
   });
 
-  container.querySelector('#calibre-disconnect-btn')?.addEventListener('click', async () => {
-    if (!confirm('Disconnect Calibre? Availability data will be removed.')) return;
-    try {
-      await api.disconnectIntegration('calibre');
-      showToast('Calibre disconnected.');
-      location.reload();
-    } catch (err) {
-      showIntMsg(container, 'calibre-msg', err.message, true);
-    }
+  container.querySelector('#calibre-disconnect-btn')?.addEventListener('click', e => {
+    inlineConfirm(e.currentTarget, {
+      label: 'Disconnect? Availability data will be removed.',
+      yes: 'Disconnect',
+      onConfirm: async () => {
+        await api.disconnectIntegration('calibre');
+        showToast('Calibre disconnected.');
+        location.reload();
+      },
+    });
   });
 }
 
@@ -888,61 +894,80 @@ function renderInviteRow(invite) {
     </div>`;
 }
 
+// Called once per render. The create button is bound once, and row actions go
+// through one delegated listener on #invites-list, so adding a row or restoring
+// a Revoke button never needs to (and must not) bind anything again.
 function attachInviteHandlers(container) {
   const inviteMsg = container.querySelector('#invite-msg');
+  const list = container.querySelector('#invites-list');
+  if (!list) return;
 
-  container.querySelector('#create-invite-btn')?.addEventListener('click', async () => {
+  const showError = err => {
+    inviteMsg.className = 'text-xs text-red-400';
+    inviteMsg.textContent = err.message;
+    inviteMsg.classList.remove('hidden');
+  };
+  const revokeBtnHtml = code =>
+    `<button class="revoke-invite text-xs text-muted hover:text-red-400 transition-colors" data-code="${escHtml(code)}">Revoke</button>`;
+
+  container.querySelector('#create-invite-btn')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
     try {
       const invite = await api.createInvite();
-      const list = container.querySelector('#invites-list');
-      const empty = list.querySelector('.italic');
-      if (empty) empty.remove();
+      list.querySelector('.italic')?.remove();
       list.insertAdjacentHTML('afterbegin', renderInviteRow(invite));
-      attachInviteHandlers(container);
+      inviteMsg.classList.add('hidden');
     } catch (err) {
-      inviteMsg.className = 'text-xs text-red-400';
-      inviteMsg.textContent = err.message;
-      inviteMsg.classList.remove('hidden');
+      showError(err);
+    } finally {
+      btn.disabled = false;
     }
   });
 
-  container.querySelectorAll('.copy-invite').forEach(btn => {
-    btn.addEventListener('click', () => {
-      navigator.clipboard.writeText(btn.dataset.code).then(() => {
+  list.addEventListener('click', async e => {
+    const row = e.target.closest('[data-invite-code]');
+    if (!row) return;
+    const code = row.dataset.inviteCode;
+
+    if (e.target.closest('.copy-invite')) {
+      const btn = e.target.closest('.copy-invite');
+      navigator.clipboard.writeText(code).then(() => {
         btn.textContent = 'Copied!';
         setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
-      });
-    });
-  });
+      }).catch(() => showToast('Could not copy to the clipboard.', 'error'));
+      return;
+    }
 
-  container.querySelectorAll('.revoke-invite').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const row = btn.closest('[data-invite-code]');
-      if (!row || row.querySelector('.revoke-confirm')) return;
-      btn.outerHTML = `
+    const revoke = e.target.closest('.revoke-invite');
+    if (revoke) {
+      if (row.querySelector('.revoke-confirm')) return;
+      revoke.outerHTML = `
         <span class="revoke-confirm flex items-center gap-1">
           <button class="revoke-yes text-xs px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded font-medium">Revoke</button>
           <button class="revoke-no text-xs px-1 text-muted hover:text-text">Cancel</button>
         </span>`;
-      row.querySelector('.revoke-yes').addEventListener('click', async () => {
-        try {
-          await api.deleteInvite(btn.dataset.code);
-          row.remove();
-          if (!container.querySelectorAll('[data-invite-code]').length) {
-            container.querySelector('#invites-list').innerHTML = `<p class="text-muted text-sm italic">No invite codes yet.</p>`;
-          }
-        } catch (err) {
-          inviteMsg.className = 'text-xs text-red-400';
-          inviteMsg.textContent = err.message;
-          inviteMsg.classList.remove('hidden');
+      return;
+    }
+
+    if (e.target.closest('.revoke-no')) {
+      row.querySelector('.revoke-confirm').outerHTML = revokeBtnHtml(code);
+      return;
+    }
+
+    const yes = e.target.closest('.revoke-yes');
+    if (yes) {
+      yes.disabled = true;
+      try {
+        await api.deleteInvite(code);
+        row.remove();
+        if (!list.querySelector('[data-invite-code]')) {
+          list.innerHTML = `<p class="text-muted text-sm italic">No invite codes yet.</p>`;
         }
-      });
-      row.querySelector('.revoke-no').addEventListener('click', () => {
-        row.querySelector('.revoke-confirm').outerHTML =
-          `<button class="revoke-invite text-xs text-muted hover:text-red-400 transition-colors" data-code="${escHtml(btn.dataset.code)}">Revoke</button>`;
-        attachInviteHandlers(container);
-      });
-    });
+      } catch (err) {
+        yes.disabled = false;
+        showError(err);
+      }
+    }
   });
 }
-
