@@ -4,7 +4,8 @@ import { getState, setState } from './store.js';
 import { escHtml } from './utils.js';
 
 applyPrefs();
-import { renderHome, loadLibrary } from './views/home.js';
+import { renderHome } from './views/home.js';
+import { loadLibrary } from './libraryStore.js';
 import { renderSearch } from './views/search.js';
 import { renderStats } from './views/stats.js';
 import { renderAuth } from './views/auth.js';

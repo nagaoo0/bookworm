@@ -188,4 +188,13 @@ export const api = {
   findDuplicates: () => request('/library/duplicates'),
   mergeBooks: (keepId, removeId) => request('/library/merge', { method: 'POST', body: { keepId, removeId } }),
   fetchMissingCovers: () => request('/library/fetch-covers', { method: 'POST' }),
+
+  // ── Redesign (Phase 4) endpoints ───────────────────────────────────────────
+  logoutAll: () => request('/auth/logout-all', { method: 'POST' }),
+  updatePrefs: (prefs) => request('/auth/me', { method: 'PATCH', body: { prefs } }),
+  getForYou: () => request('/recommendations/for-you'),
+  reorderShelves: (order) => request('/shelves/reorder', { method: 'PATCH', body: { order } }),
+  // body: { ids, status?, addShelfId?, removeShelfId? } -> { updated }
+  bulkUpdateLibrary: (body) => request('/library/bulk', { method: 'PATCH', body }),
+  bulkRemoveFromLibrary: (ids) => request('/library/bulk', { method: 'DELETE', body: { ids } }),
 };

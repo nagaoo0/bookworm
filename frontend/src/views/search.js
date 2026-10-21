@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { setState, getState } from '../store.js';
 import { bookCardHTML } from '../components/bookCard.js';
-import { loadLibrary } from './home.js';
+import { loadLibrary } from '../libraryStore.js';
 import { loadPrefs } from '../prefs.js';
 import { escHtml } from '../utils.js';
 import { showToast } from '../components/toast.js';

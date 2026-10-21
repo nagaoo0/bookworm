@@ -65,20 +65,8 @@ function sortBooks(books, sort) {
 // ── Data loading ───────────────────────────────────────────────────────────────
 // One state change per load. The skeleton (loading: true) is only used for the
 // very first load; later refreshes swap the data in place.
-let _libraryLoadSeq = 0;
-export async function loadLibrary() {
-  const seq = ++_libraryLoadSeq;
-  if (!getState().libraryLoaded) setState({ loading: true, error: null });
-  try {
-    const [shelves, library] = await Promise.all([api.getShelves(), api.getLibrary()]);
-    if (seq !== _libraryLoadSeq) return; // a newer load is in flight and wins
-    setState({ shelves, library, loading: false, error: null, libraryLoaded: true });
-  } catch (err) {
-    if (seq !== _libraryLoadSeq) return;
-    if (getState().libraryLoaded) showToast(`Could not refresh your library: ${err.message}`, 'error');
-    else setState({ error: err.message, loading: false });
-  }
-}
+import { loadLibrary } from '../libraryStore.js';
+export { loadLibrary };
 
 // ── Main render ────────────────────────────────────────────────────────────────
 // Mounts the home view and returns its cleanup. The view subscribes to the store

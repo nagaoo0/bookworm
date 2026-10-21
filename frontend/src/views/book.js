@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { getState } from '../store.js';
 import { starRatingHTML, attachStarHandlers } from '../components/starRating.js';
 import { showToast } from '../components/toast.js';
-import { loadLibrary } from './home.js';
+import { loadLibrary } from '../libraryStore.js';
 import { escHtml, safeUrl, safeColor, sourceBadgeHTML, coverProxySrc } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
 import { openSse } from '../sse.js';
