@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { safeFetchRaw, sameOrigin } from '../lib/safeUrl.js';
+import { baseUrl, clampPct } from './http.js';
 
 const MAX_PAGES = 200; // hard cap on x-kobo-sync-next pagination
 
@@ -17,7 +18,7 @@ const KOBO_STATUS_MAP = {
 };
 
 function koboBase(serverUrl, koboToken) {
-  return `${String(serverUrl).replace(/\/$/, '')}/kobo/${encodeURIComponent(koboToken)}`;
+  return `${baseUrl({ serverUrl })}/kobo/${encodeURIComponent(koboToken)}`;
 }
 
 // Pull a fresh full sync (no incremental token) and return all ReadingState blocks.
@@ -96,7 +97,7 @@ export async function fetchKoboProgress(config) {
       results.push({
         contentId,
         status: KOBO_STATUS_MAP[koboStatus] ?? null,
-        progressPct: progressPct !== null ? Math.round(progressPct) : null,
+        progressPct: clampPct(progressPct), // 0–100 or null: one bad value must not fail the sync
         lastModified,
         title,
         authors,

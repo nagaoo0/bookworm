@@ -1,14 +1,10 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
-import { hashPassword } from '../auth.js';
-import { idParam, reqStr } from '../lib/validate.js';
+import { hashPassword, adminOnly } from '../auth.js';
+import { HttpError } from '../lib/httpError.js';
+import { idParam, isValidNewPassword, PASSWORD_MSG } from '../lib/validate.js';
 
 const router = Router();
-
-function adminOnly(req, res, next) {
-  if (!req.user?.is_admin) return res.status(403).json({ error: 'Admin only' });
-  next();
-}
 
 router.use(adminOnly);
 
@@ -49,7 +45,8 @@ router.delete('/users/:id', async (req, res, next) => {
 router.post('/users/:id/reset-password', async (req, res, next) => {
   try {
     const targetId = idParam(req.params.id);
-    const newPassword = reqStr(req.body?.newPassword, 'newPassword', { min: 6, max: 128, trim: false });
+    const newPassword = req.body?.newPassword;
+    if (!isValidNewPassword(newPassword)) throw new HttpError(400, PASSWORD_MSG);
 
     const hash = await hashPassword(newPassword);
     // Invalidate all sessions for the target user so they must re-login

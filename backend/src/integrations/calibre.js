@@ -9,6 +9,7 @@
 
 import { XMLParser } from 'fast-xml-parser';
 import { safeFetchRaw, isHttpUrl, sameOrigin } from '../lib/safeUrl.js';
+import { baseUrl } from './http.js';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -18,10 +19,6 @@ const parser = new XMLParser({
   removeNSPrefix: true,   // dc:identifier → identifier, etc.
   parseTagValue: true,
 });
-
-function base(config) {
-  return String(config.serverUrl ?? '').replace(/\/$/, '');
-}
 
 export function opdsHeaders(config) {
   const h = { Accept: 'application/atom+xml, application/xml, text/xml, */*' };
@@ -33,9 +30,9 @@ export function opdsHeaders(config) {
 }
 
 async function fetchFeed(config, url) {
-  const fullUrl = /^https?:\/\//i.test(url) ? url : `${base(config)}${url}`;
+  const fullUrl = /^https?:\/\//i.test(url) ? url : `${baseUrl(config)}${url}`;
   // Feed links come from the remote server — never follow them off-origin
-  if (!sameOrigin(fullUrl, base(config))) {
+  if (!sameOrigin(fullUrl, baseUrl(config))) {
     throw new Error('Calibre-Web feed link points outside the configured server');
   }
   const res = await safeFetchRaw(fullUrl, {
@@ -109,7 +106,7 @@ export async function fetchBooks(config) {
 
     url = extractNextLink(parsed);
     // A "next" link on another origin means a misbehaving/malicious server — stop here
-    if (url && /^https?:\/\//i.test(url) && !sameOrigin(url, base(config))) {
+    if (url && /^https?:\/\//i.test(url) && !sameOrigin(url, baseUrl(config))) {
       console.warn('[calibre] ignoring off-origin next link; stopping pagination');
       url = null;
     }
@@ -129,7 +126,7 @@ export function getCoverUrl(config, entry) {
   if (!cover) return null;
   const href = cover['@_href'];
   if (!href) return null;
-  const full = href.startsWith('http') ? href : `${base(config)}${href}`;
+  const full = href.startsWith('http') ? href : `${baseUrl(config)}${href}`;
   return isHttpUrl(full) ? full : null;
 }
 

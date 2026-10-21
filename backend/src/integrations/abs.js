@@ -1,5 +1,6 @@
 import { io as socketIO } from 'socket.io-client';
 import { assertFetchableUrl, safeFetchRaw, isHttpUrl } from '../lib/safeUrl.js';
+import { baseUrl } from './http.js';
 
 // ---------------------------------------------------------------------------
 // Audiobookshelf REST + Socket.IO client
@@ -12,17 +13,13 @@ function headers(config) {
   };
 }
 
-function base(config) {
-  return String(config.serverUrl ?? '').replace(/\/$/, '');
-}
-
 const TIMEOUT_MS = 20000;
 
 // The server is a user-configured integration, so LAN addresses are allowed;
 // loopback / link-local / metadata addresses never are (safeFetchRaw checks
 // the URL and every redirect hop).
 function absFetch(config, path, timeoutMs = TIMEOUT_MS) {
-  return safeFetchRaw(`${base(config)}${path}`, {
+  return safeFetchRaw(`${baseUrl(config)}${path}`, {
     allowPrivate: true, headers: headers(config), timeoutMs,
   });
 }
@@ -88,8 +85,7 @@ export function mapItemToBook(item) {
     title: meta.title ?? item.title ?? 'Unknown',
     authors,
     isbn13: meta.isbn ?? null,
-    cover_url: item.coverPath ? `${null}` : null, // resolved by caller with base URL
-    _absItem: item,
+    cover_url: null, // resolved by the caller via getCoverUrl()
     extra: {
       narrator,
       duration_minutes: (() => { const d = media.duration ?? meta.duration ?? null; return d != null ? Math.round(d / 60) : null; })(),
@@ -103,7 +99,7 @@ export function mapItemToBook(item) {
 
 export function getCoverUrl(config, item) {
   if (!item.coverPath) return null;
-  const url = `${base(config)}/api/items/${encodeURIComponent(item.id)}/cover`;
+  const url = `${baseUrl(config)}/api/items/${encodeURIComponent(item.id)}/cover`;
   return isHttpUrl(url) ? url : null;
 }
 
@@ -111,11 +107,17 @@ export function getCoverUrl(config, item) {
 // Real-time: Socket.IO connection (relay ABS events to a callback)
 // ---------------------------------------------------------------------------
 
-let _io = null;
+// One socket per user (a module-level singleton let users clobber each other).
+const _streams = new Map(); // userId → socket
 
-export async function openEventStream(config, onEvent) {
+export function hasEventStream(userId) {
+  return _streams.has(userId);
+}
+
+export async function openEventStream(userId, config, onEvent) {
   await assertFetchableUrl(config.serverUrl, { allowPrivate: true });
-  const socket = socketIO(base(config), {
+  closeEventStream(userId); // replace, never leak, this user's previous socket
+  const socket = socketIO(baseUrl(config), {
     transports: ['websocket'],
     auth: { token: config.token },
     reconnection: true,
@@ -123,22 +125,27 @@ export async function openEventStream(config, onEvent) {
   });
 
   socket.on('connect', () => {
-    console.log('[ABS] WebSocket connected');
+    console.log(`[ABS] WebSocket connected (user ${userId})`);
   });
 
   socket.on('user_stream_progress', data => onEvent('progress', data));
   socket.on('item_updated', data => onEvent('item_updated', data));
   socket.on('disconnect', reason => {
-    console.log('[ABS] WebSocket disconnected:', reason);
+    console.log(`[ABS] WebSocket disconnected (user ${userId}):`, reason);
   });
 
-  _io = socket;
+  _streams.set(userId, socket);
   return socket;
 }
 
-export function closeEventStream() {
-  if (_io) {
-    _io.disconnect();
-    _io = null;
-  }
+export function closeEventStream(userId) {
+  const socket = _streams.get(userId);
+  if (!socket) return;
+  socket.disconnect();
+  _streams.delete(userId);
+}
+
+export function closeAllEventStreams() {
+  for (const socket of _streams.values()) socket.disconnect();
+  _streams.clear();
 }

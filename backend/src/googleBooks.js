@@ -1,14 +1,7 @@
-import fetch from 'node-fetch';
 import { pickIsbns } from './isbn.js';
+import { fetchWithTimeout } from './lib/fetchWithTimeout.js';
 
 const BASE = 'https://www.googleapis.com/books/v1/volumes';
-const FETCH_TIMEOUT_MS = 8000;
-
-function fetchWithTimeout(url) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(id));
-}
 
 function normalize(item) {
   const v = item.volumeInfo ?? {};
@@ -35,7 +28,7 @@ function normalize(item) {
 }
 
 // Build a Google Books query string from structured fields
-export function buildQuery({ q, title, author, subject, publisher, isbn }) {
+function buildQuery({ q, title, author, subject, publisher, isbn }) {
   const parts = [];
   if (q)         parts.push(q.trim());
   if (title)     parts.push(`intitle:${title.trim()}`);

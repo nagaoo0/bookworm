@@ -107,6 +107,14 @@ export function optHttpUrl(v, name) {
   return v;
 }
 
+// Policy for NEW passwords (register, change, admin reset). Login deliberately
+// does not apply it, so accounts created under the old 6-character minimum still work.
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 128;
+export const PASSWORD_MSG = `Password must be ${PASSWORD_MIN}–${PASSWORD_MAX} characters`;
+export const isValidNewPassword = p =>
+  typeof p === 'string' && p.length >= PASSWORD_MIN && p.length <= PASSWORD_MAX;
+
 export function idParam(v) {
   if (typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) {
     const n = Number(v);

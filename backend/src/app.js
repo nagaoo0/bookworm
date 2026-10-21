@@ -31,6 +31,8 @@ import integrationsRouter from './routes/integrations.js';
 import coversRouter from './routes/covers.js';
 import { getExternalBook, EXTERNAL_ID_COLUMNS } from './bookProviders.js';
 import { idParam } from './lib/validate.js';
+import { upsertBook } from './lib/books.js';
+import recommendationsRouter from './routes/recommendations.js';
 import { optionalAuth } from './lib/optionalAuth.js';
 import { viewerParams, visibleUserSql, canView } from './lib/visibility.js';
 
@@ -210,26 +212,18 @@ async function resolveExternalBook(source, externalId, res, next) {
     if (existing) return res.json(existing);
 
     // Not in DB yet — fetch from the provider and insert
+    // (lib/books.js policy: a concurrent insert of the same id is only filled in,
+    // never overwritten — the old code rewrote title/authors/cover for everyone)
     const b = await getExternalBook(source, externalId);
-    const { rows: [inserted] } = await pool.query(
-      `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories, isbn13, isbn10)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (${column}) DO UPDATE
-         SET title          = EXCLUDED.title,
-             authors        = EXCLUDED.authors,
-             cover_url      = EXCLUDED.cover_url,
-             page_count     = EXCLUDED.page_count,
-             published_date = EXCLUDED.published_date,
-             description    = EXCLUDED.description,
-             categories     = EXCLUDED.categories,
-             isbn13         = COALESCE(books.isbn13, EXCLUDED.isbn13),
-             isbn10         = COALESCE(books.isbn10, EXCLUDED.isbn10)
-       RETURNING id, google_id, open_library_id, apple_id, title, authors, cover_url, page_count,
-                 published_date, description, categories, publisher`,
-      [externalId, b.title, b.authors, b.coverUrl, b.pageCount, b.publishedDate, b.description, b.categories,
-       b.isbn13, b.isbn10]
+    const idKey = { google: 'googleId', openlibrary: 'openLibraryId', apple: 'appleId' }[source];
+    const { id } = await upsertBook(pool, { ...b, googleId: null, openLibraryId: null, appleId: null, [idKey]: externalId }, { match: ['external'] });
+    const { rows: [book] } = await pool.query(
+      `SELECT id, google_id, open_library_id, apple_id, title, authors, cover_url, page_count,
+              published_date, description, categories, publisher
+       FROM books WHERE id = $1`,
+      [id]
     );
-    res.json(inserted);
+    res.json(book);
   } catch (err) {
     next(err);
   }
@@ -295,6 +289,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use(authMiddleware);
 
 app.use('/api/shelves', shelvesRouter);
+app.use('/api/recommendations', recommendationsRouter);
 app.use('/api/search', searchLimiter, searchRouter);
 app.use('/api/library', libraryRouter);
 app.use('/api/books/:bookId/sessions', sessionsRouter);

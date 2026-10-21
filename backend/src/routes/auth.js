@@ -6,7 +6,7 @@ import {
   createSession, setSessionCookie, clearSessionCookie,
   authMiddleware, verifyRecaptcha,
 } from '../auth.js';
-import { optHttpUrl, oneOf, reqStr } from '../lib/validate.js';
+import { optHttpUrl, oneOf, reqStr, isValidNewPassword, PASSWORD_MSG } from '../lib/validate.js';
 import { HttpError } from '../lib/httpError.js';
 
 const router = Router();
@@ -24,10 +24,7 @@ const loginLimiter = rateLimit({
 // against when the username doesn't exist so response time doesn't reveal it.
 const DUMMY_HASH = '$2b$12$duNYsR0/ebRiftiGTArxm.dzRaBu4pw8aRq.pj.Hbvpjc50QY2E2q';
 
-const PASSWORD_MIN = 6;
-const PASSWORD_MAX = 128;
-const validPassword = p => typeof p === 'string' && p.length >= PASSWORD_MIN && p.length <= PASSWORD_MAX;
-const PASSWORD_MSG = `Password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters`;
+const validPassword = isValidNewPassword;
 
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,32}$/;
 
@@ -275,7 +272,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
         return res.status(400).json({ error: 'currentPassword is required to change password' });
       if (!(await verifyPassword(currentPassword, row.password_hash)))
         return res.status(401).json({ error: 'Current password is wrong' });
-      if (!validPassword(newPassword)) return res.status(400).json({ error: `New password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters` });
+      if (!validPassword(newPassword)) return res.status(400).json({ error: PASSWORD_MSG });
       params.push(await hashPassword(newPassword));
       updates.push(`password_hash = $${params.length}`);
       passwordChanged = true;

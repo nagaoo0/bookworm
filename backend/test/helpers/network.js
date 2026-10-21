@@ -1,7 +1,6 @@
-// Outbound HTTP stub. Tests never touch the network: every fetch (the global
-// one used by lib/safeUrl.js, and the `node-fetch` import used by the book
-// providers and reCAPTCHA) goes through one dispatcher that either matches a
-// registered route or fails loudly.
+// Outbound HTTP stub. Tests never touch the network: every fetch (global
+// fetch: book providers, reCAPTCHA, lib/safeUrl.js) goes through one
+// dispatcher that either matches a registered route or fails loudly.
 
 export const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',

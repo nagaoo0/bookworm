@@ -38,17 +38,22 @@ export async function bootApp({ env = {}, preMigrateSql = null } = {}) {
                    'INTEGRATION_ALLOWED_HOSTS', 'COVERS_MAX_MB']) delete process.env[k];
   Object.assign(process.env, env);
 
-  // Network stub: same dispatcher for global fetch and the node-fetch module
+  // Network stub: every outbound request goes through global fetch
   const network = createNetwork();
   const realFetch = globalThis.fetch;
   globalThis.fetch = network.dispatch;
-  mock.module('node-fetch', { exports: { default: network.dispatch } });
   // Audiobookshelf's live event stream: a do-nothing socket instead of a real websocket
   const sockets = [];
   mock.module('socket.io-client', {
     exports: {
       io: (url, opts) => {
-        const sock = { url, opts, on() { return sock; }, disconnect() { sock.closed = true; } };
+        const sock = {
+          url, opts, handlers: {},
+          on(event, fn) { sock.handlers[event] = fn; return sock; },
+          /** Test helper: deliver a server event to the registered handler. */
+          emit(event, data) { sock.handlers[event]?.(data); },
+          disconnect() { sock.closed = true; },
+        };
         sockets.push(sock);
         return sock;
       },

@@ -2,11 +2,34 @@ import { Router } from 'express';
 import { parse } from 'csv-parse/sync';
 import { pool } from '../db.js';
 import { getExternalBook } from '../bookProviders.js';
+import { upsertBook } from '../lib/books.js';
+import { findShelfByName, freeSlug } from '../lib/slug.js';
 
 const router = Router();
 
 const STATUS_FROM_CSV = { finished: 'done', reading: 'reading', toread: 'to_read' };
 const STATUS_TO_CSV   = { done: 'finished', reading: 'reading', to_read: 'toread' };
+
+// Column order of the export. openLibraryId / appleId were added at the END so
+// older readers of the file keep working; the importer accepts files with or
+// without them.
+const COLUMNS = ['id', 'isbn10', 'isbn13', 'title', 'author', 'publisher', 'publishedDate', 'status', 'shelf',
+  'stars', 'review', 'note', 'startDate', 'finishDate', 'readingMinutes', 'openLibraryId', 'appleId'];
+
+// Spreadsheet formula injection: Excel/Sheets/LibreOffice evaluate a cell that
+// starts with = + - @ (also tab / CR). Prefix such text with an apostrophe,
+// which spreadsheets treat as "this is text" and hide.
+const FORMULA_START = /^[=+\-@\t\r]/;
+export function neutralise(value) {
+  const s = String(value ?? '');
+  return FORMULA_START.test(s) ? `'${s}` : s;
+}
+// Inverse, so exporting and re-importing a file round-trips: only an apostrophe
+// that neutralise() would have added is removed.
+export function restore(value) {
+  const s = String(value ?? '');
+  return /^'[=+\-@\t\r]/.test(s) ? s.slice(1) : s;
+}
 
 // ── GET /api/import-export/export ─────────────────────────────────────────────
 router.get('/export', async (req, res, next) => {
@@ -15,7 +38,7 @@ router.get('/export', async (req, res, next) => {
 
     const { rows: books } = await pool.query(
       `SELECT lb.id AS lib_id, lb.status, lb.notes, lb.added_at,
-              b.google_id,
+              b.google_id, b.open_library_id, b.apple_id,
               COALESCE(lb.title_override,   b.title)   AS title,
               COALESCE(lb.authors_override, b.authors) AS authors,
               b.isbn10, b.isbn13,
@@ -61,19 +84,18 @@ router.get('/export', async (req, res, next) => {
         startDate:      latest.started_at ? String(latest.started_at).slice(0, 10) : '',
         finishDate:     latest.finished_at ? String(latest.finished_at).slice(0, 10) : '',
         readingMinutes: 0,
+        openLibraryId:  b.open_library_id ?? '',
+        appleId:        b.apple_id ?? '',
       });
     }
 
-    const header = 'id\tisbn10\tisbn13\ttitle\tauthor\tpublisher\tpublishedDate\tstatus\tshelf\tstars\treview\tnote\tstartDate\tfinishDate\treadingMinutes\n';
+    const header = COLUMNS.join('\t') + '\n';
     const body = rows.map(r =>
-      [r.id, r.isbn10, r.isbn13, r.title, r.author, r.publisher, r.publishedDate,
-       r.status, r.shelf, r.stars, r.review, r.note, r.startDate, r.finishDate, r.readingMinutes]
-        .map(v => `"${String(v).replace(/"/g, '""')}"`)
-        .join('\t')
+      COLUMNS.map(c => `"${neutralise(r[c]).replace(/"/g, '""')}"`).join('\t')
     ).join('\n');
 
     res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="bookworm-library.csv"');
+    res.setHeader('Content-Disposition', 'attachment; filename="bookworm-library.tsv"');
     res.send(header + body);
   } catch (err) { next(err); }
 });
@@ -100,22 +122,26 @@ router.post('/import', async (req, res) => {
   try {
     client = await pool.connect();
     for (const r of records) {
+      // restore(): undo the formula-neutralising apostrophe added by export
+      const text          = v => restore(v?.trim()) || null;
       const googleId      = r.id?.trim() || null;
-      const title         = r.title?.trim();
+      const openLibraryId = r.openLibraryId?.trim() || null;
+      const appleId       = r.appleId?.trim() || null;
+      const title         = text(r.title);
       const isbn10        = r.isbn10?.trim() || null;
       const isbn13        = r.isbn13?.trim() || null;
-      const publisher     = r.publisher?.trim() || null;
+      const publisher     = text(r.publisher);
       const publishedDate = r.publishedDate?.trim() || null;
-      const authors       = r.author?.trim()
-        ? r.author.split(',').map(a => a.trim()).filter(Boolean) : [];
+      const authors       = text(r.author)
+        ? text(r.author).split(',').map(a => a.trim()).filter(Boolean) : [];
       const status        = STATUS_FROM_CSV[r.status?.trim()] ?? 'to_read';
-      const note          = r.note?.trim() || null;
-      const review        = r.review?.trim() || null;
+      const note          = text(r.note);
+      const review        = text(r.review);
       const stars         = parseInt(r.stars, 10) || null;
       const startDate     = r.startDate?.trim() || null;
       const finishDate    = r.finishDate?.trim() || null;
       // shelf can be a pipe-separated list of names, a single name, or empty
-      const shelfNames    = (r.shelf?.trim() || '')
+      const shelfNames    = (text(r.shelf) || '')
         .split('|').map(s => s.trim()).filter(Boolean);
 
       if (!title) { skipped++; continue; }
@@ -124,38 +150,10 @@ router.post('/import', async (req, res) => {
         await client.query('BEGIN');
         let inserted = false;
 
-        // Upsert book
-        let bookId;
-        if (googleId) {
-          const { rows: [book] } = await client.query(
-            `INSERT INTO books (google_id, title, authors, isbn10, isbn13, publisher, published_date)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             ON CONFLICT (google_id) DO UPDATE SET
-               -- shared row: never overwrite what's there, only fill gaps
-               isbn10 = COALESCE(books.isbn10, EXCLUDED.isbn10),
-               isbn13 = COALESCE(books.isbn13, EXCLUDED.isbn13),
-               publisher = COALESCE(books.publisher, EXCLUDED.publisher),
-               published_date = COALESCE(books.published_date, EXCLUDED.published_date)
-             RETURNING id`,
-            [googleId, title, authors, isbn10, isbn13, publisher, publishedDate]
-          );
-          bookId = book.id;
-        } else {
-          const { rows: [existing] } = await client.query(
-            `SELECT id FROM books WHERE google_id IS NULL AND title = $1 AND authors[1] = $2 LIMIT 1`,
-            [title, authors[0] ?? '']
-          );
-          if (existing) {
-            bookId = existing.id;
-          } else {
-            const { rows: [book] } = await client.query(
-              `INSERT INTO books (title, authors, isbn10, isbn13, publisher, published_date)
-               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-              [title, authors, isbn10, isbn13, publisher, publishedDate]
-            );
-            bookId = book.id;
-          }
-        }
+        // Shared book row: external id → ISBN-13 → title + first author (lib/books.js)
+        const { id: bookId } = await upsertBook(client, {
+          googleId, openLibraryId, appleId, title, authors, isbn10, isbn13, publisher, publishedDate,
+        }, { match: ['external', 'isbn', 'title'] });
 
         // Upsert library entry
         const { rows: [lb] } = await client.query(
@@ -168,16 +166,20 @@ router.post('/import', async (req, res) => {
         );
         inserted = lb.xmax === '0';  // xmax=0 means INSERT (not UPDATE)
 
-        // Shelves: find-or-create each named shelf, then add membership
+        // Shelves: find (same slug as the UI, legacy slugs, or name ignoring
+        // case) or create each named shelf, then add membership
         for (const name of shelfNames) {
-          const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-          const { rows: [shelf] } = await client.query(
-            `INSERT INTO shelves (user_id, name, slug)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (user_id, slug) DO UPDATE SET name = shelves.name
-             RETURNING id`,
-            [uid, name, slug]
-          );
+          let shelf = await findShelfByName(client, uid, name);
+          if (!shelf) {
+            const slug = await freeSlug(client, uid, name);
+            ({ rows: [shelf] } = await client.query(
+              `INSERT INTO shelves (user_id, name, slug, position)
+               VALUES ($1, $2, $3, (SELECT COALESCE(MAX(position) + 1, 0) FROM shelves WHERE user_id = $1))
+               ON CONFLICT (user_id, slug) DO UPDATE SET name = shelves.name
+               RETURNING id`,
+              [uid, name, slug]
+            ));
+          }
           await client.query(
             `INSERT INTO shelf_memberships (library_book_id, shelf_id)
              VALUES ($1, $2)

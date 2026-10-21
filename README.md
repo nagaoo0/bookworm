@@ -104,6 +104,7 @@ With `TEST_DATABASE_URL` set, every test file creates and drops its own database
 | `REQUIRE_INVITE` | `false` | Set to `true` for invite-only registration: every account except the very first (the admin) must supply a valid, unused invite code |
 | `INTEGRATIONS_KEY` | _(unset)_ | Encrypts Audiobookshelf / Calibre-Web / Kobo credentials at rest (AES-256-GCM). A 32-byte key as hex or base64, or any passphrase. **Recommended.** Without it credentials are stored as plaintext and a warning is logged at boot |
 | `PG_POOL_MAX` | _(unset → 10)_ | Optional — maximum database connections in the API's pool (the test suite sets `1`) |
+| `PG_TIMEZONE` | `UTC` | Optional — time zone of every database session the API opens (IANA name, e.g. `Europe/Berlin`). Date-only values such as a read's finish date (`2024-05-01`) are interpreted in this zone, so keep it stable once you have data. Invalid values fall back to `UTC` |
 | `INTEGRATION_ALLOWED_HOSTS` | _(unset)_ | Optional comma-separated hostnames (e.g. `calibre.lan,192.168.1.20`) that integrations may point at. **Recommended for multi-user instances**; when unset, any user can aim an integration at any LAN host |
 
 ### Registration and invites

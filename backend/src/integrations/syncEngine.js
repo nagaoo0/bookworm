@@ -1,5 +1,8 @@
 import { pool } from '../db.js';
 import { findBestMatch } from '../bookProviders.js';
+import { HttpError } from '../lib/httpError.js';
+import { upsertBook } from '../lib/books.js';
+import { clampPct } from './http.js';
 import * as abs from './abs.js';
 import * as calibre from './calibre.js';
 import * as koboSync from './koboSync.js';
@@ -8,52 +11,27 @@ import { getIntegration, openConfig } from './configStore.js';
 // Active polling intervals keyed by `${userId}:${service}`
 const _timers = new Map();
 
-// Active ABS WebSocket connections keyed by userId
-const _absSockets = new Map();
+// (userId, service) pairs with a sync in flight — see syncService()
+const _running = new Set();
 
 // SSE clients waiting for real-time ABS events: userId → Set<res>
 export const sseClients = new Map();
 
 // ---------------------------------------------------------------------------
-// Book deduplication: find or create a row in books
-// Returns { id, isNew } — callers use isNew to decide whether to enrich.
+// Book deduplication: find or create a row in books (lib/books.js — ISBN-13
+// first, then normalised title + first author; existing rows only get NULLs
+// filled). Returns { id, isNew } — callers use isNew to decide whether to enrich.
 // ---------------------------------------------------------------------------
 
 function normalize(str) {
   return (str ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-export async function upsertBook(bookData) {
-  const { title, authors, isbn13, cover_url } = bookData;
-
-  // 1) Try ISBN-13 match
-  if (isbn13) {
-    const r = await pool.query('SELECT id FROM books WHERE isbn13 = $1', [isbn13]);
-    if (r.rows.length) return { id: r.rows[0].id, isNew: false };
-  }
-
-  // 2) Fuzzy match on normalized title + first author
-  const normTitle = normalize(title);
-  const normAuthor = normalize(authors?.[0] ?? '');
-  if (normTitle && normAuthor) {
-    const r = await pool.query(
-      `SELECT id FROM books
-       WHERE lower(regexp_replace(title,'[^a-zA-Z0-9]','','g')) = $1
-         AND lower(regexp_replace(authors[1],'[^a-zA-Z0-9]','','g')) = $2
-       LIMIT 1`,
-      [normTitle, normAuthor]
-    );
-    if (r.rows.length) return { id: r.rows[0].id, isNew: false };
-  }
-
-  // 3) Create new book row
-  const r = await pool.query(
-    `INSERT INTO books (title, authors, isbn13, cover_url)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id`,
-    [title, authors ?? [], isbn13 ?? null, cover_url ?? null]
-  );
-  return { id: r.rows[0].id, isNew: true };
+function findOrCreateBook(bookData) {
+  const { title, authors, isbn13, cover_url, description } = bookData;
+  return upsertBook(pool, {
+    title: title || 'Unknown', authors, isbn13, coverUrl: cover_url, description,
+  }, { match: ['isbn', 'title'] });
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +48,7 @@ async function resolveBookId(userId, service, externalId, bookData) {
     );
     if (r.rows.length) return { id: r.rows[0].book_id, isNew: false };
   }
-  return upsertBook(bookData);
+  return findOrCreateBook(bookData);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,19 +116,50 @@ async function upsertLibraryBook(userId, bookId, status = 'to_read') {
 // Upsert book_availability
 // ---------------------------------------------------------------------------
 
+// A row is keyed by its external item id (unique index
+// book_availability_external_key) — that is what keeps a re-sync, a merge and a
+// concurrent insert from ever producing two rows for one item. An existing row
+// for the external id is refreshed in place and keeps its book_id (so merges
+// stay stable). Otherwise a new row is inserted; if this book already has a row
+// for the service (two external items that dedupe to one book) that row is
+// re-pointed at the newest item, as before.
 async function upsertAvailability(userId, bookId, service, externalId, formats, extra) {
-  await pool.query(
+  const ext = externalId || null;
+  const fmt = formats ?? [];
+  const ex = JSON.stringify(extra ?? {});
+  // merge: fresh keys win, but keys only present in the old extra (e.g. the
+  // cached kobo_content_id) survive the sync
+  if (ext) {
+    const { rowCount } = await pool.query(
+      `UPDATE book_availability
+       SET formats = $4, extra = extra || $5::jsonb, last_seen_at = now()
+       WHERE user_id = $1 AND service = $2 AND external_id = $3`,
+      [userId, service, ext, fmt, ex]
+    );
+    if (rowCount) return;
+  }
+  const insert = () => pool.query(
     `INSERT INTO book_availability (user_id, book_id, service, external_id, formats, extra, last_seen_at)
-     VALUES ($1, $2, $3, $4, $5, $6, now())
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
      ON CONFLICT (user_id, book_id, service)
      DO UPDATE SET external_id = EXCLUDED.external_id,
                    formats     = EXCLUDED.formats,
-                   -- merge: fresh keys win, but keys only present in the old
-                   -- extra (e.g. cached kobo_content_id) survive the sync
                    extra       = book_availability.extra || EXCLUDED.extra,
                    last_seen_at = now()`,
-    [userId, bookId, service, externalId ?? null, formats ?? [], extra ?? {}]
+    [userId, bookId, service, ext, fmt, ex]
   );
+  try {
+    await insert();
+  } catch (err) {
+    // Lost a race for the same external id: the other writer's row wins, refresh it
+    if (err.code !== '23505' || !ext) throw err;
+    await pool.query(
+      `UPDATE book_availability
+       SET formats = $4, extra = extra || $5::jsonb, last_seen_at = now()
+       WHERE user_id = $1 AND service = $2 AND external_id = $3`,
+      [userId, service, ext, fmt, ex]
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +218,7 @@ async function syncABS(userId, config) {
         abs_library_id: lib.id,
         abs_item_id: item.id,
         server_url: config.serverUrl,
-        progress_pct: progress ? Math.round((progress.progress ?? 0) * 100) : 0,
+        progress_pct: progress ? (clampPct((progress.progress ?? 0) * 100) ?? 0) : 0,
         is_finished: progress?.isFinished ?? false,
       });
 
@@ -359,7 +368,7 @@ async function syncCalibreKoboProgress(userId, config) {
          END,
          progress_pct = COALESCE($4, progress_pct)
        WHERE user_id=$1 AND book_id=$2`,
-      [userId, bookId, status ?? null, progressPct]
+      [userId, bookId, status ?? null, clampPct(progressPct)]
     );
     applied++;
 
@@ -400,25 +409,41 @@ async function syncCalibre(userId, config) {
 // Public: run one sync cycle for a user + service
 // ---------------------------------------------------------------------------
 
+// At most one sync per (user, service) at a time: the scheduled timer and a
+// manual "Sync now" (or a slow sync outlasting its interval) must never overlap,
+// or they race on the same books/availability rows. A second call while one is
+// running rejects with HttpError(409); the scheduler swallows that, the manual
+// route reports it.
 export async function syncService(userId, service) {
-  const integration = await getIntegration(userId, service);
-  if (!integration) return;
-  const { config } = integration;
-
-  console.log(`[sync] ${service} for user ${userId} starting`);
+  const key = `${userId}:${service}`;
+  if (_running.has(key)) throw new HttpError(409, 'Sync already running');
+  _running.add(key); // synchronous with the check above: no await in between
   try {
-    if (service === 'audiobookshelf') await syncABS(userId, config);
-    else if (service === 'calibre') await syncCalibre(userId, config);
+    const integration = await getIntegration(userId, service);
+    if (!integration) return;
+    const { config } = integration;
 
-    await pool.query(
-      'UPDATE integrations SET last_synced_at=now() WHERE user_id=$1 AND service=$2',
-      [userId, service]
-    );
-    console.log(`[sync] ${service} for user ${userId} done`);
-  } catch (err) {
-    console.error(`[sync] ${service} for user ${userId} failed:`, err.message);
-    throw err;
+    console.log(`[sync] ${service} for user ${userId} starting`);
+    try {
+      if (service === 'audiobookshelf') await syncABS(userId, config);
+      else if (service === 'calibre') await syncCalibre(userId, config);
+
+      await pool.query(
+        'UPDATE integrations SET last_synced_at=now() WHERE user_id=$1 AND service=$2',
+        [userId, service]
+      );
+      console.log(`[sync] ${service} for user ${userId} done`);
+    } catch (err) {
+      console.error(`[sync] ${service} for user ${userId} failed:`, err.message);
+      throw err;
+    }
+  } finally {
+    _running.delete(key);
   }
+}
+
+export function isSyncRunning(userId, service) {
+  return _running.has(`${userId}:${service}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -434,10 +459,12 @@ export function startContinuousSync(userId, service, intervalMs) {
   const key = `${userId}:${service}`;
   if (_timers.has(key)) return;
 
-  const delay = intervalMs ?? INTERVALS[service] ?? 15 * 60 * 1000;
+  const delay = Number.isFinite(intervalMs) && intervalMs > 0
+    ? intervalMs : (INTERVALS[service] ?? 15 * 60 * 1000);
   const timer = setInterval(async () => {
-    try { await syncService(userId, service); } catch { /* logged inside */ }
+    try { await syncService(userId, service); } catch { /* logged inside; 409 = previous run still going */ }
   }, delay);
+  timer.unref?.();
 
   _timers.set(key, timer);
   console.log(`[sync] polling started for ${service} user ${userId} every ${delay / 1000}s`);
@@ -457,9 +484,9 @@ export function stopContinuousSync(userId, service) {
 // ---------------------------------------------------------------------------
 
 export async function startAbsSocket(userId, config) {
-  if (_absSockets.has(userId)) return;
+  if (abs.hasEventStream(userId)) return;
 
-  const socket = await abs.openEventStream(config, (eventType, data) => {
+  await abs.openEventStream(userId, config, (eventType, data) => {
     const clients = sseClients.get(userId);
     if (!clients?.size) return;
     const payload = JSON.stringify({ type: eventType, data });
@@ -467,16 +494,10 @@ export async function startAbsSocket(userId, config) {
       res.write(`data: ${payload}\n\n`);
     }
   });
-
-  if (socket) _absSockets.set(userId, socket);
 }
 
 export function stopAbsSocket(userId) {
-  const socket = _absSockets.get(userId);
-  if (socket) {
-    socket.disconnect?.();
-    _absSockets.delete(userId);
-  }
+  abs.closeEventStream(userId);
 }
 
 // Graceful shutdown: clear every polling timer, drop every ABS socket and
@@ -484,9 +505,7 @@ export function stopAbsSocket(userId) {
 export function stopAllSyncs() {
   for (const timer of _timers.values()) clearInterval(timer);
   _timers.clear();
-  for (const socket of _absSockets.values()) socket.disconnect?.();
-  _absSockets.clear();
-  abs.closeEventStream();
+  abs.closeAllEventStreams();
   for (const clients of sseClients.values()) {
     for (const res of clients) res.end();
   }
@@ -498,9 +517,15 @@ export function stopAllSyncs() {
 // ---------------------------------------------------------------------------
 
 export async function bootAllSyncs() {
-  const r = await pool.query('SELECT user_id, service, config FROM integrations');
+  const r = await pool.query('SELECT user_id, service, config, interval_ms FROM integrations');
   for (const row of r.rows) {
-    startContinuousSync(row.user_id, row.service);
+    // The saved interval survives restarts; rows saved before the column existed
+    // fall back to the intervalMs inside their config, then to the service default
+    let intervalMs = row.interval_ms;
+    if (intervalMs == null) {
+      try { intervalMs = openConfig(row.config).intervalMs ?? undefined; } catch { /* unreadable config */ }
+    }
+    startContinuousSync(row.user_id, row.service, intervalMs ?? undefined);
     if (row.service === 'audiobookshelf') {
       await Promise.resolve().then(() => startAbsSocket(row.user_id, openConfig(row.config))).catch(err => {
         console.warn(`[ABS socket] user ${row.user_id}:`, err.message);

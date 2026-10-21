@@ -122,6 +122,8 @@ describe('notifications', () => {
     assert.equal(likes.length, 1);
     assert.equal(likes[0].actor_username, 'bob');
     assert.equal(likes[0].payload.title, 'Alice Reads');
+    assert.equal(String(likes[0].payload.bookId), String(session.book_id), 'like links to the book');
+    assert.equal(likes[0].payload.sessionId, session.id);
     assert.equal(likes[0].read_at, null);
   });
 
@@ -156,6 +158,9 @@ describe('notifications', () => {
     }
     const comments = (await A.agent.get('/api/notifications')).body.filter(n => n.type === 'session_comment');
     assert.equal(comments.length, 1);
+    assert.equal(String(comments[0].payload.bookId), String(session.book_id), 'session_comment links to the book');
+    assert.equal(comments[0].payload.title, 'Alice Reads');
+    assert.equal(comments[0].payload.sessionId, session.id);
 
     for (let i = 0; i < 3; i++) {
       assert.equal((await B.agent.post('/api/follows/alice')).status, 204);

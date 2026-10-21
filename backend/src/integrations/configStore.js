@@ -31,13 +31,16 @@ export async function getIntegration(userId, service) {
   return { config: openConfig(row.config), last_synced_at: row.last_synced_at };
 }
 
+// The sync interval is also kept in a plain column (interval_ms) so the sync
+// engine can resume with it after a restart without decrypting every config.
 export async function saveIntegration(userId, service, config) {
   await pool.query(
-    `INSERT INTO integrations (user_id, service, config, server_origin)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO integrations (user_id, service, config, server_origin, interval_ms)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (user_id, service) DO UPDATE
-       SET config = EXCLUDED.config, server_origin = EXCLUDED.server_origin`,
-    [userId, service, JSON.stringify(sealConfig(config)), originOf(config.serverUrl)]
+       SET config = EXCLUDED.config, server_origin = EXCLUDED.server_origin,
+           interval_ms = EXCLUDED.interval_ms`,
+    [userId, service, JSON.stringify(sealConfig(config)), originOf(config.serverUrl), config.intervalMs ?? null]
   );
 }
 

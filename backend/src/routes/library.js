@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { getExternalBook, findBestMatch, EXTERNAL_ID_COLUMNS } from '../bookProviders.js';
+import { HttpError } from '../lib/httpError.js';
+import { upsertBook } from '../lib/books.js';
 import {
   idParam, optInt, optStr, reqStr, optStrArray, optHttpUrl, oneOf,
 } from '../lib/validate.js';
@@ -93,8 +95,129 @@ router.get('/status', async (req, res, next) => {
   }
 });
 
+// ── Bulk operations (must be registered before /:id) ───────────────────────────
+// ids: 1–500 library entry ids. Entries that aren't the caller's are ignored, so
+// a stale selection (a book removed in another tab) doesn't fail the whole batch;
+// the counts in the response are of rows actually touched.
+function bulkIds(body) {
+  const ids = body?.ids;
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 500) {
+    throw new HttpError(400, 'ids must be a list of 1 to 500 library ids');
+  }
+  return [...new Set(ids.map(v => idParam(v)))];
+}
+
+// PATCH /api/library/bulk  { ids, status?, addShelfId?, removeShelfId? } → { updated }
+router.patch('/bulk', async (req, res, next) => {
+  try {
+    const ids = bulkIds(req.body);
+    const status = req.body.status === undefined ? undefined : oneOf(req.body.status, 'status', STATUSES);
+    const addShelfId = optInt(req.body.addShelfId, 'addShelfId', { min: 1, max: 2147483647 }) ?? null;
+    const removeShelfId = optInt(req.body.removeShelfId, 'removeShelfId', { min: 1, max: 2147483647 }) ?? null;
+    if (status === undefined && addShelfId === null && removeShelfId === null) {
+      throw new HttpError(400, 'status, addShelfId or removeShelfId is required');
+    }
+    if (addShelfId !== null && addShelfId === removeShelfId) {
+      throw new HttpError(400, 'addShelfId and removeShelfId must differ');
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const shelfIds = [addShelfId, removeShelfId].filter(v => v !== null);
+      if (shelfIds.length) {
+        const { rowCount } = await client.query(
+          'SELECT id FROM shelves WHERE id = ANY($1::int[]) AND user_id = $2', [shelfIds, req.user.id]
+        );
+        if (rowCount !== shelfIds.length) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Shelf not found' });
+        }
+      }
+
+      const { rows: owned } = await client.query(
+        'SELECT id FROM library_books WHERE id = ANY($1::int[]) AND user_id = $2 FOR UPDATE',
+        [ids, req.user.id]
+      );
+      const ownedIds = owned.map(r => r.id);
+
+      if (ownedIds.length) {
+        if (status !== undefined) {
+          // same started_reading_at rule as the single PATCH
+          await client.query(
+            `UPDATE library_books
+             SET status = $1::text,
+                 started_reading_at = CASE WHEN $1::text = 'reading' AND status <> 'reading'
+                                           THEN now() ELSE started_reading_at END
+             WHERE id = ANY($2::int[])`,
+            [status, ownedIds]
+          );
+        }
+        if (addShelfId !== null) {
+          await client.query(
+            `INSERT INTO shelf_memberships (library_book_id, shelf_id)
+             SELECT unnest($1::int[]), $2::int ON CONFLICT DO NOTHING`,
+            [ownedIds, addShelfId]
+          );
+        }
+        if (removeShelfId !== null) {
+          await client.query(
+            'DELETE FROM shelf_memberships WHERE library_book_id = ANY($1::int[]) AND shelf_id = $2',
+            [ownedIds, removeShelfId]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json({ updated: ownedIds.length });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/library/bulk  { ids } → { removed }
+// Same semantics as the single DELETE: the library entries go, and so do this
+// user's reading sessions for those books.
+router.delete('/bulk', async (req, res, next) => {
+  try {
+    const ids = bulkIds(req.body);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        'DELETE FROM library_books WHERE id = ANY($1::int[]) AND user_id = $2 RETURNING book_id',
+        [ids, req.user.id]
+      );
+      if (rows.length) {
+        await client.query(
+          'DELETE FROM reading_sessions WHERE user_id = $1 AND book_id = ANY($2::int[])',
+          [req.user.id, rows.map(r => r.book_id)]
+        );
+      }
+      await client.query('COMMIT');
+      res.json({ removed: rows.length });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── POST /api/library ─────────────────────────────────────────────────────────
-// Body: { googleId?, openLibraryId?, appleId?, title, authors, coverUrl, ..., categories?, shelfId?, status? }
+// Body: { bookId? | googleId?, openLibraryId?, appleId?, title, authors, coverUrl, ..., categories?, shelfId?, status? }
+// bookId (an existing books.id) wins over everything else: that row is added to the
+// library as is — no provider call, no new books row; 404 if it doesn't exist.
 router.post('/', async (req, res, next) => {
   let { googleId, openLibraryId, appleId, title, authors, coverUrl, pageCount, publishedDate,
         description, categories, isbn13, isbn10, shelfId, status } = req.body ?? {};
@@ -114,7 +237,13 @@ router.post('/', async (req, res, next) => {
   shelfId       = optInt(shelfId,       'shelfId',       { min: 1, max: 2147483647 });
   status        = status === undefined ? undefined : oneOf(status, 'status', STATUSES);
 
-  const source = googleId ? 'google' : openLibraryId ? 'openlibrary' : appleId ? 'apple' : null;
+  const bookIdParam = optInt(req.body?.bookId, 'bookId', { min: 1, max: 2147483647 }) ?? null;
+  if (bookIdParam !== null) {
+    const { rowCount } = await pool.query('SELECT 1 FROM books WHERE id = $1', [bookIdParam]);
+    if (!rowCount) return res.status(404).json({ error: 'Book not found' });
+  }
+
+  const source = bookIdParam !== null ? null : googleId ? 'google' : openLibraryId ? 'openlibrary' : appleId ? 'apple' : null;
   const externalId = googleId ?? openLibraryId ?? appleId;
   const column = source ? EXTERNAL_ID_COLUMNS[source] : null;
 
@@ -137,58 +266,17 @@ router.post('/', async (req, res, next) => {
       }
     }
   }
-  if (!title && !existingBookId) return res.status(400).json({ error: 'title is required' });
+  if (!title && !existingBookId && bookIdParam === null) return res.status(400).json({ error: 'title is required' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Resolve the shared book row — keyed on whichever external id the result came with
-    let bookId;
-    if (existingBookId) {
-      bookId = existingBookId;
-      await client.query(
-        `UPDATE books SET
-           cover_url      = COALESCE(cover_url,      $1),
-           page_count     = COALESCE(page_count,     $2),
-           published_date = COALESCE(published_date, $3),
-           description    = COALESCE(description,    $4),
-           categories     = COALESCE(categories,     $5),
-           isbn13         = COALESCE(isbn13,         $6),
-           isbn10         = COALESCE(isbn10,         $7)
-         WHERE id = $8`,
-        [coverUrl ?? null, pageCount ?? null, publishedDate ?? null, description ?? null,
-         categories ?? null, isbn13 ?? null, isbn10 ?? null, bookId]
-      );
-    } else if (source) {
-      // Lost a race with another insert of the same external id → fill NULLs only
-      const { rows } = await client.query(
-        `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories, isbn13, isbn10)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT (${column}) DO UPDATE SET
-           cover_url      = COALESCE(books.cover_url,      EXCLUDED.cover_url),
-           page_count     = COALESCE(books.page_count,     EXCLUDED.page_count),
-           published_date = COALESCE(books.published_date, EXCLUDED.published_date),
-           description    = COALESCE(books.description,    EXCLUDED.description),
-           categories     = COALESCE(books.categories,     EXCLUDED.categories),
-           isbn13         = COALESCE(books.isbn13,         EXCLUDED.isbn13),
-           isbn10         = COALESCE(books.isbn10,         EXCLUDED.isbn10)
-         RETURNING id`,
-        [externalId, title, authors ?? [], coverUrl ?? null, pageCount ?? null,
-         publishedDate ?? null, description ?? null, categories ?? null,
-         isbn13 ?? null, isbn10 ?? null]
-      );
-      bookId = rows[0].id;
-    } else {
-      const { rows } = await client.query(
-        `INSERT INTO books (title, authors, cover_url, page_count, published_date, description, categories, isbn13, isbn10)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-        [title, authors ?? [], coverUrl ?? null, pageCount ?? null,
-         publishedDate ?? null, description ?? null, categories ?? null,
-         isbn13 ?? null, isbn10 ?? null]
-      );
-      bookId = rows[0].id;
-    }
+    // Resolve the shared book row (lib/books.js: existing rows only get NULLs filled)
+    const bookId = bookIdParam ?? (await upsertBook(client, {
+      googleId, openLibraryId, appleId, title: title ?? '', authors, coverUrl, pageCount,
+      publishedDate, description, categories, isbn13, isbn10,
+    }, { match: ['external'] })).id; // manual adds never auto-merge on ISBN: the duplicates finder surfaces them
 
     // Upsert library entry (ignore if already in library)
     const { rows: [lb] } = await client.query(
@@ -351,7 +439,13 @@ router.patch('/:id/metadata', async (req, res, next) => {
     // as the user's personal overrides (so they immediately see the enriched data)
     if (googleId || openLibraryId || appleId) {
       try {
-        const source = googleId ? 'google' : openLibraryId ? 'openlibrary' : 'apple';
+        const bookIdParam = optInt(req.body?.bookId, 'bookId', { min: 1, max: 2147483647 }) ?? null;
+  if (bookIdParam !== null) {
+    const { rowCount } = await pool.query('SELECT 1 FROM books WHERE id = $1', [bookIdParam]);
+    if (!rowCount) return res.status(404).json({ error: 'Book not found' });
+  }
+
+  const source = bookIdParam !== null ? null : googleId ? 'google' : openLibraryId ? 'openlibrary' : 'apple';
         const meta = await getExternalBook(source, googleId ?? openLibraryId ?? appleId);
         await pool.query(
           `UPDATE library_books SET
@@ -654,6 +748,18 @@ router.post('/merge', async (req, res, next) => {
     );
 
     if (!shared) {
+      // The duplicate row is about to be deleted, and everything that references
+      // it with ON DELETE CASCADE would go with it. Re-point those first.
+      await client.query('UPDATE comments SET book_id = $1 WHERE book_id = $2', [keepId, removeId]);
+      await client.query('UPDATE profile_shelf SET book_id = $1 WHERE book_id = $2', [keepId, removeId]);
+      await client.query(
+        `INSERT INTO challenge_books (challenge_id, book_id)
+         SELECT challenge_id, $1 FROM challenge_books WHERE book_id = $2
+         ON CONFLICT DO NOTHING`,
+        [keepId, removeId]
+      );
+      await client.query('DELETE FROM challenge_books WHERE book_id = $1', [removeId]);
+
       // Delete the orphaned books row if no other user references it
       await client.query(
         `DELETE FROM books WHERE id = $1

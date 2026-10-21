@@ -32,7 +32,7 @@ router.post('/:id/comments', async (req, res, next) => {
       userId: session.user_id,
       actorId: req.user.id,
       type: 'session_comment',
-      payload: { username: req.user.username, title: session.title },
+      payload: { username: req.user.username, bookId: session.book_id, title: session.title, sessionId },
       dedupeKey: `session:${sessionId}`,
     });
 

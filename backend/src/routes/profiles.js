@@ -11,6 +11,11 @@ const router = Router();
 // admins (everyone else gets a plain 404, same as a missing user).
 router.use(optionalAuth);
 
+// you_follow only means something to a logged-in viewer; anonymous responses
+// keep their original shape
+const withFollowFlag = (rows, viewer) =>
+  viewer ? rows : rows.map(({ you_follow, ...rest }) => rest);
+
 // GET /api/profiles/:username/shelf
 router.get('/:username/shelf', async (req, res, next) => {
   try {
@@ -31,17 +36,19 @@ router.get('/:username/followers', async (req, res, next) => {
     const [vid, vadmin] = viewerParams(req.viewer);
     const { rows } = await pool.query(
       `SELECT u.username, u.avatar_url, u.accent,
-              COUNT(DISTINCT lb.id)::INT AS book_count
+              COUNT(DISTINCT lb.id)::INT AS book_count,
+              ($2::int IS NOT NULL AND EXISTS(
+                 SELECT 1 FROM follows yf WHERE yf.follower_id = $2::int AND yf.following_id = u.id)) AS you_follow
        FROM follows f
        JOIN users u ON u.id = f.follower_id
        LEFT JOIN library_books lb ON lb.user_id = u.id
        WHERE f.following_id = $1
          AND ${visibleUserSql('u', '$2', '$3')}
-       GROUP BY u.username, u.avatar_url, u.accent
+       GROUP BY u.id
        ORDER BY u.username`,
       [target.id, vid, vadmin]
     );
-    res.json(rows);
+    res.json(withFollowFlag(rows, req.viewer));
   } catch (err) {
     next(err);
   }
@@ -56,17 +63,19 @@ router.get('/:username/following', async (req, res, next) => {
     const [vid, vadmin] = viewerParams(req.viewer);
     const { rows } = await pool.query(
       `SELECT u.username, u.avatar_url, u.accent,
-              COUNT(DISTINCT lb.id)::INT AS book_count
+              COUNT(DISTINCT lb.id)::INT AS book_count,
+              ($2::int IS NOT NULL AND EXISTS(
+                 SELECT 1 FROM follows yf WHERE yf.follower_id = $2::int AND yf.following_id = u.id)) AS you_follow
        FROM follows f
        JOIN users u ON u.id = f.following_id
        LEFT JOIN library_books lb ON lb.user_id = u.id
        WHERE f.follower_id = $1
          AND ${visibleUserSql('u', '$2', '$3')}
-       GROUP BY u.username, u.avatar_url, u.accent
+       GROUP BY u.id
        ORDER BY u.username`,
       [target.id, vid, vadmin]
     );
-    res.json(rows);
+    res.json(withFollowFlag(rows, req.viewer));
   } catch (err) {
     next(err);
   }
@@ -101,7 +110,7 @@ router.get('/:username', async (req, res, next) => {
 
     const [shelves, library, sessions, counts] = await Promise.all([
       pool.query(
-        `SELECT * FROM shelves WHERE user_id = $1 ORDER BY sort_order, created_at`,
+        `SELECT * FROM shelves WHERE user_id = $1 ORDER BY position, sort_order, created_at, id`,
         [user.id]
       ),
       pool.query(

@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { pgOptions } from './lib/pgTimezone.js';
 
 const { Pool } = pg;
 
@@ -12,6 +13,7 @@ if (!process.env.DATABASE_URL) {
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: Number(process.env.PG_POOL_MAX) || undefined,
+  options: pgOptions(), // session time zone: UTC unless PG_TIMEZONE is set
 });
 
 // An idle client erroring (DB restart, network drop) emits 'error' on the pool;
@@ -203,11 +205,6 @@ export async function migrate() {
       PRIMARY KEY (user_id, session_id)
     );
 
-    -- Extend notification types (idempotent swap)
-    ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
-    ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-      CHECK (type IN ('follow','comment','like','mention','session_comment'));
-
     -- Reading challenges
     CREATE TABLE IF NOT EXISTS challenges (
       id          SERIAL PRIMARY KEY,
@@ -290,13 +287,35 @@ export async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
-    -- Extend notification types to include session comments
-    ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
-    ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-      CHECK (type IN ('follow','comment','like','mention','session_comment'));
+    -- Extend notification types (like, mention, session_comment). Only swaps
+    -- the CHECK when the stored definition is out of date, not on every boot.
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'notifications_type_check'
+          AND conrelid = 'notifications'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%session_comment%'
+      ) THEN
+        ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+        ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+          CHECK (type IN ('follow','comment','like','mention','session_comment'));
+      END IF;
+    END
+    $$;
 
     -- Challenge redesign: book-list-based progress instead of numeric goal
-    ALTER TABLE challenges DROP CONSTRAINT IF EXISTS challenges_goal_check;
+    -- (the old numeric CHECK is dropped once, if it is still there)
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'challenges_goal_check' AND conrelid = 'challenges'::regclass
+      ) THEN
+        ALTER TABLE challenges DROP CONSTRAINT challenges_goal_check;
+      END IF;
+    END
+    $$;
 
     CREATE TABLE IF NOT EXISTS challenge_books (
       challenge_id INT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
@@ -310,14 +329,12 @@ export async function migrate() {
 
     -- Postgres does not index FK columns automatically; these cover the hot
     -- per-user lookups (library loads, stats, feed, availability badges)
-    CREATE INDEX IF NOT EXISTS library_books_user_id_idx        ON library_books (user_id);
     CREATE INDEX IF NOT EXISTS library_books_book_id_idx        ON library_books (book_id);
     CREATE INDEX IF NOT EXISTS reading_sessions_user_book_idx   ON reading_sessions (user_id, book_id);
     CREATE INDEX IF NOT EXISTS reading_sessions_book_id_idx     ON reading_sessions (book_id);
     CREATE INDEX IF NOT EXISTS reading_sessions_finished_at_idx ON reading_sessions (finished_at) WHERE finished_at IS NOT NULL;
     CREATE INDEX IF NOT EXISTS shelf_memberships_lb_idx         ON shelf_memberships (library_book_id);
     CREATE INDEX IF NOT EXISTS shelf_memberships_shelf_idx      ON shelf_memberships (shelf_id);
-    CREATE INDEX IF NOT EXISTS book_availability_user_book_idx  ON book_availability (user_id, book_id);
     CREATE INDEX IF NOT EXISTS sessions_user_id_idx             ON sessions (user_id);
     CREATE INDEX IF NOT EXISTS sessions_expires_at_idx          ON sessions (expires_at);
     CREATE INDEX IF NOT EXISTS follows_following_id_idx         ON follows (following_id);
@@ -365,6 +382,91 @@ export async function migrate() {
     ALTER TABLE notifications ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
     CREATE INDEX IF NOT EXISTS notifications_dedupe_idx
       ON notifications (user_id, actor_id, type, dedupe_key, created_at DESC) WHERE read_at IS NULL;
+
+    -- ── Phase 2 ───────────────────────────────────────────────────────────
+
+    -- User-defined shelf order (PATCH /api/shelves/reorder). Backfilled once
+    -- from the old sort_order / creation order, 0-based per user.
+    ALTER TABLE shelves ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 0;
+    DO $$
+    BEGIN
+      INSERT INTO schema_flags (name) VALUES ('shelf_position_backfill') ON CONFLICT DO NOTHING;
+      IF FOUND THEN
+        UPDATE shelves s SET position = r.pos
+        FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY sort_order, created_at, id) - 1 AS pos
+              FROM shelves) r
+        WHERE r.id = s.id;
+      END IF;
+    END
+    $$;
+
+    -- Sync interval survives restarts (bootAllSyncs reads it)
+    ALTER TABLE integrations ADD COLUMN IF NOT EXISTS interval_ms INT;
+
+    -- One availability row per external item. Existing duplicates (older syncs
+    -- raced and inserted twice) are removed first, newest row wins.
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'book_availability_external_key') THEN
+        DELETE FROM book_availability WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (
+                     PARTITION BY user_id, service, external_id ORDER BY last_seen_at DESC, id DESC) AS rn
+            FROM book_availability WHERE external_id IS NOT NULL
+          ) d WHERE d.rn > 1
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS book_availability_external_key
+          ON book_availability (user_id, service, external_id) WHERE external_id IS NOT NULL;
+      END IF;
+    END
+    $$;
+
+    -- Notification de-duplication is enforced by the database: at most one
+    -- unread notification per (recipient, actor, type, target). notify() uses
+    -- ON CONFLICT DO NOTHING against this index, which closes the check-then-insert
+    -- race. Duplicate unread rows from before the index are collapsed first
+    -- (newest kept).
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'notifications_unread_dedupe_key') THEN
+        DELETE FROM notifications WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (
+                     PARTITION BY user_id, actor_id, type, dedupe_key ORDER BY created_at DESC, id DESC) AS rn
+            FROM notifications WHERE read_at IS NULL AND dedupe_key IS NOT NULL
+          ) d WHERE d.rn > 1
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS notifications_unread_dedupe_key
+          ON notifications (user_id, actor_id, type, dedupe_key)
+          WHERE read_at IS NULL AND dedupe_key IS NOT NULL;
+      END IF;
+    END
+    $$;
+
+    -- Foreign-key indexes (Postgres does not create these): cascades and the
+    -- "who commented / invited / joined" lookups would otherwise seq-scan
+    CREATE INDEX IF NOT EXISTS comments_user_id_idx            ON comments (user_id);
+    CREATE INDEX IF NOT EXISTS session_comments_user_id_idx    ON session_comments (user_id);
+    CREATE INDEX IF NOT EXISTS notifications_actor_id_idx      ON notifications (actor_id);
+    CREATE INDEX IF NOT EXISTS invites_created_by_idx          ON invites (created_by);
+    CREATE INDEX IF NOT EXISTS invites_used_by_idx             ON invites (used_by);
+    CREATE INDEX IF NOT EXISTS challenges_created_by_idx       ON challenges (created_by);
+    CREATE INDEX IF NOT EXISTS challenge_entries_user_id_idx   ON challenge_entries (user_id);
+    CREATE INDEX IF NOT EXISTS challenge_books_book_id_idx     ON challenge_books (book_id);
+    CREATE INDEX IF NOT EXISTS group_members_user_id_idx       ON group_members (user_id);
+    CREATE INDEX IF NOT EXISTS reading_groups_created_by_idx   ON reading_groups (created_by);
+    CREATE INDEX IF NOT EXISTS profile_shelf_book_id_idx       ON profile_shelf (book_id);
+    CREATE INDEX IF NOT EXISTS book_availability_book_id_idx   ON book_availability (book_id);
+
+    -- Redundant: covered by the leftmost column of UNIQUE (user_id, book_id) and
+    -- UNIQUE (user_id, book_id, service)
+    DROP INDEX IF EXISTS library_books_user_id_idx;
+    DROP INDEX IF EXISTS book_availability_user_book_idx;
+
+    -- Fuzzy title search (duplicates finder) and the normalised-title match used
+    -- when an integration sync looks for an existing book
+    CREATE INDEX IF NOT EXISTS books_title_trgm_idx ON books USING gin (lower(title) gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS books_norm_title_idx ON books (lower(regexp_replace(title, '[^a-zA-Z0-9]', '', 'g')));
   `);
   console.log('Database schema ready.');
 }

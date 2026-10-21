@@ -1,15 +1,8 @@
-import fetch from 'node-fetch';
 import { isValidIsbn13 } from './isbn.js';
+import { fetchWithTimeout } from './lib/fetchWithTimeout.js';
 
 const SEARCH_URL = 'https://itunes.apple.com/search';
 const LOOKUP_URL = 'https://itunes.apple.com/lookup';
-const FETCH_TIMEOUT_MS = 8000;
-
-function fetchWithTimeout(url) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(id));
-}
 
 // Apple returns descriptions as HTML — flatten to plain text
 function stripHtml(html) {
@@ -53,7 +46,7 @@ function normalize(item) {
 
 // The iTunes API has no fielded search syntax — fold everything into one term.
 // When the query is a single field, the `attribute` param scopes the match.
-export function buildQuery({ q, title, author, subject, publisher }) {
+function buildQuery({ q, title, author, subject, publisher }) {
   const term = [q, title, author, subject, publisher]
     .map(v => v?.trim())
     .filter(Boolean)

@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import fetch from 'node-fetch';
 import { pool } from './db.js';
 
 const SALT_ROUNDS = 12;
@@ -65,6 +64,12 @@ export function setSessionCookie(res, token, expiresAt) {
 
 export function clearSessionCookie(res) {
   res.clearCookie(COOKIE, cookieOptions());
+}
+
+// Gate for admin-only routers/routes; mount after authMiddleware.
+export function adminOnly(req, res, next) {
+  if (!req.user?.is_admin) return res.status(403).json({ error: 'Admin only' });
+  next();
 }
 
 // Express middleware — attaches req.user or sends 401.

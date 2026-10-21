@@ -4,6 +4,7 @@ import { HttpError } from '../lib/httpError.js';
 import { isHttpUrl, safeFetchRaw } from '../lib/safeUrl.js';
 import { idParam, optInt, optStr } from '../lib/validate.js';
 import { getIntegration, saveIntegration, openConfig, originOf } from '../integrations/configStore.js';
+import { baseUrl } from '../integrations/http.js';
 import * as absClient from '../integrations/abs.js';
 import * as calibreClient from '../integrations/calibre.js';
 import * as koboClient from '../integrations/koboSync.js';
@@ -72,7 +73,9 @@ function parseConfig(service, body, existing = {}) {
   if (service === 'audiobookshelf') {
     setSecret('token', optStr(body.token, 'token', { max: 4096, trim: false }));
   } else {
-    set('username', optStr(body.username, 'username', { max: 500, trim: false }));
+    // The username is not a secret (GET returns it) but follows the same merge rule:
+    // absent/blank keeps the stored one, explicit null clears it
+    setSecret('username', optStr(body.username, 'username', { max: 500, trim: false }));
     setSecret('password', optStr(body.password, 'password', { max: 500, trim: false }));
     setSecret('koboToken', optStr(body.koboToken, 'koboToken', { max: 500 }));
     const path = optStr(body.opdsStartPath, 'opdsStartPath', { max: 500 });
@@ -108,6 +111,7 @@ router.get('/', async (req, res, next) => {
         auto_sessions: c.auto_sessions ?? null,
         intervalMs: c.intervalMs ?? null,
         opdsStartPath: c.opdsStartPath ?? null,
+        username: c.username ?? null,
       };
     }));
   } catch (err) { next(err); }
@@ -182,12 +186,14 @@ router.delete('/:service', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // POST /api/integrations/:service/sync — manual sync trigger
 // ---------------------------------------------------------------------------
-router.post('/:service/sync', async (req, res, next) => {
+router.post('/:service/sync', async (req, res) => {
   const { service } = req.params;
   try {
     await syncService(req.user.id, service);
     res.json({ ok: true });
   } catch (err) {
+    // A scheduled (or earlier manual) sync of the same service is still running
+    if (err instanceof HttpError && err.status === 409) return res.status(409).json({ error: err.message });
     console.error(`[integrations] manual ${service} sync failed:`, err.message);
     res.status(500).json({ error: 'Sync failed' });
   }
@@ -345,9 +351,8 @@ router.get('/calibre/download/:calibreId/:format', async (req, res, next) => {
     const row = await getIntegration(req.user.id, 'calibre');
     if (!row) return res.status(404).json({ error: 'Calibre not configured' });
 
-    const serverUrl = String(row.config.serverUrl ?? '').replace(/\/$/, '');
     const downloadUrl =
-      `${serverUrl}/opds/download/${encodeURIComponent(calibreId)}/${encodeURIComponent(format)}/`;
+      `${baseUrl(row.config)}/opds/download/${encodeURIComponent(calibreId)}/${encodeURIComponent(format)}/`;
 
     // Stop pulling from Calibre as soon as the browser goes away
     const controller = new AbortController();
@@ -362,7 +367,9 @@ router.get('/calibre/download/:calibreId/:format', async (req, res, next) => {
 
     if (!upstream.ok) {
       upstream.body?.cancel().catch(() => {});
-      return res.status(upstream.status >= 500 ? 502 : upstream.status).json({ error: 'Download failed' });
+      // Never pass the upstream status through: a Calibre 401/403 is not OUR
+      // session failing, and the client treats a 401 as "logged out"
+      return res.status(502).json({ error: 'Download failed' });
     }
 
     const ext = format.replace(/[^A-Za-z0-9]/g, '').slice(0, 10);
@@ -392,23 +399,43 @@ router.get('/calibre/download/:calibreId/:format', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 // GET /api/integrations/sse — Server-Sent Events for real-time ABS progress
 // ---------------------------------------------------------------------------
+export const SSE_HEARTBEAT_MS = 25000;
+export const SSE_MAX_PER_USER = 5;
+
 router.get('/sse', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // tell nginx not to buffer the stream
   res.flushHeaders();
 
   const userId = req.user.id;
-  if (!sseClients.has(userId)) sseClients.set(userId, new Set());
-  sseClients.get(userId).add(res);
+  let clients = sseClients.get(userId);
+  if (!clients) { clients = new Set(); sseClients.set(userId, clients); }
 
-  // Keep-alive ping every 25s
-  const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+  // At most SSE_MAX_PER_USER streams per user (tabs reconnecting after a drop
+  // would otherwise pile up): the oldest ones are closed. Sets keep insertion order.
+  while (clients.size >= SSE_MAX_PER_USER) {
+    const oldest = clients.values().next().value;
+    clients.delete(oldest);
+    oldest.end();
+  }
+  clients.add(res);
+  res.write(': connected\n\n');
 
-  req.on('close', () => {
+  // Comment heartbeat keeps idle proxies (nginx 60 s, browsers) from cutting the stream
+  const ping = setInterval(() => { if (!res.writableEnded) res.write(': ping\n\n'); }, SSE_HEARTBEAT_MS);
+  ping.unref?.();
+
+  const cleanup = () => {
     clearInterval(ping);
-    sseClients.get(userId)?.delete(res);
-  });
+    const set = sseClients.get(userId);
+    if (!set) return;
+    set.delete(res);
+    if (!set.size) sseClients.delete(userId); // don't leak an empty Set per user
+  };
+  req.on('close', cleanup);
+  res.on('close', cleanup);
 });
 
 export default router;

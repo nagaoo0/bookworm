@@ -5,13 +5,15 @@ import { viewerOf, viewerParams, visibleUserSql } from '../lib/visibility.js';
 
 const router = Router();
 
-// Reusable SELECT fragment — $1 is always the current user id
+// Reusable SELECT fragment — $1 is always the current user id, $2 whether they are an admin
 const CHALLENGE_SELECT = `
   SELECT c.id, c.title, c.description, c.start_date, c.end_date,
          u.username AS created_by,
          (c.created_by = $1) AS is_creator,
+         -- participants hidden from the viewer (private profiles) are not counted either
          (SELECT COUNT(DISTINCT ce.user_id)::INT
-          FROM challenge_entries ce WHERE ce.challenge_id = c.id) AS participant_count,
+          FROM challenge_entries ce JOIN users pu ON pu.id = ce.user_id
+          WHERE ce.challenge_id = c.id AND ${visibleUserSql('pu', '$1', '$2')}) AS participant_count,
          EXISTS(SELECT 1 FROM challenge_entries ce
                 WHERE ce.challenge_id = c.id AND ce.user_id = $1) AS joined,
          (SELECT COUNT(*)::INT FROM challenge_books cb WHERE cb.challenge_id = c.id) AS goal,
@@ -46,7 +48,7 @@ router.get('/', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `${CHALLENGE_SELECT} ORDER BY c.end_date DESC`,
-      [req.user.id]
+      [req.user.id, req.user.is_admin === true]
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -74,8 +76,8 @@ router.post('/', async (req, res, next) => {
       [c.id, req.user.id]
     );
     const { rows: [full] } = await pool.query(
-      `${CHALLENGE_SELECT} WHERE c.id = $2`,
-      [req.user.id, c.id]
+      `${CHALLENGE_SELECT} WHERE c.id = $3`,
+      [req.user.id, req.user.is_admin === true, c.id]
     );
     res.status(201).json(full);
   } catch (err) { next(err); }

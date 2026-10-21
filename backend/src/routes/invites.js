@@ -1,13 +1,9 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../db.js';
+import { adminOnly } from '../auth.js';
 
 const router = Router();
-
-function adminOnly(req, res, next) {
-  if (!req.user?.is_admin) return res.status(403).json({ error: 'Admin only' });
-  next();
-}
 
 // GET /api/invites
 router.get('/', adminOnly, async (req, res, next) => {

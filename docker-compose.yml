@@ -35,11 +35,20 @@ services:
       REQUIRE_INVITE: ${REQUIRE_INVITE:-false}
       INTEGRATIONS_KEY: ${INTEGRATIONS_KEY:-}
       INTEGRATION_ALLOWED_HOSTS: ${INTEGRATION_ALLOWED_HOSTS:-}
+      PG_TIMEZONE: ${PG_TIMEZONE:-UTC}
     volumes:
       - covers:/app/data/covers
     depends_on:
       db:
         condition: service_healthy
+    # Uses the image's HEALTHCHECK (GET /api/health); declared here so the
+    # frontend can wait on it and `docker compose ps` shows the state.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   frontend:
     build: ./frontend
@@ -48,6 +57,9 @@ services:
       - "${FRONTEND_PORT:-8080}:80"
     environment:
       VITE_API_BASE: ${VITE_API_BASE:-/api}
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

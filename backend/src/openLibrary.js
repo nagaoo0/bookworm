@@ -1,10 +1,9 @@
-import fetch from 'node-fetch';
 import { pickIsbns } from './isbn.js';
+import { fetchWithTimeout as timedFetch } from './lib/fetchWithTimeout.js';
 
 const SEARCH_URL = 'https://openlibrary.org/search.json';
 const WORKS_URL  = 'https://openlibrary.org/works';
 const COVERS_URL = 'https://covers.openlibrary.org/b/id';
-const FETCH_TIMEOUT_MS = 8000;
 
 // Open Library asks API consumers to identify themselves via User-Agent
 const HEADERS = { 'User-Agent': 'Bookworm/1.0 (self-hosted reading tracker)' };
@@ -12,11 +11,7 @@ const HEADERS = { 'User-Agent': 'Bookworm/1.0 (self-hosted reading tracker)' };
 // Restrict the search response to the fields we actually normalize
 const SEARCH_FIELDS = 'key,title,author_name,cover_i,first_publish_year,number_of_pages_median,subject,language,isbn';
 
-function fetchWithTimeout(url) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  return fetch(url, { signal: controller.signal, headers: HEADERS }).finally(() => clearTimeout(id));
-}
+const fetchWithTimeout = url => timedFetch(url, { headers: HEADERS });
 
 function normalizeDoc(doc) {
   // doc.isbn lists every edition's ISBN — any one identifies the work well
@@ -46,7 +41,7 @@ function quoted(v) {
 }
 
 // Build a Solr-style fielded query string from structured fields
-export function buildQuery({ q, title, author, subject, publisher, isbn }) {
+function buildQuery({ q, title, author, subject, publisher, isbn }) {
   const parts = [];
   if (q)         parts.push(q.trim());
   if (title)     parts.push(`title:${quoted(title)}`);

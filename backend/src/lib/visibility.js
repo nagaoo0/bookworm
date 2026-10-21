@@ -38,12 +38,12 @@ export async function findVisibleUser(username, viewer, columns = 'username') {
   return canView(user, viewer) ? user : null;
 }
 
-// A reading session with its owner's id and the book title as the owner sees
+// A reading session with its owner's id, its book id and the book title as the owner sees
 // it, or null when the session doesn't exist or its owner is hidden from this
 // viewer (both look like a plain 404 to the caller).
 export async function findVisibleSession(sessionId, viewer) {
   const { rows: [session] } = await pool.query(
-    `SELECT rs.user_id, u.is_public,
+    `SELECT rs.user_id, rs.book_id, u.is_public,
             COALESCE(lbo.title_override, b.title) AS title
      FROM reading_sessions rs
      JOIN users u ON u.id = rs.user_id
