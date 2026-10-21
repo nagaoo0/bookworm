@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db.js';
 import { randomBytes } from 'crypto';
 import { idParam, reqStr, optStr } from '../lib/validate.js';
+import { viewerOf, viewerParams, visibleUserSql } from '../lib/visibility.js';
 
 const router = Router();
 
@@ -92,18 +93,26 @@ router.get('/:id/feed', async (req, res, next) => {
     );
     if (!mem) return res.status(403).json({ error: 'Not a member' });
 
+    // Members who keep their profile private are hidden from everyone else in
+    // the group (same rule as the rest of the API); titles/authors are the
+    // member's own overrides, as on their profile.
     const { rows } = await pool.query(
       `SELECT rs.id, rs.finished_at, rs.started_at, rs.rating, rs.review,
               u.username,
-              b.id AS book_id, b.title, b.authors, b.cover_url
+              b.id AS book_id,
+              COALESCE(lb.title_override,   b.title)   AS title,
+              COALESCE(lb.authors_override, b.authors) AS authors,
+              b.cover_url
        FROM reading_sessions rs
        JOIN users u ON u.id = rs.user_id
        JOIN books b ON b.id = rs.book_id
        JOIN group_members gm ON gm.user_id = rs.user_id AND gm.group_id = $1
+       LEFT JOIN library_books lb ON lb.user_id = rs.user_id AND lb.book_id = rs.book_id
        WHERE (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
+         AND ${visibleUserSql('u', '$2', '$3')}
        ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
        LIMIT 50`,
-      [groupId]
+      [groupId, ...viewerParams(viewerOf(req))]
     );
     res.json(rows);
   } catch (err) {

@@ -53,14 +53,23 @@ function mergePrefs(patch, existing) {
   return next;
 }
 
-// GET /api/auth/me — returns the logged-in user, or 401
-router.get('/me', authMiddleware, (req, res) => {
-  const u = req.user;
-  res.json({
+// Columns userJson() reads; every query that feeds it must select all of them
+const USER_COLUMNS = 'id, username, is_admin, is_public, bio, avatar_url, banner_url, accent, prefs';
+
+// The one shape the API uses for "the current user" — GET /me, PATCH /me,
+// login and register all return it (the frontend takes any of them as the
+// session user, so they must agree).
+function userJson(u) {
+  return {
     id: u.id, username: u.username, isAdmin: u.is_admin, isPublic: u.is_public,
     bio: u.bio ?? null, avatarUrl: u.avatar_url ?? null, bannerUrl: u.banner_url ?? null, accent: u.accent ?? null,
     prefs: u.prefs ?? {},
-  });
+  };
+}
+
+// GET /api/auth/me — returns the logged-in user, or 401
+router.get('/me', authMiddleware, (req, res) => {
+  res.json(userJson(req.user));
 });
 
 // POST /api/auth/register  { username, password, inviteCode?, recaptchaToken? }
@@ -149,7 +158,7 @@ router.post('/register', loginLimiter, async (req, res) => {
 
     const { rows: [user] } = await client.query(
       `INSERT INTO users (username, password_hash, is_admin)
-       VALUES ($1, $2, $3) RETURNING id, username, is_admin, is_public`,
+       VALUES ($1, $2, $3) RETURNING ${USER_COLUMNS}`,
       [username.trim(), hash, isFirst]
     );
 
@@ -172,7 +181,7 @@ router.post('/register', loginLimiter, async (req, res) => {
 
     const { token, expiresAt } = await createSession(user.id);
     setSessionCookie(res, token, expiresAt);
-    res.status(201).json({ id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public });
+    res.status(201).json(userJson(user));
   } catch (err) {
     await client?.query('ROLLBACK').catch(() => {});
     if (err.code === '23505')
@@ -206,7 +215,7 @@ router.post('/login', loginLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'username and password are required' });
 
     const { rows: [user] } = await pool.query(
-      `SELECT id, username, password_hash, is_admin, is_public FROM users WHERE username = $1`,
+      `SELECT ${USER_COLUMNS}, password_hash FROM users WHERE username = $1`,
       [username.trim()]
     );
     // Always run bcrypt, even for unknown users, to keep timing uniform
@@ -216,7 +225,7 @@ router.post('/login', loginLimiter, async (req, res, next) => {
 
     const { token, expiresAt } = await createSession(user.id);
     setSessionCookie(res, token, expiresAt);
-    res.json({ id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public });
+    res.json(userJson(user));
   } catch (err) {
     next(err);
   }
@@ -311,7 +320,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     params.push(req.user.id);
     const { rows: [user] } = await pool.query(
       `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}
-       RETURNING id, username, is_admin, is_public, bio, avatar_url, banner_url, accent, prefs`,
+       RETURNING ${USER_COLUMNS}`,
       params
     );
 
@@ -323,11 +332,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
       );
     }
 
-    res.json({
-      id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public,
-      bio: user.bio ?? null, avatarUrl: user.avatar_url ?? null, bannerUrl: user.banner_url ?? null, accent: user.accent ?? null,
-      prefs: user.prefs ?? {},
-    });
+    res.json(userJson(user));
   } catch (err) {
     next(err);
   }

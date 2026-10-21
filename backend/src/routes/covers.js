@@ -22,9 +22,11 @@ import { idParam } from '../lib/validate.js';
 // open proxy. Cache files are keyed by bookId + src hash, so a cover change
 // produces a new URL and the stale file is simply never requested again.
 //
-// Fetches go through safeFetch (SSRF guard): loopback / link-local / metadata
-// addresses are never reachable; private (LAN) addresses only when the cover's
-// origin is a configured integration server (Calibre / Audiobookshelf).
+// Fetches go through safeFetch (SSRF guard): link-local / metadata addresses
+// are never reachable; private (LAN) addresses — and loopback, with
+// INTEGRATION_ALLOW_LOOPBACK=true — only when the cover's origin is a configured
+// integration server (Calibre / Audiobookshelf), and then only for hops on that
+// same origin (a redirect elsewhere must be public).
 // ---------------------------------------------------------------------------
 
 const COVERS_DIR = process.env.COVERS_DIR ?? path.join(process.cwd(), 'data', 'covers');
@@ -46,24 +48,26 @@ function sniffContentType(buf) {
   return 'application/octet-stream';
 }
 
-// True if `src` lives on the same origin as some user's configured
-// integration server — the only place a private/LAN address is acceptable.
-async function isIntegrationOrigin(src) {
+// The origin of `src` if it matches some user's configured integration server
+// — the only place a private/LAN address is acceptable — else null.
+async function integrationOrigin(src) {
   let origin;
-  try { origin = new URL(src).origin; } catch { return false; }
+  try { origin = new URL(src).origin; } catch { return null; }
   // server_origin is a plain copy kept in sync on save, so this works even
   // when integrations.config is encrypted
   const { rows } = await pool.query(
     'SELECT 1 FROM integrations WHERE server_origin = $1 LIMIT 1',
     [origin]
   );
-  return rows.length > 0;
+  return rows.length > 0 ? origin : null;
 }
 
 async function fetchAndCache(src, filePath) {
-  const allowPrivate = await isIntegrationOrigin(src);
+  // Private addresses are allowed for that origin only: a redirect to any other
+  // host (say another LAN machine) must be public, or the fetch is refused.
+  const allowPrivateOrigin = await integrationOrigin(src);
   const { status, headers, buffer } = await safeFetch(src, {
-    allowPrivate,
+    allowPrivateOrigin,
     maxBytes: MAX_BYTES,
     timeoutMs: FETCH_TIMEOUT_MS,
     headers: { 'User-Agent': USER_AGENT },

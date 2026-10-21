@@ -16,8 +16,8 @@ function headers(config) {
 const TIMEOUT_MS = 20000;
 
 // The server is a user-configured integration, so LAN addresses are allowed;
-// loopback / link-local / metadata addresses never are (safeFetchRaw checks
-// the URL and every redirect hop).
+// loopback only with INTEGRATION_ALLOW_LOOPBACK=true; link-local / metadata
+// addresses never are (safeFetchRaw checks the URL and every redirect hop).
 function absFetch(config, path, timeoutMs = TIMEOUT_MS) {
   return safeFetchRaw(`${baseUrl(config)}${path}`, {
     allowPrivate: true, headers: headers(config), timeoutMs,

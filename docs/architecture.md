@@ -176,5 +176,6 @@ Google Books search supports these query params (any combination):
 | `ALLOWED_ORIGINS`, `TRUST_PROXY` | see README | CORS / CSRF origin check, client IP behind a proxy |
 | `REQUIRE_INVITE`, `RECAPTCHA_*` | see README | Registration |
 | `INTEGRATIONS_KEY`, `INTEGRATION_ALLOWED_HOSTS` | — | Integration secrets at rest / allowed hosts |
+| `INTEGRATION_ALLOW_LOOPBACK` | `false` | `lib/safeUrl.js` — let integration fetches (and covers from an integration origin) reach loopback; link-local stays blocked |
 | `GOOGLE_BOOKS_API_KEY` | — | `googleBooks.js` |
 | `COVERS_DIR`, `COVERS_MAX_MB` | `./data/covers`, unset | Cover cache |

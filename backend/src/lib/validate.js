@@ -92,6 +92,54 @@ export function optStrArray(v, name, { maxItems = 100, maxLen = 200 } = {}) {
   return out;
 }
 
+// ── Lenient normalisers for optional *metadata* ──────────────────────────────
+// Book metadata arrives from third-party providers (Google sends pageCount 0,
+// Open Library anthologies list 40 authors), so a value that is merely out of
+// range must not make the whole request fail. These normalise instead of
+// rejecting: undefined → undefined, null → null, unusable → null, too long →
+// truncated. A value of the wrong *type* (object, boolean, non-string list
+// entry) is still a client bug and throws 400. Use the strict opt* helpers for
+// structural fields (ids, status, title, ...).
+
+// Integer in [min, max], else null
+export function softInt(v, name, { min = -Infinity, max = Infinity } = {}) {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  let n;
+  if (typeof v === 'number') n = v;
+  else if (typeof v === 'string') n = /^\s*-?\d+\s*$/.test(v) ? Number(v) : NaN;
+  else throw bad(name, 'must be an integer');
+  return Number.isSafeInteger(n) && n >= min && n <= max ? n : null;
+}
+
+// String truncated to `max` chars; with overflow: 'null' an over-long value
+// (an ISBN, a date: truncating would only produce garbage) becomes null instead.
+export function softStr(v, name, { max = Infinity, trim = true, overflow = 'truncate' } = {}) {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (typeof v !== 'string') throw bad(name, 'must be a string');
+  const s = trim ? v.trim() : v;
+  if (s.length <= max) return s;
+  return overflow === 'null' ? null : s.slice(0, max);
+}
+
+// List of strings (or a comma-separated string): entries truncated to `maxLen`,
+// list cut to the first `maxItems`.
+export function softStrArray(v, name, { maxItems = 100, maxLen = 200 } = {}) {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  const arr = typeof v === 'string' ? v.split(',') : v;
+  if (!Array.isArray(arr)) throw bad(name, 'must be a list of strings');
+  const out = [];
+  for (const item of arr) {
+    if (typeof item !== 'string') throw bad(name, 'must be a list of strings');
+    const s = item.trim();
+    if (s) out.push(s.slice(0, maxLen));
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
 export function hexColor(v, name) {
   if (typeof v !== 'string' || !/^#([0-9a-f]{6}|[0-9a-f]{3})$/i.test(v)) {
     throw bad(name, 'must be a hex colour like #a78bfa');

@@ -99,6 +99,7 @@ With `TEST_DATABASE_URL` set, every test file creates and drops its own database
 | `POSTGRES_PASSWORD` | — | **Required.** Database password |
 | `GOOGLE_BOOKS_API_KEY` | _(empty)_ | Optional — higher API quota |
 | `API_PORT` | `3000` | Host port for the API container |
+| `API_BIND` | `127.0.0.1` | Interface the API port is published on. Keep it on localhost so clients go through nginx; `0.0.0.0` exposes it |
 | `FRONTEND_PORT` | `8080` | Host port for the frontend container |
 | `COVERS_MAX_MB` | _(unset)_ | Optional — cap the cover image cache size in MB; oldest files are pruned on startup and every 24h |
 | `REQUIRE_INVITE` | `false` | Set to `true` for invite-only registration: every account except the very first (the admin) must supply a valid, unused invite code |
@@ -106,6 +107,18 @@ With `TEST_DATABASE_URL` set, every test file creates and drops its own database
 | `PG_POOL_MAX` | _(unset → 10)_ | Optional — maximum database connections in the API's pool (the test suite sets `1`) |
 | `PG_TIMEZONE` | `UTC` | Optional — time zone of every database session the API opens (IANA name, e.g. `Europe/Berlin`). Date-only values such as a read's finish date (`2024-05-01`) are interpreted in this zone, so keep it stable once you have data. Invalid values fall back to `UTC` |
 | `INTEGRATION_ALLOWED_HOSTS` | _(unset)_ | Optional comma-separated hostnames (e.g. `calibre.lan,192.168.1.20`) that integrations may point at. **Recommended for multi-user instances**; when unset, any user can aim an integration at any LAN host |
+| `INTEGRATION_ALLOW_LOOPBACK` | `false` | Set to `true` to let integrations (and the cover proxy, for covers served by a configured integration server) reach loopback addresses (`localhost`, `127.0.0.1`, `::1`). Needed only on bare-metal installs where Calibre-Web / Audiobookshelf runs on the same machine; Docker installs don't need it (and it would only reach the API container itself). Link-local / cloud-metadata addresses stay blocked regardless. Not read by `docker-compose.yml` |
+| `TRUST_PROXY` | `1` | Number of reverse-proxy hops in front of the API whose `X-Forwarded-For` is trusted for the client IP (rate limiting). `1` is right behind the bundled nginx; `2` when another proxy sits in front of it; `false` when the API is exposed directly. See below |
+
+### Reverse proxies and client IPs
+
+The login/register rate limits are keyed on the client IP, which the API reads from `X-Forwarded-For` according to `TRUST_PROXY` (the number of trusted proxy hops, counted from the API):
+
+- **`TRUST_PROXY=1` (default)** — only the bundled nginx (`frontend/nginx.conf`) sits in front of the API. nginx appends the address it actually saw to `X-Forwarded-For`, and the API takes exactly that last hop, so a client-supplied header cannot be used to dodge the limits. The same holds if your own proxy (Caddy snippet below) forwards `/api/*` straight to the API.
+- **`TRUST_PROXY=2`** — another reverse proxy (Caddy, Traefik, a cloud load balancer) in front of the bundled nginx. It must add the client address to `X-Forwarded-For` (they all do by default). With `1` here every user would share the proxy's IP and therefore one rate-limit bucket.
+- **`TRUST_PROXY=false`** — the API is reachable directly with no proxy.
+
+Don't publish the API port (`API_PORT`) to untrusted networks: a client talking to it directly bypasses nginx and can forge `X-Forwarded-For`. Bind it to localhost or firewall it.
 
 ### Registration and invites
 
@@ -178,6 +191,11 @@ bookworm.yourdomain.com {
     }
 }
 ```
+
+## Upgrading
+
+- **Integrations on `localhost` (bare-metal installs).** Integration servers (Calibre-Web, Audiobookshelf) on loopback addresses (`http://localhost:13378`, `http://127.0.0.1:8083`) are refused by default. Docker installs don't need to do anything (inside a container `localhost` is the API container itself; point integrations at the host's LAN address or service name instead). If you run the backend directly on the host and your integrations live on the same machine, set `INTEGRATION_ALLOW_LOOPBACK=true` in the backend's environment and restart. Link-local / metadata addresses (`169.254.x.x`) remain blocked.
+- **Behind another reverse proxy.** If you terminate TLS in Caddy/Traefik in front of the bundled nginx, set `TRUST_PROXY=2` (see "Reverse proxies and client IPs"), and rebuild the frontend image so the updated `nginx.conf` is used.
 
 ## Data backup
 

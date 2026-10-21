@@ -19,7 +19,7 @@ services:
     build: ./backend
     restart: unless-stopped
     ports:
-      - "${API_PORT:-3000}:3000"
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-bookworm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-bookworm}
       GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}

@@ -4,7 +4,7 @@ import { getExternalBook, findBestMatch, EXTERNAL_ID_COLUMNS } from '../bookProv
 import { HttpError } from '../lib/httpError.js';
 import { upsertBook } from '../lib/books.js';
 import {
-  idParam, optInt, optStr, reqStr, optStrArray, optHttpUrl, oneOf,
+  idParam, optInt, optStr, reqStr, softInt, softStr, softStrArray, optHttpUrl, oneOf,
 } from '../lib/validate.js';
 
 const STATUSES = ['to_read', 'reading', 'done'];
@@ -226,14 +226,15 @@ router.post('/', async (req, res, next) => {
   openLibraryId = optStr(openLibraryId, 'openLibraryId', { max: 200 });
   appleId       = optStr(appleId,       'appleId',       { max: 200 });
   title         = optStr(title,         'title',         { max: 500 });
-  authors       = optStrArray(authors,  'authors',       { maxItems: 20, maxLen: 200 });
   coverUrl      = optHttpUrl(coverUrl,  'coverUrl');
-  pageCount     = optInt(pageCount,     'pageCount',     { min: 1, max: 100000 });
-  publishedDate = optStr(publishedDate, 'publishedDate', { max: 50 });
-  description   = optStr(description,   'description',   { max: 20000, trim: false });
-  categories    = optStrArray(categories, 'categories',  { maxItems: 50, maxLen: 200 });
-  isbn13        = optStr(isbn13,        'isbn13',        { max: 20 });
-  isbn10        = optStr(isbn10,        'isbn10',        { max: 20 });
+  // Provider-sourced metadata is normalised, not rejected (see lib/validate.js)
+  authors       = softStrArray(authors, 'authors',       { maxItems: 20, maxLen: 200 });
+  pageCount     = softInt(pageCount,    'pageCount',     { min: 1, max: 100000 });
+  publishedDate = softStr(publishedDate, 'publishedDate', { max: 50, overflow: 'null' });
+  description   = softStr(description,  'description',   { max: 20000, trim: false });
+  categories    = softStrArray(categories, 'categories', { maxItems: 50, maxLen: 200 });
+  isbn13        = softStr(isbn13,       'isbn13',        { max: 20, overflow: 'null' });
+  isbn10        = softStr(isbn10,       'isbn10',        { max: 20, overflow: 'null' });
   shelfId       = optInt(shelfId,       'shelfId',       { min: 1, max: 2147483647 });
   status        = status === undefined ? undefined : oneOf(status, 'status', STATUSES);
 
@@ -375,13 +376,14 @@ router.patch('/:id/metadata', async (req, res, next) => {
     const openLibraryId = optStr(body.openLibraryId, 'openLibraryId', { max: 200 });
     const appleId       = optStr(body.appleId,       'appleId',       { max: 200 });
     const coverUrl      = optHttpUrl(body.coverUrl,  'coverUrl');
-    const categories    = optStrArray(body.categories, 'categories',  { maxItems: 50, maxLen: 200 });
-    const pageCount     = optInt(body.pageCount,     'pageCount',     { min: 1, max: 100000 });
-    const publishedDate = optStr(body.publishedDate, 'publishedDate', { max: 50 });
-    const description   = optStr(body.description,   'description',   { max: 20000, trim: false });
+    // metadata fields are normalised rather than rejected (providers send pageCount 0, 40 authors, ...)
+    const categories    = softStrArray(body.categories, 'categories', { maxItems: 50, maxLen: 200 });
+    const pageCount     = softInt(body.pageCount,     'pageCount',     { min: 1, max: 100000 });
+    const publishedDate = softStr(body.publishedDate, 'publishedDate', { max: 50, overflow: 'null' });
+    const description   = softStr(body.description,   'description',   { max: 20000, trim: false });
     // title/authors become this user's own overrides; null reverts to the shared value
     const title         = body.title == null ? body.title : reqStr(body.title, 'title', { max: 500 });
-    const authors       = optStrArray(body.authors,  'authors',       { maxItems: 20, maxLen: 200 });
+    const authors       = softStrArray(body.authors,  'authors',       { maxItems: 20, maxLen: 200 });
 
     const { rows: [lb] } = await pool.query(
       `SELECT id, book_id FROM library_books WHERE id = $1 AND user_id = $2`,
@@ -439,13 +441,7 @@ router.patch('/:id/metadata', async (req, res, next) => {
     // as the user's personal overrides (so they immediately see the enriched data)
     if (googleId || openLibraryId || appleId) {
       try {
-        const bookIdParam = optInt(req.body?.bookId, 'bookId', { min: 1, max: 2147483647 }) ?? null;
-  if (bookIdParam !== null) {
-    const { rowCount } = await pool.query('SELECT 1 FROM books WHERE id = $1', [bookIdParam]);
-    if (!rowCount) return res.status(404).json({ error: 'Book not found' });
-  }
-
-  const source = bookIdParam !== null ? null : googleId ? 'google' : openLibraryId ? 'openlibrary' : 'apple';
+        const source = googleId ? 'google' : openLibraryId ? 'openlibrary' : 'apple';
         const meta = await getExternalBook(source, googleId ?? openLibraryId ?? appleId);
         await pool.query(
           `UPDATE library_books SET

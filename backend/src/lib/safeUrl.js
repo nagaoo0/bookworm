@@ -22,14 +22,17 @@ export function sameOrigin(a, b) {
 
 // ---------------------------------------------------------------------------
 // Address classification
-//   'blocked' — loopback, unspecified, link-local (incl. cloud metadata),
-//               multicast/reserved. Never fetchable.
-//   'private' — RFC1918, CGNAT, IPv6 ULA. Fetchable only with allowPrivate.
-//   'public'  — everything else.
+//   'blocked'  — unspecified, link-local (incl. cloud metadata),
+//                multicast/reserved. Never fetchable.
+//   'loopback' — 127/8, ::1. Fetchable only with allowPrivate AND the operator
+//                opt-in INTEGRATION_ALLOW_LOOPBACK=true (bare-metal installs
+//                whose Calibre / Audiobookshelf runs on the same machine).
+//   'private'  — RFC1918, CGNAT, IPv6 ULA. Fetchable only with allowPrivate.
+//   'public'   — everything else.
 // ---------------------------------------------------------------------------
 
 function classifyV4(a, b) {
-  if (a === 127) return 'blocked';                       // loopback
+  if (a === 127) return 'loopback';                      // 127/8
   if (a === 0) return 'blocked';                         // 0.0.0.0/8
   if (a === 169 && b === 254) return 'blocked';          // link-local / metadata
   if (a >= 224) return 'blocked';                        // multicast + reserved (224/4, 240/4)
@@ -78,7 +81,7 @@ export function classifyAddress(ip) {
     if (!g) return 'blocked';
     const allZeroTo = n => g.slice(0, n).every(x => x === 0);
     if (allZeroTo(7) && g[7] === 0) return 'blocked';  // ::
-    if (allZeroTo(7) && g[7] === 1) return 'blocked';  // ::1
+    if (allZeroTo(7) && g[7] === 1) return 'loopback'; // ::1
     // IPv4-mapped ::ffff:a.b.c.d
     if (allZeroTo(5) && g[5] === 0xffff) return classifyV4(g[6] >> 8, g[6] & 0xff);
     // IPv4-compatible ::a.b.c.d (deprecated) and NAT64 64:ff9b::/96 — judge by the embedded v4
@@ -100,8 +103,12 @@ export function classifyAddress(ip) {
 
 const denied = () => new HttpError(400, 'URL not allowed');
 
-// Validates the URL and every address its hostname resolves to. Returns the
-// parsed URL. Note: DNS is resolved again by fetch(), so a rebinding race is
+// Read per call (not at import) so the setting can be changed without a re-import
+const loopbackAllowed = () => process.env.INTEGRATION_ALLOW_LOOPBACK === 'true';
+
+// Validates the URL and every address its hostname resolves to. `allowPrivate`
+// admits LAN addresses (and loopback too when INTEGRATION_ALLOW_LOOPBACK=true);
+// link-local / metadata addresses are never admitted. Returns the parsed URL. Note: DNS is resolved again by fetch(), so a rebinding race is
 // narrowed, not eliminated.
 export async function assertFetchableUrl(str, { allowPrivate = false } = {}) {
   if (!isHttpUrl(str)) throw denied();
@@ -125,6 +132,7 @@ export async function assertFetchableUrl(str, { allowPrivate = false } = {}) {
     const kind = classifyAddress(addr);
     if (kind === 'public') continue;
     if (kind === 'private' && allowPrivate) continue;
+    if (kind === 'loopback' && allowPrivate && loopbackAllowed()) continue;
     throw denied();
   }
   return url;
@@ -154,14 +162,20 @@ async function readCapped(res, maxBytes) {
 // follows at most `maxRedirects` redirects manually and drops the
 // Authorization header when a redirect leaves the original origin. Returns the
 // raw Response (body not yet read) — callers must consume or cancel it.
+//
+// `allowPrivateOrigin` is a narrower form of `allowPrivate`: private addresses
+// are admitted only for hops on exactly that origin, every other hop (e.g. a
+// redirect to another LAN host) must resolve to public addresses.
 export async function safeFetchRaw(url, {
-  allowPrivate = false, timeoutMs = 10000, headers = {}, maxRedirects = 3, signal,
+  allowPrivate = false, allowPrivateOrigin = null, timeoutMs = 10000, headers = {}, maxRedirects = 3, signal,
 } = {}) {
   const sig = signal ?? AbortSignal.timeout(timeoutMs);
   let current = url;
   let hdrs = { ...headers };
   for (let hop = 0; ; hop++) {
-    await assertFetchableUrl(current, { allowPrivate });
+    await assertFetchableUrl(current, {
+      allowPrivate: allowPrivate || (allowPrivateOrigin !== null && sameOrigin(current, allowPrivateOrigin)),
+    });
     const res = await fetch(current, { redirect: 'manual', signal: sig, headers: hdrs });
 
     const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
@@ -180,8 +194,10 @@ export async function safeFetchRaw(url, {
 
 // safeFetchRaw + the whole body buffered, aborting once more than `maxBytes`
 // have arrived. Returns { status, headers, buffer }.
-export async function safeFetch(url, { allowPrivate = false, maxBytes, timeoutMs = 10000, headers, maxRedirects = 3 } = {}) {
-  const res = await safeFetchRaw(url, { allowPrivate, timeoutMs, headers, maxRedirects });
+export async function safeFetch(url, {
+  allowPrivate = false, allowPrivateOrigin = null, maxBytes, timeoutMs = 10000, headers, maxRedirects = 3,
+} = {}) {
+  const res = await safeFetchRaw(url, { allowPrivate, allowPrivateOrigin, timeoutMs, headers, maxRedirects });
   const buffer = await readCapped(res, maxBytes);
   return { status: res.status, headers: res.headers, buffer };
 }

@@ -122,7 +122,8 @@ describe('input validation', () => {
   });
 
   it('library POST validates types', async () => {
-    assert.equal((await u.agent.post('/api/library').send({ title: 'x', pageCount: -5 })).status, 400);
+    // provider metadata is normalised, not rejected (see reviewFixes.test.js); a wrong type is still a 400
+    assert.equal((await u.agent.post('/api/library').send({ title: 'x', pageCount: {} })).status, 400);
     assert.equal((await u.agent.post('/api/library').send({ title: 'x', coverUrl: 'javascript:alert(1)' })).status, 400);
     assert.equal((await u.agent.post('/api/library').send({ title: 'x', status: 'nope' })).status, 400);
     assert.equal((await u.agent.post('/api/library').send({ title: 'x', authors: [1, 2] })).status, 400);
