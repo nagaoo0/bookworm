@@ -6,7 +6,8 @@ import {
   createSession, setSessionCookie, clearSessionCookie,
   authMiddleware, verifyRecaptcha,
 } from '../auth.js';
-import { optHttpUrl } from '../lib/validate.js';
+import { optHttpUrl, oneOf, reqStr } from '../lib/validate.js';
+import { HttpError } from '../lib/httpError.js';
 
 const router = Router();
 
@@ -30,16 +31,47 @@ const PASSWORD_MSG = `Password must be ${PASSWORD_MIN}-${PASSWORD_MAX} character
 
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,32}$/;
 
+// REQUIRE_INVITE=true makes registration invite-only (except the first user)
+const requireInviteEnabled = () => process.env.REQUIRE_INVITE === 'true';
+
+// Synced UI preferences: only these keys are stored; unknown keys are ignored.
+const PREF_ENUMS = {
+  theme: ['dark', 'light', 'sepia', 'system'],
+  cardSize: ['miniature', 'small', 'medium', 'large'],
+  libraryView: ['grid', 'list'],
+};
+
+// Validates a prefs patch and merges it into the stored prefs (null removes a key)
+function mergePrefs(patch, existing) {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch))
+    throw new HttpError(400, 'prefs must be an object');
+  const next = { ...(existing && typeof existing === 'object' ? existing : {}) };
+  for (const [key, value] of Object.entries(patch)) {
+    if (!Object.hasOwn(PREF_ENUMS, key) && key !== 'searchLanguage') continue;
+    if (value === null) { delete next[key]; continue; }
+    next[key] = key === 'searchLanguage'
+      ? reqStr(value, 'prefs.searchLanguage', { max: 10 })
+      : oneOf(value, `prefs.${key}`, PREF_ENUMS[key]);
+  }
+  return next;
+}
+
 // GET /api/auth/me — returns the logged-in user, or 401
 router.get('/me', authMiddleware, (req, res) => {
   const u = req.user;
   res.json({
     id: u.id, username: u.username, isAdmin: u.is_admin, isPublic: u.is_public,
     bio: u.bio ?? null, avatarUrl: u.avatar_url ?? null, bannerUrl: u.banner_url ?? null, accent: u.accent ?? null,
+    prefs: u.prefs ?? {},
   });
 });
 
-// POST /api/auth/register  { username, password, inviteCode? }
+// POST /api/auth/register  { username, password, inviteCode?, recaptchaToken? }
+//
+// Registration is open by default. With REQUIRE_INVITE=true every account
+// except the very first (who becomes admin) needs a valid unused invite code.
+// Slow work (reCAPTCHA network call, bcrypt) happens before the transaction so
+// no DB connection is held while waiting on it.
 router.post('/register', loginLimiter, async (req, res) => {
   const { username, password, inviteCode: rawInviteCode, recaptchaToken } = req.body ?? {};
 
@@ -51,6 +83,31 @@ router.post('/register', loginLimiter, async (req, res) => {
       (recaptchaToken != null && typeof recaptchaToken !== 'string'))
     return res.status(400).json({ error: 'Invalid request' });
   const inviteCode = rawInviteCode?.trim() || '';
+  const requireInvite = requireInviteEnabled();
+
+  let hash;
+  let captchaChecked = false;
+  try {
+    // Cheap, non-authoritative peek: the first user skips reCAPTCHA / invite
+    // checks. The authoritative first-user check happens inside the transaction.
+    const { rows: [peek] } = await pool.query('SELECT EXISTS (SELECT 1 FROM users) AS has_users');
+    if (peek.has_users) {
+      if (requireInvite && !inviteCode)
+        return res.status(400).json({ error: 'An invite code is required' });
+
+      // Validate reCAPTCHA v3 token only when the secret is configured
+      if (process.env.RECAPTCHA_SECRET) {
+        if (!recaptchaToken) return res.status(400).json({ error: 'reCAPTCHA token required' });
+        if (!(await verifyRecaptcha(recaptchaToken)))
+          return res.status(400).json({ error: 'reCAPTCHA validation failed' });
+        captchaChecked = true;
+      }
+    }
+    hash = await hashPassword(password);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Registration failed' });
+  }
 
   let client;
   try {
@@ -61,29 +118,29 @@ router.post('/register', loginLimiter, async (req, res) => {
   }
   try {
     await client.query('BEGIN');
+    // Serialise registrations: two concurrent "first" signups must not both
+    // see an empty users table and both become admin.
+    await client.query('LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE');
 
-    // Check if this is the very first user
     const { rows: [{ count }] } = await client.query('SELECT COUNT(*) FROM users');
     const isFirst = count === '0';
 
     if (!isFirst) {
-      // Validate reCAPTCHA v3 token only when the secret is configured
-      if (process.env.RECAPTCHA_SECRET) {
-        if (!recaptchaToken) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'reCAPTCHA token required' });
-        }
-        const ok = await verifyRecaptcha(recaptchaToken);
-        if (!ok) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'reCAPTCHA validation failed' });
-        }
+      // The peek said "first user" but someone registered in between: the
+      // reCAPTCHA / invite requirements apply after all
+      if (process.env.RECAPTCHA_SECRET && !captchaChecked) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'reCAPTCHA token required' });
       }
-
-      // Invite code is now optional; if provided, mark it used. If provided and invalid, reject.
+      if (requireInvite && !inviteCode) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'An invite code is required' });
+      }
+      // Optional invite (or required with REQUIRE_INVITE): lock the row so the
+      // same code can't be redeemed twice concurrently
       if (inviteCode) {
         const { rows: [invite] } = await client.query(
-          `SELECT code FROM invites WHERE code = $1 AND used_by IS NULL`,
+          `SELECT code FROM invites WHERE code = $1 AND used_by IS NULL FOR UPDATE`,
           [inviteCode]
         );
         if (!invite) {
@@ -93,20 +150,21 @@ router.post('/register', loginLimiter, async (req, res) => {
       }
     }
 
-    // Create user
-    const hash = await hashPassword(password);
     const { rows: [user] } = await client.query(
       `INSERT INTO users (username, password_hash, is_admin)
        VALUES ($1, $2, $3) RETURNING id, username, is_admin, is_public`,
       [username.trim(), hash, isFirst]
     );
 
-    // Mark invite used
     if (!isFirst && inviteCode) {
-      await client.query(
-        `UPDATE invites SET used_by = $1, used_at = now() WHERE code = $2`,
+      const { rowCount } = await client.query(
+        `UPDATE invites SET used_by = $1, used_at = now() WHERE code = $2 AND used_by IS NULL`,
         [user.id, inviteCode]
       );
+      if (rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid or already-used invite code' });
+      }
     }
 
     await client.query('COMMIT');
@@ -125,6 +183,7 @@ router.post('/register', loginLimiter, async (req, res) => {
   }
 });
 
+
 // GET /api/auth/recaptcha-site-key -> { siteKey }
 router.get('/recaptcha-site-key', (req, res) => {
   const siteKey = process.env.RECAPTCHA_SITE_KEY || '';
@@ -135,7 +194,7 @@ router.get('/recaptcha-site-key', (req, res) => {
 // GET /api/auth/config -> public small config helpful for frontend
 router.get('/config', (_req, res) => {
   const siteKey = process.env.RECAPTCHA_SITE_KEY || '';
-  res.json({ recaptchaConfigured: !!siteKey });
+  res.json({ recaptchaConfigured: !!siteKey, requireInvite: requireInviteEnabled() });
 });
 
 // POST /api/auth/login  { username, password }
@@ -174,6 +233,17 @@ router.post('/logout', async (req, res, next) => {
   }
 });
 
+// POST /api/auth/logout-all — sign out every device, including this one
+router.post('/logout-all', authMiddleware, async (req, res, next) => {
+  try {
+    await pool.query('DELETE FROM sessions WHERE user_id = $1', [req.user.id]);
+    clearSessionCookie(res);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 const ALLOWED_ACCENTS = new Set(['amber', 'blue', 'teal', 'rose']);
 
 // PATCH /api/auth/me  { isPublic?, currentPassword?, newPassword?, bio?, avatarUrl?, accent? }
@@ -186,7 +256,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     );
     if (!row) return res.status(404).json({ error: 'User not found' });
 
-    const { isPublic, currentPassword, newPassword, bio, avatarUrl, bannerUrl, accent } = req.body ?? {};
+    const { isPublic, currentPassword, newPassword, bio, avatarUrl, bannerUrl, accent, prefs } = req.body ?? {};
     const updates = [];
     const params = [];
     let passwordChanged = false;
@@ -230,12 +300,17 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
       updates.push(`accent = $${params.length}`);
     }
 
+    if (prefs !== undefined) {
+      params.push(JSON.stringify(mergePrefs(prefs, req.user.prefs)));
+      updates.push(`prefs = $${params.length}::jsonb`);
+    }
+
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
     params.push(req.user.id);
     const { rows: [user] } = await pool.query(
       `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}
-       RETURNING id, username, is_admin, is_public, bio, avatar_url, banner_url, accent`,
+       RETURNING id, username, is_admin, is_public, bio, avatar_url, banner_url, accent, prefs`,
       params
     );
 
@@ -250,6 +325,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     res.json({
       id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public,
       bio: user.bio ?? null, avatarUrl: user.avatar_url ?? null, bannerUrl: user.banner_url ?? null, accent: user.accent ?? null,
+      prefs: user.prefs ?? {},
     });
   } catch (err) {
     next(err);

@@ -13,7 +13,9 @@ export const VALID_SLOTS = new Set([
 export async function getProfileShelf(userId) {
   const { rows } = await pool.query(
     `SELECT ps.slot_key,
-            b.id AS book_id, b.title, b.authors,
+            b.id AS book_id,
+            COALESCE(lb.title_override,   b.title)   AS title,
+            COALESCE(lb.authors_override, b.authors) AS authors,
             COALESCE(lb.cover_url_override, b.cover_url) AS cover_url
      FROM profile_shelf ps
      JOIN books b ON b.id = ps.book_id

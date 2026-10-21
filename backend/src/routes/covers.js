@@ -51,13 +51,13 @@ function sniffContentType(buf) {
 async function isIntegrationOrigin(src) {
   let origin;
   try { origin = new URL(src).origin; } catch { return false; }
+  // server_origin is a plain copy kept in sync on save, so this works even
+  // when integrations.config is encrypted
   const { rows } = await pool.query(
-    `SELECT DISTINCT config->>'serverUrl' AS server_url
-     FROM integrations WHERE config->>'serverUrl' IS NOT NULL`
+    'SELECT 1 FROM integrations WHERE server_origin = $1 LIMIT 1',
+    [origin]
   );
-  return rows.some(r => {
-    try { return new URL(r.server_url).origin === origin; } catch { return false; }
-  });
+  return rows.length > 0;
 }
 
 async function fetchAndCache(src, filePath) {

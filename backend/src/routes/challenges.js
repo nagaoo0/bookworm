@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { idParam, optInt, reqStr, optStr, optIsoDate } from '../lib/validate.js';
+import { viewerOf, viewerParams, visibleUserSql } from '../lib/visibility.js';
 
 const router = Router();
 
@@ -204,6 +205,8 @@ router.get('/:id/leaderboard', async (req, res, next) => {
       'SELECT COUNT(*)::INT AS n FROM challenge_books WHERE challenge_id = $1', [id]
     )).rows[0].n;
 
+    // Private participants are hidden from everyone but themselves and admins
+    const [vid, vadmin] = viewerParams(viewerOf(req));
     const { rows } = await pool.query(
       `SELECT u.username,
               (SELECT COUNT(*)::INT
@@ -214,8 +217,9 @@ router.get('/:id/leaderboard', async (req, res, next) => {
        FROM challenge_entries ce
        JOIN users u ON u.id = ce.user_id
        WHERE ce.challenge_id = $1
+         AND ${visibleUserSql('u', '$2', '$3')}
        ORDER BY books_read DESC, u.username`,
-      [id]
+      [id, vid, vadmin]
     );
     res.json({ challenge: c, leaderboard: rows, total });
   } catch (err) { next(err); }

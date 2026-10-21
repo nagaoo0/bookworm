@@ -2,6 +2,8 @@ import app from './app.js';
 import { migrate, pool } from './db.js';
 import { bootAllSyncs, stopAllSyncs } from './integrations/syncEngine.js';
 import { pruneCoverCache } from './routes/covers.js';
+import { prepareIntegrationConfigs } from './integrations/configStore.js';
+import { encryptionEnabled } from './lib/secretBox.js';
 
 const PORT = process.env.PORT ?? 3000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -48,6 +50,15 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 migrate()
+  .then(async () => {
+    // Encrypt any plaintext integration secrets and fill integrations.server_origin
+    // (must finish before we serve requests or start the sync engine)
+    if (!encryptionEnabled()) {
+      console.warn('WARNING: INTEGRATIONS_KEY is not set — integration credentials are stored in plaintext. ' +
+        'Set it to a 32-byte hex/base64 key (or a passphrase) to encrypt them at rest.');
+    }
+    await prepareIntegrationConfigs();
+  })
   .then(() => {
     if (shuttingDown) return;
     server = app.listen(PORT, () => console.log(`API listening on :${PORT}`));

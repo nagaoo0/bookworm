@@ -2,15 +2,19 @@ import { Router } from 'express';
 import { pool } from '../db.js';
 import { computeStats } from './stats.js';
 import { getProfileShelf } from './profileShelf.js';
+import { optionalAuth } from '../lib/optionalAuth.js';
+import { findVisibleUser, viewerParams, visibleUserSql } from '../lib/visibility.js';
 
 const router = Router();
 
-// GET /api/profiles/:username/shelf — public
+// Public routes, but private profiles are only visible to their owner and
+// admins (everyone else gets a plain 404, same as a missing user).
+router.use(optionalAuth);
+
+// GET /api/profiles/:username/shelf
 router.get('/:username/shelf', async (req, res, next) => {
   try {
-    const { rows: [user] } = await pool.query(
-      `SELECT id FROM users WHERE username = $1`, [req.params.username]
-    );
+    const user = await findVisibleUser(req.params.username, req.viewer);
     if (!user) return res.status(404).json({ error: 'Profile not found' });
     res.json(await getProfileShelf(user.id));
   } catch (err) {
@@ -21,11 +25,10 @@ router.get('/:username/shelf', async (req, res, next) => {
 // GET /api/profiles/:username/followers
 router.get('/:username/followers', async (req, res, next) => {
   try {
-    const { rows: [target] } = await pool.query(
-      `SELECT id FROM users WHERE username = $1`, [req.params.username]
-    );
+    const target = await findVisibleUser(req.params.username, req.viewer);
     if (!target) return res.status(404).json({ error: 'Profile not found' });
 
+    const [vid, vadmin] = viewerParams(req.viewer);
     const { rows } = await pool.query(
       `SELECT u.username, u.avatar_url, u.accent,
               COUNT(DISTINCT lb.id)::INT AS book_count
@@ -33,9 +36,10 @@ router.get('/:username/followers', async (req, res, next) => {
        JOIN users u ON u.id = f.follower_id
        LEFT JOIN library_books lb ON lb.user_id = u.id
        WHERE f.following_id = $1
+         AND ${visibleUserSql('u', '$2', '$3')}
        GROUP BY u.username, u.avatar_url, u.accent
        ORDER BY u.username`,
-      [target.id]
+      [target.id, vid, vadmin]
     );
     res.json(rows);
   } catch (err) {
@@ -46,11 +50,10 @@ router.get('/:username/followers', async (req, res, next) => {
 // GET /api/profiles/:username/following
 router.get('/:username/following', async (req, res, next) => {
   try {
-    const { rows: [target] } = await pool.query(
-      `SELECT id FROM users WHERE username = $1`, [req.params.username]
-    );
+    const target = await findVisibleUser(req.params.username, req.viewer);
     if (!target) return res.status(404).json({ error: 'Profile not found' });
 
+    const [vid, vadmin] = viewerParams(req.viewer);
     const { rows } = await pool.query(
       `SELECT u.username, u.avatar_url, u.accent,
               COUNT(DISTINCT lb.id)::INT AS book_count
@@ -58,9 +61,10 @@ router.get('/:username/following', async (req, res, next) => {
        JOIN users u ON u.id = f.following_id
        LEFT JOIN library_books lb ON lb.user_id = u.id
        WHERE f.follower_id = $1
+         AND ${visibleUserSql('u', '$2', '$3')}
        GROUP BY u.username, u.avatar_url, u.accent
        ORDER BY u.username`,
-      [target.id]
+      [target.id, vid, vadmin]
     );
     res.json(rows);
   } catch (err) {
@@ -68,26 +72,32 @@ router.get('/:username/following', async (req, res, next) => {
   }
 });
 
-// GET /api/profiles/:username — public, no auth required
+// GET /api/profiles/:username — no auth required
 router.get('/:username', async (req, res, next) => {
   try {
-    const { rows: [user] } = await pool.query(
-      `SELECT id, username, bio, avatar_url, banner_url, accent FROM users WHERE username = $1`,
-      [req.params.username]
+    const user = await findVisibleUser(
+      req.params.username, req.viewer, 'username, bio, avatar_url, banner_url, accent'
     );
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
-    // Optional viewer id for likes
-    const viewerToken = req.cookies?.bw_session;
-    let viewerId = null;
-    if (viewerToken) {
-      const { rows: [s] } = await pool.query(
-        `SELECT u.id FROM sessions s JOIN users u ON u.id = s.user_id
-         WHERE s.token = $1 AND s.expires_at > now()`,
-        [viewerToken]
-      );
-      viewerId = s?.id ?? null;
-    }
+    const viewerId = req.viewer?.id ?? null;
+    const [vid, vadmin] = viewerParams(req.viewer);
+
+    // Title/authors: the profile owner's own edits win over the shared book row
+    const SESSION_SELECT = `
+      SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
+             b.id AS book_id,
+             COALESCE(lbo.title_override,   b.title)   AS title,
+             COALESCE(lbo.authors_override, b.authors) AS authors,
+             b.cover_url, b.google_id,
+             (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count`;
+    const SESSION_FROM = `
+      FROM reading_sessions rs
+      JOIN books b ON b.id = rs.book_id
+      LEFT JOIN library_books lbo ON lbo.user_id = rs.user_id AND lbo.book_id = rs.book_id
+      WHERE rs.user_id = $1
+      ORDER BY rs.finished_at DESC NULLS LAST, rs.created_at DESC
+      LIMIT 50`;
 
     const [shelves, library, sessions, counts] = await Promise.all([
       pool.query(
@@ -100,7 +110,9 @@ router.get('/:username', async (req, res, next) => {
                   array_agg(sm.shelf_id ORDER BY sm.shelf_id) FILTER (WHERE sm.shelf_id IS NOT NULL),
                   '{}'::INT[]
                 ) AS shelf_ids,
-                b.id AS book_id, b.google_id, b.title, b.authors,
+                b.id AS book_id, b.google_id,
+                COALESCE(lb.title_override,          b.title)          AS title,
+                COALESCE(lb.authors_override,        b.authors)        AS authors,
                 COALESCE(lb.cover_url_override,      b.cover_url)      AS cover_url,
                 COALESCE(lb.page_count_override,     b.page_count)     AS page_count,
                 COALESCE(lb.published_date_override, b.published_date) AS published_date
@@ -114,34 +126,25 @@ router.get('/:username', async (req, res, next) => {
       ),
       viewerId !== null
         ? pool.query(
-            `SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
-                    b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
-                    (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
+            `${SESSION_SELECT},
                     EXISTS(SELECT 1 FROM session_likes sl WHERE sl.session_id = rs.id AND sl.user_id = $2) AS liked
-             FROM reading_sessions rs
-             JOIN books b ON b.id = rs.book_id
-             WHERE rs.user_id = $1
-             ORDER BY rs.finished_at DESC NULLS LAST, rs.created_at DESC
-             LIMIT 50`,
+             ${SESSION_FROM}`,
             [user.id, viewerId]
           )
         : pool.query(
-            `SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
-                    b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
-                    (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
+            `${SESSION_SELECT},
                     false AS liked
-             FROM reading_sessions rs
-             JOIN books b ON b.id = rs.book_id
-             WHERE rs.user_id = $1
-             ORDER BY rs.finished_at DESC NULLS LAST, rs.created_at DESC
-             LIMIT 50`,
+             ${SESSION_FROM}`,
             [user.id]
           ),
+      // Counts match the (visibility-filtered) follower / following lists
       pool.query(
         `SELECT
-           (SELECT COUNT(*) FROM follows WHERE following_id = $1)::INT AS followers,
-           (SELECT COUNT(*) FROM follows WHERE follower_id  = $1)::INT AS following`,
-        [user.id]
+           (SELECT COUNT(*) FROM follows f JOIN users u ON u.id = f.follower_id
+            WHERE f.following_id = $1 AND ${visibleUserSql('u', '$2', '$3')})::INT AS followers,
+           (SELECT COUNT(*) FROM follows f JOIN users u ON u.id = f.following_id
+            WHERE f.follower_id = $1 AND ${visibleUserSql('u', '$2', '$3')})::INT AS following`,
+        [user.id, vid, vadmin]
       ),
     ]);
 

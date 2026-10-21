@@ -31,6 +31,8 @@ import integrationsRouter from './routes/integrations.js';
 import coversRouter from './routes/covers.js';
 import { getExternalBook, EXTERNAL_ID_COLUMNS } from './bookProviders.js';
 import { idParam } from './lib/validate.js';
+import { optionalAuth } from './lib/optionalAuth.js';
+import { viewerParams, visibleUserSql, canView } from './lib/visibility.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -112,60 +114,49 @@ app.use('/api/profile-shelf', profileShelfRouter);
 app.use('/api/covers', coversRouter); // public — covers render on public pages
 
 // Feed — public, but supports ?filter=following (requires session cookie if provided)
-app.get('/api/feed', async (req, res, next) => {
+app.get('/api/feed', optionalAuth, async (req, res, next) => {
   try {
-    // Optionally resolve current user from session cookie for "following" filter and likes
-    let currentUserId = null;
-    const token = req.cookies?.bw_session;
-    if (token) {
-      const { rows: [sess] } = await pool.query(
-        `SELECT user_id FROM sessions WHERE token = $1 AND expires_at > now()`, [token]
-      );
-      if (sess) currentUserId = sess.user_id;
-    }
-
+    // Optional viewer (session cookie): "following" filter, likes, visibility
+    const viewer = req.viewer;
+    const currentUserId = viewer?.id ?? null;
     const followingOnly = req.query.filter === 'following' && currentUserId;
 
+    // Title/authors come from the session owner's own library entry when they
+    // edited them (the shared books row is never edited per-user)
     const FEED_SELECT = `
       SELECT rs.id AS session_id, rs.finished_at, rs.started_at, rs.rating, rs.review,
              u.username, u.avatar_url,
-             b.id AS book_id, b.title, b.authors, b.cover_url, b.google_id,
+             b.id AS book_id,
+             COALESCE(lbo.title_override,   b.title)   AS title,
+             COALESCE(lbo.authors_override, b.authors) AS authors,
+             b.cover_url, b.google_id,
              (SELECT COUNT(*) FROM session_likes sl WHERE sl.session_id = rs.id)::INT AS like_count,
              (SELECT COUNT(*) FROM session_comments sc WHERE sc.session_id = rs.id)::INT AS comment_count,
              (SELECT COUNT(DISTINCT rs2.user_id) FROM reading_sessions rs2
               WHERE rs2.book_id = b.id AND rs2.finished_at IS NOT NULL)::INT AS readers_count`;
-
-    if (currentUserId) {
-      const params = [currentUserId];
-      const { rows } = await pool.query(
-        `${FEED_SELECT},
-                EXISTS(SELECT 1 FROM session_likes sl WHERE sl.session_id = rs.id AND sl.user_id = $1) AS liked,
-                EXISTS(SELECT 1 FROM library_books lb WHERE lb.book_id = b.id AND lb.user_id = $1) AS is_in_library
+    const FEED_FROM = `
          FROM reading_sessions rs
          JOIN users u ON u.id = rs.user_id
          JOIN books b ON b.id = rs.book_id
-         WHERE rs.finished_at IS NOT NULL
-           AND (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
-           ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1)` : ''}
-         ORDER BY rs.finished_at DESC
-         LIMIT 100`,
-        params
-      );
-      return res.json(rows);
-    }
+         LEFT JOIN library_books lbo ON lbo.user_id = rs.user_id AND lbo.book_id = rs.book_id`;
 
-    // Anonymous viewer — no liked/library status
+    // $1 = viewer id (null when anonymous), $2 = viewer is admin
+    const [vid, vadmin] = viewerParams(viewer);
     const { rows } = await pool.query(
       `${FEED_SELECT},
-              false AS liked,
-              false AS is_in_library
-       FROM reading_sessions rs
-       JOIN users u ON u.id = rs.user_id
-       JOIN books b ON b.id = rs.book_id
+              ${currentUserId
+                ? `EXISTS(SELECT 1 FROM session_likes sl WHERE sl.session_id = rs.id AND sl.user_id = $1) AS liked,
+              EXISTS(SELECT 1 FROM library_books lb WHERE lb.book_id = b.id AND lb.user_id = $1) AS is_in_library`
+                : `false AS liked,
+              false AS is_in_library`}
+       ${FEED_FROM}
        WHERE rs.finished_at IS NOT NULL
          AND (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
+         AND ${visibleUserSql('u', '$1', '$2')}
+         ${followingOnly ? `AND rs.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1)` : ''}
        ORDER BY rs.finished_at DESC
-       LIMIT 100`
+       LIMIT 100`,
+      [vid, vadmin]
     );
     res.json(rows);
   } catch (err) {
@@ -173,18 +164,28 @@ app.get('/api/feed', async (req, res, next) => {
   }
 });
 
-// Public users list
-app.get('/api/users', async (_req, res, next) => {
+// Public users list (private users are hidden from everyone but themselves and admins).
+// Logged-in viewers also get follows_you / you_follow per row.
+app.get('/api/users', optionalAuth, async (req, res, next) => {
   try {
+    const viewer = req.viewer;
+    const [vid, vadmin] = viewerParams(viewer);
     const { rows } = await pool.query(
       `SELECT u.username, u.avatar_url, u.banner_url, u.accent,
-              COUNT(DISTINCT lb.id)::INT AS book_count
+              COUNT(DISTINCT lb.id)::INT AS book_count,
+              ($1::int IS NOT NULL AND EXISTS(
+                 SELECT 1 FROM follows f WHERE f.follower_id = u.id AND f.following_id = $1::int)) AS follows_you,
+              ($1::int IS NOT NULL AND EXISTS(
+                 SELECT 1 FROM follows f WHERE f.follower_id = $1::int AND f.following_id = u.id)) AS you_follow
        FROM users u
        LEFT JOIN library_books lb ON lb.user_id = u.id
+       WHERE ${visibleUserSql('u', '$1', '$2')}
        GROUP BY u.id
-       ORDER BY u.username`
+       ORDER BY u.username`,
+      [vid, vadmin]
     );
-    res.json(rows);
+    // Anonymous responses keep their original shape (no relationship flags)
+    res.json(viewer ? rows : rows.map(({ follows_you, you_follow, ...rest }) => rest));
   } catch (err) {
     next(err);
   }
@@ -258,25 +259,30 @@ app.get('/api/books/:bookId', async (req, res, next) => {
 });
 
 // Public: get comments for a feed event (session)
-app.get('/api/sessions/:id/comments', async (req, res, next) => {
+app.get('/api/sessions/:id/comments', optionalAuth, async (req, res, next) => {
   try {
     const sessionId = idParam(req.params.id);
-    let currentUserId = null;
-    const token = req.cookies?.bw_session;
-    if (token) {
-      const { rows: [sess] } = await pool.query(
-        `SELECT user_id FROM sessions WHERE token = $1 AND expires_at > now()`, [token]
-      );
-      if (sess) currentUserId = sess.user_id;
-    }
+    const viewer = req.viewer;
+
+    // Comments on a private user's session are as hidden as the session itself
+    const { rows: [owner] } = await pool.query(
+      `SELECT u.id, u.is_public
+       FROM reading_sessions rs JOIN users u ON u.id = rs.user_id
+       WHERE rs.id = $1`,
+      [sessionId]
+    );
+    if (!canView(owner, viewer)) return res.status(404).json({ error: 'Session not found' });
+
+    const [vid, vadmin] = viewerParams(viewer);
     const { rows } = await pool.query(
       `SELECT sc.id, sc.body, sc.created_at, u.username, u.avatar_url,
-              ($2::int IS NOT NULL AND sc.user_id = $2) AS is_own
+              ($2::int IS NOT NULL AND sc.user_id = $2::int) AS is_own
        FROM session_comments sc
        JOIN users u ON u.id = sc.user_id
        WHERE sc.session_id = $1
+         AND ${visibleUserSql('u', '$2', '$3')}
        ORDER BY sc.created_at ASC`,
-      [sessionId, currentUserId]
+      [sessionId, vid, vadmin]
     );
     res.json(rows);
   } catch (err) { next(err); }

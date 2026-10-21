@@ -3,6 +3,7 @@ import { pool } from '../db.js';
 import { HttpError } from '../lib/httpError.js';
 import { isHttpUrl, safeFetchRaw } from '../lib/safeUrl.js';
 import { idParam, optInt, optStr } from '../lib/validate.js';
+import { getIntegration, saveIntegration, openConfig, originOf } from '../integrations/configStore.js';
 import * as absClient from '../integrations/abs.js';
 import * as calibreClient from '../integrations/calibre.js';
 import * as koboClient from '../integrations/koboSync.js';
@@ -19,19 +20,48 @@ const router = Router();
 
 const SERVICE_LABELS = { audiobookshelf: 'Audiobookshelf', calibre: 'Calibre-Web' };
 
+// Decrypt a stored config for read-only display; an unreadable one (wrong or
+// missing INTEGRATIONS_KEY) shows up as empty rather than failing the request.
+function safeOpen(stored) {
+  try { return openConfig(stored); } catch { return {}; }
+}
+
+// Optional allowlist of integration server hostnames (comma-separated). When
+// set, users can only point integrations at these hosts — recommended on
+// multi-user instances, since integration URLs may otherwise target the LAN.
+function assertAllowedHost(serverUrl) {
+  const allowed = (process.env.INTEGRATION_ALLOWED_HOSTS ?? '')
+    .split(',').map(h => h.trim().toLowerCase().replace(/^\[|\]$/g, '')).filter(Boolean);
+  if (!allowed.length) return;
+  const host = new URL(serverUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!allowed.includes(host)) throw new HttpError(400, 'serverUrl host is not allowed on this server');
+}
+
 // Validate the posted config and keep only the keys the integrations use.
-// Throws HttpError(400) with a short message on bad input.
-function parseConfig(service, body) {
+// Secrets the client did not resend (absent or '') are kept from `existing`;
+// an explicit null clears them. Secrets are never carried over to a different
+// server origin. Throws HttpError(400) with a short message on bad input.
+function parseConfig(service, body, existing = {}) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new HttpError(400, 'Invalid configuration');
   }
   if (!isHttpUrl(body.serverUrl)) throw new HttpError(400, 'serverUrl must be an http(s) URL');
+  assertAllowedHost(body.serverUrl);
 
   const config = { serverUrl: body.serverUrl };
+  const keepSecrets = !!existing.serverUrl && originOf(existing.serverUrl) === originOf(body.serverUrl);
   const intervalMs = optInt(body.intervalMs, 'intervalMs', { min: 60000, max: 86400000 });
   if (intervalMs != null) config.intervalMs = intervalMs;
 
   const set = (key, value) => { if (value != null && value !== '') config[key] = value; };
+  const setSecret = (key, value) => {
+    if (value === null) return; // explicit clear
+    if (value === undefined || value === '') {
+      if (keepSecrets && existing[key]) config[key] = existing[key];
+      return;
+    }
+    config[key] = value;
+  };
   if (body.auto_sessions !== undefined) {
     if (typeof body.auto_sessions !== 'boolean' && typeof body.auto_sessions !== 'string') {
       throw new HttpError(400, 'auto_sessions is invalid');
@@ -40,11 +70,11 @@ function parseConfig(service, body) {
   }
 
   if (service === 'audiobookshelf') {
-    set('token', optStr(body.token, 'token', { max: 4096, trim: false }));
+    setSecret('token', optStr(body.token, 'token', { max: 4096, trim: false }));
   } else {
     set('username', optStr(body.username, 'username', { max: 500, trim: false }));
-    set('password', optStr(body.password, 'password', { max: 500, trim: false }));
-    set('koboToken', optStr(body.koboToken, 'koboToken', { max: 500 }));
+    setSecret('password', optStr(body.password, 'password', { max: 500, trim: false }));
+    setSecret('koboToken', optStr(body.koboToken, 'koboToken', { max: 500 }));
     const path = optStr(body.opdsStartPath, 'opdsStartPath', { max: 500 });
     // Must be a path on the configured server, never an absolute URL
     if (path && (!path.startsWith('/') || path.startsWith('//'))) {
@@ -60,18 +90,26 @@ function parseConfig(service, body) {
 // ---------------------------------------------------------------------------
 router.get('/', async (req, res, next) => {
   try {
+    // config may be encrypted, so derive the flags in JS; secrets never leave the server
     const { rows } = await pool.query(
-      `SELECT service, last_synced_at,
-              config->>'serverUrl' AS server_url,
-              CASE WHEN config->>'accessToken' IS NOT NULL THEN true
-                   WHEN config->>'token' IS NOT NULL THEN true
-                   ELSE false END AS connected,
-              CASE WHEN config->>'koboToken' IS NOT NULL THEN true
-                   ELSE false END AS kobo_connected
-       FROM integrations WHERE user_id=$1`,
+      'SELECT service, last_synced_at, config FROM integrations WHERE user_id=$1',
       [req.user.id]
     );
-    res.json(rows);
+    res.json(rows.map(r => {
+      const c = safeOpen(r.config);
+      return {
+        service: r.service,
+        last_synced_at: r.last_synced_at,
+        server_url: c.serverUrl ?? null,
+        connected: !!(c.accessToken || c.token),
+        kobo_connected: !!c.koboToken,
+        // non-secret settings only (explicit whitelist, never tokens/passwords)
+        serverUrl: c.serverUrl ?? null,
+        auto_sessions: c.auto_sessions ?? null,
+        intervalMs: c.intervalMs ?? null,
+        opdsStartPath: c.opdsStartPath ?? null,
+      };
+    }));
   } catch (err) { next(err); }
 });
 
@@ -84,7 +122,9 @@ router.put('/:service', async (req, res, next) => {
   if (!VALID.includes(service)) return res.status(400).json({ error: 'Unknown service' });
 
   try {
-    const config = parseConfig(service, req.body);
+    // An unreadable stored config (key changed) just means there is nothing to merge
+    const existing = (await getIntegration(req.user.id, service).catch(() => null))?.config ?? {};
+    const config = parseConfig(service, req.body, existing);
 
     // Validate connectivity before saving
     try {
@@ -100,12 +140,7 @@ router.put('/:service', async (req, res, next) => {
       return res.status(400).json({ error: `Could not connect to ${SERVICE_LABELS[service]}` });
     }
 
-    await pool.query(
-      `INSERT INTO integrations (user_id, service, config)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, service) DO UPDATE SET config = EXCLUDED.config`,
-      [req.user.id, service, config]
-    );
+    await saveIntegration(req.user.id, service, config);
 
     // (Re)start continuous sync
     stopContinuousSync(req.user.id, service);
@@ -164,10 +199,7 @@ router.post('/:service/sync', async (req, res, next) => {
 router.get('/:service/status', async (req, res, next) => {
   const { service } = req.params;
   try {
-    const { rows: [row] } = await pool.query(
-      'SELECT config, last_synced_at FROM integrations WHERE user_id=$1 AND service=$2',
-      [req.user.id, service]
-    );
+    const row = await getIntegration(req.user.id, service);
     if (!row) return res.json({ connected: false });
 
     const config = row.config;
@@ -191,10 +223,7 @@ router.get('/:service/status', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 router.get('/abs/now-playing', async (req, res, next) => {
   try {
-    const { rows: [row] } = await pool.query(
-      'SELECT config FROM integrations WHERE user_id=$1 AND service=$2',
-      [req.user.id, 'audiobookshelf']
-    );
+    const row = await getIntegration(req.user.id, 'audiobookshelf');
     if (!row) return res.json(null);
 
     const session = await absClient.fetchCurrentSession(row.config);
@@ -260,11 +289,10 @@ router.get('/book/:bookId/availability', async (req, res, next) => {
     );
     // Also fetch server URLs from integrations config for deep-link building
     const { rows: ints } = await pool.query(
-      `SELECT service, config->>'serverUrl' AS server_url
-       FROM integrations WHERE user_id=$1`,
+      'SELECT service, config FROM integrations WHERE user_id=$1',
       [req.user.id]
     );
-    const serverUrls = Object.fromEntries(ints.map(i => [i.service, i.server_url]));
+    const serverUrls = Object.fromEntries(ints.map(i => [i.service, safeOpen(i.config).serverUrl ?? null]));
     res.json(rows.map(r => ({ ...r, server_url: serverUrls[r.service] ?? null })));
   } catch (err) { next(err); }
 });
@@ -274,24 +302,62 @@ router.get('/book/:bookId/availability', async (req, res, next) => {
 // Fetches the file from Calibre-Web with stored credentials and streams it
 // back, so the browser never needs to handle Basic Auth directly.
 // ---------------------------------------------------------------------------
+// Only these upstream Content-Types are passed through; anything else becomes
+// octet-stream so a malicious Calibre server can't make us serve HTML/SVG/JS
+// from our own origin.
+const DOWNLOAD_TYPES = new Set([
+  'application/epub+zip', 'application/pdf', 'application/x-mobipocket-ebook',
+  'application/vnd.amazon.ebook', 'application/x-cbz', 'application/x-cbr',
+  'application/octet-stream',
+]);
+
+function safeContentType(value) {
+  const base = String(value ?? '').split(';')[0].trim().toLowerCase();
+  return DOWNLOAD_TYPES.has(base) ? base : 'application/octet-stream';
+}
+
+// Pull the filename out of an upstream Content-Disposition and make it safe to
+// put in our own header: printable ASCII only, no quotes / CR / LF / path
+// separators, at most 200 characters.
+function safeDownloadFilename(disposition, fallback) {
+  let name = '';
+  if (typeof disposition === 'string') {
+    const star = /filename\*\s*=\s*[^']*'[^']*'([^;]+)/i.exec(disposition);
+    if (star) {
+      try { name = decodeURIComponent(star[1].trim()); } catch { name = star[1]; }
+    } else {
+      const plain = /filename\s*=\s*(?:"([^"]*)"|([^;]+))/i.exec(disposition);
+      if (plain) name = plain[1] ?? plain[2];
+    }
+  }
+  name = name
+    .replace(/["\\/\r\n]/g, '')
+    .replace(/[^\x20-\x7e]/g, '_')
+    .trim()
+    .slice(0, 200)
+    .trim();
+  return name || fallback;
+}
+
 router.get('/calibre/download/:calibreId/:format', async (req, res, next) => {
   try {
     const { calibreId, format } = req.params;
-    const { rows: [row] } = await pool.query(
-      'SELECT config FROM integrations WHERE user_id=$1 AND service=$2',
-      [req.user.id, 'calibre']
-    );
+    const row = await getIntegration(req.user.id, 'calibre');
     if (!row) return res.status(404).json({ error: 'Calibre not configured' });
 
     const serverUrl = String(row.config.serverUrl ?? '').replace(/\/$/, '');
     const downloadUrl =
       `${serverUrl}/opds/download/${encodeURIComponent(calibreId)}/${encodeURIComponent(format)}/`;
 
+    // Stop pulling from Calibre as soon as the browser goes away
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableFinished) controller.abort(); });
+
     // Validates the URL and every redirect hop (LAN allowed: user-configured server)
     const upstream = await safeFetchRaw(downloadUrl, {
       allowPrivate: true,
       headers: calibreClient.opdsHeaders(row.config),
-      timeoutMs: 60000,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]),
     });
 
     if (!upstream.ok) {
@@ -299,19 +365,27 @@ router.get('/calibre/download/:calibreId/:format', async (req, res, next) => {
       return res.status(upstream.status >= 500 ? 502 : upstream.status).json({ error: 'Download failed' });
     }
 
-    res.setHeader('Content-Type', upstream.headers.get('Content-Type') ?? 'application/octet-stream');
-    const disposition = upstream.headers.get('Content-Disposition');
-    if (disposition) res.setHeader('Content-Disposition', disposition);
-    else res.setHeader('Content-Disposition', `attachment; filename="book.${format.replace(/[^A-Za-z0-9]/g, '')}"`);
+    const ext = format.replace(/[^A-Za-z0-9]/g, '').slice(0, 10);
+    const filename = safeDownloadFilename(
+      upstream.headers.get('Content-Disposition'), ext ? `book.${ext}` : 'book'
+    );
+    res.setHeader('Content-Type', safeContentType(upstream.headers.get('Content-Type')));
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    const reader = upstream.body.getReader();
-    const pump = async () => {
-      const { done, value } = await reader.read();
-      if (done) { res.end(); return; }
-      res.write(Buffer.from(value));
-      await pump();
-    };
-    await pump();
+    try {
+      for await (const chunk of upstream.body) {
+        if (res.destroyed) break;
+        if (!res.write(chunk)) {
+          await new Promise(resolve => { res.once('drain', resolve); res.once('close', resolve); });
+        }
+      }
+      res.end();
+    } catch (err) {
+      // Aborted (client left / timeout) or upstream died mid-stream: headers are
+      // already out, so the only option is to drop the connection
+      controller.abort();
+      res.destroy();
+    }
   } catch (err) { next(err); }
 });
 

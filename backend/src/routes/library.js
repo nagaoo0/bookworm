@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
-import { getExternalBook, findBestMatch } from '../bookProviders.js';
+import { getExternalBook, findBestMatch, EXTERNAL_ID_COLUMNS } from '../bookProviders.js';
 import {
   idParam, optInt, optStr, reqStr, optStrArray, optHttpUrl, oneOf,
 } from '../lib/validate.js';
@@ -17,7 +17,9 @@ const LIBRARY_SELECT = `
            array_agg(sm.shelf_id ORDER BY sm.shelf_id) FILTER (WHERE sm.shelf_id IS NOT NULL),
            '{}'::INT[]
          ) AS shelf_ids,
-         b.id AS book_id, b.google_id, b.open_library_id, b.apple_id, b.title, b.authors,
+         b.id AS book_id, b.google_id, b.open_library_id, b.apple_id,
+         COALESCE(lb.title_override,          b.title)          AS title,
+         COALESCE(lb.authors_override,        b.authors)        AS authors,
          COALESCE(lb.cover_url_override,      b.cover_url)      AS cover_url,
          COALESCE(lb.page_count_override,     b.page_count)     AS page_count,
          COALESCE(lb.published_date_override, b.published_date) AS published_date,
@@ -114,35 +116,63 @@ router.post('/', async (req, res, next) => {
 
   const source = googleId ? 'google' : openLibraryId ? 'openlibrary' : appleId ? 'apple' : null;
   const externalId = googleId ?? openLibraryId ?? appleId;
+  const column = source ? EXTERNAL_ID_COLUMNS[source] : null;
 
-  if (source && !title) {
-    try {
-      const meta = await getExternalBook(source, externalId);
-      ({ title, authors, coverUrl, pageCount, publishedDate, description, categories, isbn13, isbn10 } = meta);
-    } catch {
-      return res.status(502).json({ error: 'Could not fetch book metadata' });
+  // books rows are shared by everyone who has the book, so an existing row is
+  // never rewritten with client-supplied values (only NULL fields get filled).
+  // A new row is built from the provider's data, falling back to what the
+  // client sent only if the provider can't be reached.
+  let existingBookId = null;
+  if (source) {
+    const { rows: [existing] } = await pool.query(
+      `SELECT id FROM books WHERE ${column} = $1`, [externalId]
+    );
+    existingBookId = existing?.id ?? null;
+    if (!existingBookId) {
+      try {
+        const meta = await getExternalBook(source, externalId);
+        ({ title, authors, coverUrl, pageCount, publishedDate, description, categories, isbn13, isbn10 } = meta);
+      } catch {
+        if (!title) return res.status(502).json({ error: 'Could not fetch book metadata' });
+      }
     }
   }
-  if (!title) return res.status(400).json({ error: 'title is required' });
+  if (!title && !existingBookId) return res.status(400).json({ error: 'title is required' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Upsert book — keyed on whichever external id the result came with
+    // Resolve the shared book row — keyed on whichever external id the result came with
     let bookId;
-    if (source) {
-      const column = googleId ? 'google_id' : openLibraryId ? 'open_library_id' : 'apple_id';
+    if (existingBookId) {
+      bookId = existingBookId;
+      await client.query(
+        `UPDATE books SET
+           cover_url      = COALESCE(cover_url,      $1),
+           page_count     = COALESCE(page_count,     $2),
+           published_date = COALESCE(published_date, $3),
+           description    = COALESCE(description,    $4),
+           categories     = COALESCE(categories,     $5),
+           isbn13         = COALESCE(isbn13,         $6),
+           isbn10         = COALESCE(isbn10,         $7)
+         WHERE id = $8`,
+        [coverUrl ?? null, pageCount ?? null, publishedDate ?? null, description ?? null,
+         categories ?? null, isbn13 ?? null, isbn10 ?? null, bookId]
+      );
+    } else if (source) {
+      // Lost a race with another insert of the same external id → fill NULLs only
       const { rows } = await client.query(
         `INSERT INTO books (${column}, title, authors, cover_url, page_count, published_date, description, categories, isbn13, isbn10)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (${column}) DO UPDATE SET
-           title      = EXCLUDED.title,
-           authors    = EXCLUDED.authors,
-           cover_url  = EXCLUDED.cover_url,
-           categories = COALESCE(EXCLUDED.categories, books.categories),
-           isbn13     = COALESCE(books.isbn13, EXCLUDED.isbn13),
-           isbn10     = COALESCE(books.isbn10, EXCLUDED.isbn10)
+           cover_url      = COALESCE(books.cover_url,      EXCLUDED.cover_url),
+           page_count     = COALESCE(books.page_count,     EXCLUDED.page_count),
+           published_date = COALESCE(books.published_date, EXCLUDED.published_date),
+           description    = COALESCE(books.description,    EXCLUDED.description),
+           categories     = COALESCE(books.categories,     EXCLUDED.categories),
+           isbn13         = COALESCE(books.isbn13,         EXCLUDED.isbn13),
+           isbn10         = COALESCE(books.isbn10,         EXCLUDED.isbn10)
          RETURNING id`,
         [externalId, title, authors ?? [], coverUrl ?? null, pageCount ?? null,
          publishedDate ?? null, description ?? null, categories ?? null,
@@ -260,7 +290,8 @@ router.patch('/:id/metadata', async (req, res, next) => {
     const pageCount     = optInt(body.pageCount,     'pageCount',     { min: 1, max: 100000 });
     const publishedDate = optStr(body.publishedDate, 'publishedDate', { max: 50 });
     const description   = optStr(body.description,   'description',   { max: 20000, trim: false });
-    const title         = body.title === undefined ? undefined : reqStr(body.title, 'title', { max: 500 });
+    // title/authors become this user's own overrides; null reverts to the shared value
+    const title         = body.title == null ? body.title : reqStr(body.title, 'title', { max: 500 });
     const authors       = optStrArray(body.authors,  'authors',       { maxItems: 20, maxLen: 200 });
 
     const { rows: [lb] } = await pool.query(
@@ -269,49 +300,29 @@ router.patch('/:id/metadata', async (req, res, next) => {
     );
     if (!lb) return res.status(404).json({ error: 'Not found' });
 
-    // Title and authors are written to the shared books record (no per-user override columns)
-    if (title !== undefined || authors !== undefined) {
-      const setParts = [];
-      const vals = [];
-      if (title !== undefined) {
-        setParts.push(`title = $${vals.length + 1}`);
-        vals.push(title);
-      }
-      if (authors !== undefined) {
-        setParts.push(`authors = $${vals.length + 1}`);
-        vals.push(authors ?? []);
-      }
-      if (setParts.length) {
-        vals.push(lb.book_id);
+    // External ids are a structural link on the shared books record. Only attach
+    // one when this user is the sole owner of the book and no other row already
+    // carries that id; otherwise the provider's metadata is still pulled into
+    // this user's overrides below, without touching the shared row.
+    for (const [column, value] of [
+      ['google_id', googleId], ['open_library_id', openLibraryId], ['apple_id', appleId],
+    ]) {
+      if (!value) continue;
+      try {
         await pool.query(
-          `UPDATE books SET ${setParts.join(', ')} WHERE id = $${vals.length}`,
-          vals
+          `UPDATE books SET ${column} = $1
+           WHERE id = $2 AND ${column} IS NULL
+             AND NOT EXISTS (SELECT 1 FROM library_books WHERE book_id = $2 AND user_id <> $3)
+             AND NOT EXISTS (SELECT 1 FROM books WHERE ${column} = $1)`,
+          [value, lb.book_id, req.user.id]
         );
+      } catch (err) {
+        if (err.code !== '23505') throw err; // lost a race for the unique id — treat as "taken"
       }
     }
 
-    // If an external id is being attached, link it on the shared books record only
-    // (this is a structural link, not display data — does not leak display changes)
-    if (googleId) {
-      await pool.query(
-        `UPDATE books SET google_id = $1 WHERE id = $2 AND google_id IS NULL`,
-        [googleId, lb.book_id]
-      );
-    }
-    if (openLibraryId) {
-      await pool.query(
-        `UPDATE books SET open_library_id = $1 WHERE id = $2 AND open_library_id IS NULL`,
-        [openLibraryId, lb.book_id]
-      );
-    }
-    if (appleId) {
-      await pool.query(
-        `UPDATE books SET apple_id = $1 WHERE id = $2 AND apple_id IS NULL`,
-        [appleId, lb.book_id]
-      );
-    }
-
-    // Write display metadata as per-user overrides on the library_books row.
+    // Write display metadata as per-user overrides on the library_books row —
+    // title and authors included (the shared books record is never edited here).
     // Only fields that were actually provided in the request are updated.
     await pool.query(
       `UPDATE library_books SET
@@ -319,14 +330,18 @@ router.patch('/:id/metadata', async (req, res, next) => {
          categories_override     = CASE WHEN $3::boolean THEN $4 ELSE categories_override     END,
          page_count_override     = CASE WHEN $5::boolean THEN $6 ELSE page_count_override     END,
          published_date_override = CASE WHEN $7::boolean THEN $8 ELSE published_date_override END,
-         description_override    = CASE WHEN $9::boolean THEN $10 ELSE description_override   END
-       WHERE id = $11`,
+         description_override    = CASE WHEN $9::boolean THEN $10 ELSE description_override   END,
+         title_override          = CASE WHEN $11::boolean THEN $12 ELSE title_override        END,
+         authors_override        = CASE WHEN $13::boolean THEN $14 ELSE authors_override      END
+       WHERE id = $15`,
       [
         coverUrl      !== undefined, coverUrl      ?? null,
         categories    !== undefined, categories    ?? null,
         pageCount     !== undefined, pageCount     ?? null,
         publishedDate !== undefined, publishedDate ?? null,
         description   !== undefined, description   ?? null,
+        title         !== undefined, title         ?? null,
+        authors       !== undefined, authors       ?? null,
         lb.id,
       ]
     );
@@ -343,21 +358,21 @@ router.patch('/:id/metadata', async (req, res, next) => {
              categories_override     = COALESCE($2, categories_override),
              page_count_override     = COALESCE($3, page_count_override),
              published_date_override = COALESCE($4, published_date_override),
-             description_override    = COALESCE($5, description_override)
+             description_override    = COALESCE($5, description_override),
+             -- fill in authors only when this user currently sees none
+             authors_override = CASE
+               WHEN $7::text[] IS NOT NULL AND array_length(
+                      COALESCE(authors_override, (SELECT authors FROM books WHERE id = library_books.book_id)), 1) IS NULL
+                 THEN $7::text[]
+               ELSE authors_override END
            WHERE id = $6`,
           [meta.coverUrl ?? null, meta.categories ?? null, meta.pageCount ?? null,
-           meta.publishedDate ?? null, meta.description ?? null, lb.id]
+           meta.publishedDate ?? null, meta.description ?? null, lb.id,
+           meta.authors?.length ? meta.authors : null]
         );
-        // Also update authors on the shared books record if currently blank
-        if (meta.authors?.length) {
-          await pool.query(
-            `UPDATE books SET authors = $1
-             WHERE id = $2 AND (array_length(authors,1) IS NULL OR array_length(authors,1) = 0)`,
-            [meta.authors, lb.book_id]
-          );
-        }
       } catch { /* non-fatal */ }
     }
+
 
     const { rows: [full] } = await pool.query(
       `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [lb.id]
@@ -464,8 +479,17 @@ router.delete('/:id', async (req, res, next) => {
 // all surface correctly. Returns pairs with a similarity score 0–1.
 router.get('/duplicates', async (req, res, next) => {
   try {
+    // Compare the titles/authors this user actually sees (their overrides win)
     const { rows } = await pool.query(
-      `SELECT
+      `WITH mine AS (
+         SELECT b.id, b.isbn13, b.google_id,
+                COALESCE(lb.title_override,     b.title)     AS title,
+                COALESCE(lb.authors_override,   b.authors)   AS authors,
+                COALESCE(lb.cover_url_override, b.cover_url) AS cover_url
+         FROM library_books lb JOIN books b ON b.id = lb.book_id
+         WHERE lb.user_id = $1
+       )
+       SELECT
          b1.id       AS keep_id,    b1.title   AS keep_title,
          b1.authors  AS keep_authors, b1.cover_url AS keep_cover,
          b1.google_id AS keep_google_id,
@@ -477,10 +501,8 @@ router.get('/duplicates', async (req, res, next) => {
            word_similarity(lower(b1.title), lower(b2.title)),
            word_similarity(lower(b2.title), lower(b1.title))
          )::NUMERIC, 2) AS score
-       FROM books b1
-       JOIN books b2 ON b1.id < b2.id
-       JOIN library_books lb1 ON lb1.book_id = b1.id AND lb1.user_id = $1
-       JOIN library_books lb2 ON lb2.book_id = b2.id AND lb2.user_id = $1
+       FROM mine b1
+       JOIN mine b2 ON b1.id < b2.id
        WHERE
          -- Definite duplicate: same ISBN-13
          (b1.isbn13 IS NOT NULL AND b1.isbn13 = b2.isbn13)
@@ -509,8 +531,13 @@ router.get('/duplicates', async (req, res, next) => {
 });
 
 // ── POST /api/library/merge ───────────────────────────────────────────────────
-// Merge two duplicate books: keep one, absorb/delete the other.
+// Merge two duplicate books in YOUR library: keep one, absorb the other.
 // Body: { keepId, removeId }  (both are books.id values)
+//
+// books rows are shared. If anyone else has either book, the shared rows are
+// left untouched: only this user's library entry, shelves, sessions and
+// availability move from removeId to keepId. When this user is the sole owner
+// of both, the full merge also enriches the keep row and deletes the orphan.
 router.post('/merge', async (req, res, next) => {
   let keepId, removeId;
   try {
@@ -539,31 +566,56 @@ router.post('/merge', async (req, res, next) => {
       return res.status(404).json({ error: 'One or both books not found in your library' });
     }
 
-    // Detach external ids from the duplicate first — they are unique columns,
-    // so they must leave the remove row before they can land on the keep row
-    const { rows: [remIds] } = await client.query(
-      `SELECT google_id, open_library_id, apple_id FROM books WHERE id = $1`, [removeId]
-    );
-    await client.query(
-      `UPDATE books SET google_id = NULL, open_library_id = NULL, apple_id = NULL WHERE id = $1`, [removeId]
+    // Does anyone else have either book? Then the shared rows are off limits.
+    const { rows: [{ shared }] } = await client.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM library_books WHERE book_id IN ($1, $2) AND user_id <> $3
+       ) AS shared`,
+      [keepId, removeId, req.user.id]
     );
 
-    // Enrich keep book with any metadata the remove book has that keep is missing
+    if (!shared) {
+      // Detach external ids from the duplicate first — they are unique columns,
+      // so they must leave the remove row before they can land on the keep row
+      const { rows: [remIds] } = await client.query(
+        `SELECT google_id, open_library_id, apple_id FROM books WHERE id = $1`, [removeId]
+      );
+      await client.query(
+        `UPDATE books SET google_id = NULL, open_library_id = NULL, apple_id = NULL WHERE id = $1`, [removeId]
+      );
+
+      // Enrich keep book with any metadata the remove book has that keep is missing
+      await client.query(
+        `UPDATE books SET
+           google_id       = COALESCE(b_keep.google_id,       $3),
+           open_library_id = COALESCE(b_keep.open_library_id, $4),
+           apple_id        = COALESCE(b_keep.apple_id,        $5),
+           cover_url      = COALESCE(b_keep.cover_url,      b_rem.cover_url),
+           isbn13         = COALESCE(b_keep.isbn13,         b_rem.isbn13),
+           isbn10         = COALESCE(b_keep.isbn10,         b_rem.isbn10),
+           description    = COALESCE(b_keep.description,    b_rem.description),
+           page_count     = COALESCE(b_keep.page_count,     b_rem.page_count),
+           categories     = COALESCE(b_keep.categories,     b_rem.categories),
+           published_date = COALESCE(b_keep.published_date, b_rem.published_date)
+         FROM books b_keep, books b_rem
+         WHERE books.id = $1 AND b_keep.id = $1 AND b_rem.id = $2`,
+        [keepId, removeId, remIds?.google_id ?? null, remIds?.open_library_id ?? null, remIds?.apple_id ?? null]
+      );
+    }
+
+    // Carry the duplicate's personal overrides over where the keep entry has none
     await client.query(
-      `UPDATE books SET
-         google_id       = COALESCE(b_keep.google_id,       $3),
-         open_library_id = COALESCE(b_keep.open_library_id, $4),
-         apple_id        = COALESCE(b_keep.apple_id,        $5),
-         cover_url      = COALESCE(b_keep.cover_url,      b_rem.cover_url),
-         isbn13         = COALESCE(b_keep.isbn13,         b_rem.isbn13),
-         isbn10         = COALESCE(b_keep.isbn10,         b_rem.isbn10),
-         description    = COALESCE(b_keep.description,    b_rem.description),
-         page_count     = COALESCE(b_keep.page_count,     b_rem.page_count),
-         categories     = COALESCE(b_keep.categories,     b_rem.categories),
-         published_date = COALESCE(b_keep.published_date, b_rem.published_date)
-       FROM books b_keep, books b_rem
-       WHERE books.id = $1 AND b_keep.id = $1 AND b_rem.id = $2`,
-      [keepId, removeId, remIds?.google_id ?? null, remIds?.open_library_id ?? null, remIds?.apple_id ?? null]
+      `UPDATE library_books k SET
+         title_override          = COALESCE(k.title_override,          r.title_override),
+         authors_override        = COALESCE(k.authors_override,        r.authors_override),
+         cover_url_override      = COALESCE(k.cover_url_override,      r.cover_url_override),
+         categories_override     = COALESCE(k.categories_override,     r.categories_override),
+         page_count_override     = COALESCE(k.page_count_override,     r.page_count_override),
+         published_date_override = COALESCE(k.published_date_override, r.published_date_override),
+         description_override    = COALESCE(k.description_override,    r.description_override)
+       FROM library_books r
+       WHERE k.id = $1 AND r.id = $2`,
+      [lbKeep.id, lbRemove.id]
     );
 
     // Move shelf memberships: lbRemove → lbKeep (skip shelves already present on keep)
@@ -600,14 +652,16 @@ router.post('/merge', async (req, res, next) => {
       [keepId, removeId, req.user.id]
     );
 
-    // Delete the orphaned books row if no other user references it
-    await client.query(
-      `DELETE FROM books WHERE id = $1
-         AND NOT EXISTS (SELECT 1 FROM library_books    WHERE book_id = $1)
-         AND NOT EXISTS (SELECT 1 FROM reading_sessions WHERE book_id = $1)
-         AND NOT EXISTS (SELECT 1 FROM book_availability WHERE book_id = $1)`,
-      [removeId]
-    );
+    if (!shared) {
+      // Delete the orphaned books row if no other user references it
+      await client.query(
+        `DELETE FROM books WHERE id = $1
+           AND NOT EXISTS (SELECT 1 FROM library_books    WHERE book_id = $1)
+           AND NOT EXISTS (SELECT 1 FROM reading_sessions WHERE book_id = $1)
+           AND NOT EXISTS (SELECT 1 FROM book_availability WHERE book_id = $1)`,
+        [removeId]
+      );
+    }
 
     await client.query('COMMIT');
     res.json({ ok: true });
@@ -618,6 +672,7 @@ router.post('/merge', async (req, res, next) => {
     client.release();
   }
 });
+
 
 // ── POST /api/library/fetch-covers ────────────────────────────────────────────
 // Search Google Books and Open Library for cover art for up to 50 books that

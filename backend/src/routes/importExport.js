@@ -15,7 +15,10 @@ router.get('/export', async (req, res, next) => {
 
     const { rows: books } = await pool.query(
       `SELECT lb.id AS lib_id, lb.status, lb.notes, lb.added_at,
-              b.google_id, b.title, b.authors, b.isbn10, b.isbn13,
+              b.google_id,
+              COALESCE(lb.title_override,   b.title)   AS title,
+              COALESCE(lb.authors_override, b.authors) AS authors,
+              b.isbn10, b.isbn13,
               b.publisher, b.published_date,
               (SELECT json_agg(rs ORDER BY rs.created_at)
                FROM reading_sessions rs
@@ -127,10 +130,11 @@ router.post('/import', async (req, res) => {
             `INSERT INTO books (google_id, title, authors, isbn10, isbn13, publisher, published_date)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (google_id) DO UPDATE SET
-               title = EXCLUDED.title, authors = EXCLUDED.authors,
-               isbn10 = COALESCE(EXCLUDED.isbn10, books.isbn10),
-               isbn13 = COALESCE(EXCLUDED.isbn13, books.isbn13),
-               publisher = COALESCE(EXCLUDED.publisher, books.publisher)
+               -- shared row: never overwrite what's there, only fill gaps
+               isbn10 = COALESCE(books.isbn10, EXCLUDED.isbn10),
+               isbn13 = COALESCE(books.isbn13, EXCLUDED.isbn13),
+               publisher = COALESCE(books.publisher, EXCLUDED.publisher),
+               published_date = COALESCE(books.published_date, EXCLUDED.published_date)
              RETURNING id`,
             [googleId, title, authors, isbn10, isbn13, publisher, publishedDate]
           );

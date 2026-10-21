@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { idParam } from '../lib/validate.js';
+import { findVisibleSession, viewerOf } from '../lib/visibility.js';
+import { notify } from '../lib/notify.js';
 
 const router = Router();
 
@@ -14,12 +16,8 @@ router.post('/:id/comments', async (req, res, next) => {
     if (!body) return res.status(400).json({ error: 'Comment cannot be empty' });
     if (body.length > 1000) return res.status(400).json({ error: 'Comment too long' });
 
-    // Verify session exists and get owner for notification
-    const { rows: [session] } = await pool.query(
-      `SELECT rs.user_id, b.title FROM reading_sessions rs
-       JOIN books b ON b.id = rs.book_id WHERE rs.id = $1`,
-      [sessionId]
-    );
+    // Verify the session exists, is visible to this user, and get its owner for the notification
+    const session = await findVisibleSession(sessionId, viewerOf(req));
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
     const { rows: [comment] } = await pool.query(
@@ -29,14 +27,14 @@ router.post('/:id/comments', async (req, res, next) => {
       [sessionId, req.user.id, body]
     );
 
-    // Notify session owner (skip self-comment)
-    if (session.user_id !== req.user.id) {
-      await pool.query(
-        `INSERT INTO notifications (user_id, actor_id, type, payload)
-         VALUES ($1, $2, 'session_comment', $3)`,
-        [session.user_id, req.user.id, JSON.stringify({ username: req.user.username, title: session.title })]
-      );
-    }
+    // Notify session owner (never yourself; repeat comments while unread are collapsed)
+    await notify(pool, {
+      userId: session.user_id,
+      actorId: req.user.id,
+      type: 'session_comment',
+      payload: { username: req.user.username, title: session.title },
+      dedupeKey: `session:${sessionId}`,
+    });
 
     res.status(201).json({
       ...comment,

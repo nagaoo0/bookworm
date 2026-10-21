@@ -4,7 +4,7 @@ What's built, what's known to need work, and ideas for future improvements.
 
 ## What's working (current)
 
-- **Multi-user auth** — invite-only registration; first account becomes admin; session cookies; reCAPTCHA v3 support
+- **Multi-user auth** — open registration by default (`REQUIRE_INVITE=true` for invite-only; admins create invites in Settings); first account becomes admin; session cookies; reCAPTCHA v3 support
 - **Library** — books organised into shelves and reading statuses (to read / reading / done)
 - **Shelves** — unlimited custom shelves with names and colors; built-in status shelves
 - **Add books** — Google Books search (quick + advanced) and a manual entry form as fallback
@@ -58,5 +58,9 @@ A `series` field on `books` and a series grouping on shelves — "Dune (5 of 6 r
 | 2026-06 | Postgres over SQLite | Easier to backup/restore on a VPS; supports arrays for `authors` field |
 | 2026-06 | Hash routing | No server-side routing needed; simpler for a single-container deploy |
 | 2026-06 | Multi-user via DB sessions | Needed for social features; `AUTH_PASSWORD` env var approach doesn't scale past one user |
-| 2026-06 | Invite-only registration | Prevents open spam registration on public deployments; admin controls who joins |
+| 2026-06 | Invite-only registration | Prevents open spam registration on public deployments; admin controls who joins _(superseded 2026-10: now opt-in via `REQUIRE_INVITE`)_ |
+| 2026-10 | Registration open by default; `REQUIRE_INVITE=true` makes it invite-only | Easier self-hosting for friends/family; operators of public instances opt into invites. Invite redemption is race-free and the first-admin race is closed |
+| 2026-10 | Profiles public by default (`users.is_public` defaults to true, one-time backfill); private users are hidden from everyone but themselves and admins | The UI promised public profiles but the flag was inconsistently enforced |
+| 2026-10 | Per-user title/author overrides on `library_books`; the shared `books` row is never rewritten by a single user | Any user could previously rewrite a book for everyone who has it |
+| 2026-10 | Integration credentials encrypted with `INTEGRATIONS_KEY` (AES-256-GCM), optional `INTEGRATION_ALLOWED_HOSTS` | Database leaks and multi-user SSRF-by-configuration |
 | 2026-06 | `library_books` UNIQUE(user_id, book_id) + status | Avoids duplicate library entries; status column coexists with shelf_memberships many-to-many |

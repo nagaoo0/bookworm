@@ -1,4 +1,4 @@
-import { pool } from './db.js';
+import { notify } from './lib/notify.js';
 
 const MENTION_RE = /@([a-zA-Z0-9_-]{2,32})/g;
 
@@ -21,11 +21,15 @@ export async function notifyMentions(pool_, { text, actorId, actorUsername, payl
 
   if (!rows.length) return;
 
+  // One notification per (mentioned user, book) while the previous one is unread
+  const dedupeKey = payload?.bookId != null ? `book:${payload.bookId}` : null;
   for (const { id } of rows) {
-    await pool_.query(
-      `INSERT INTO notifications (user_id, actor_id, type, payload)
-       VALUES ($1, $2, 'mention', $3)`,
-      [id, actorId, JSON.stringify({ username: actorUsername, ...payload })]
-    );
+    await notify(pool_, {
+      userId: id,
+      actorId,
+      type: 'mention',
+      payload: { username: actorUsername, ...payload },
+      dedupeKey,
+    });
   }
 }

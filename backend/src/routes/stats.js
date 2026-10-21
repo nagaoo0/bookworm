@@ -70,11 +70,13 @@ export async function computeStats(uid) {
     // Author book-count per year (for favorite author)
     pool.query(
       `SELECT EXTRACT(YEAR FROM rs.finished_at)::INT AS year,
-              unnest(b.authors) AS author,
+              unnest(COALESCE(lb.authors_override, b.authors)) AS author,
               COUNT(DISTINCT rs.book_id) AS count
        FROM reading_sessions rs
        JOIN books b ON b.id = rs.book_id
-       WHERE rs.user_id = $1 AND rs.finished_at IS NOT NULL AND b.authors IS NOT NULL
+       LEFT JOIN library_books lb ON lb.user_id = rs.user_id AND lb.book_id = rs.book_id
+       WHERE rs.user_id = $1 AND rs.finished_at IS NOT NULL
+         AND COALESCE(lb.authors_override, b.authors) IS NOT NULL
        GROUP BY year, author`,
       [uid]
     ),

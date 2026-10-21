@@ -3,6 +3,7 @@ import { findBestMatch } from '../bookProviders.js';
 import * as abs from './abs.js';
 import * as calibre from './calibre.js';
 import * as koboSync from './koboSync.js';
+import { getIntegration, openConfig } from './configStore.js';
 
 // Active polling intervals keyed by `${userId}:${service}`
 const _timers = new Map();
@@ -169,11 +170,8 @@ async function syncFinishedSession(userId, bookId, service, finishedAt) {
   );
   if (existing.rows.length) return;
 
-  const pref = await pool.query(
-    `SELECT config->>'auto_sessions' AS auto_sessions FROM integrations WHERE user_id=$1 AND service=$2`,
-    [userId, service]
-  );
-  if (pref.rows[0]?.auto_sessions === 'false') return;
+  const integration = await getIntegration(userId, service).catch(() => null);
+  if (integration?.config.auto_sessions === 'false') return;
 
   await pool.query(
     `INSERT INTO reading_sessions (user_id, book_id, finished_at, source) VALUES ($1, $2, $3, $4)`,
@@ -403,12 +401,9 @@ async function syncCalibre(userId, config) {
 // ---------------------------------------------------------------------------
 
 export async function syncService(userId, service) {
-  const r = await pool.query(
-    'SELECT config FROM integrations WHERE user_id=$1 AND service=$2',
-    [userId, service]
-  );
-  if (!r.rows.length) return;
-  const config = r.rows[0].config;
+  const integration = await getIntegration(userId, service);
+  if (!integration) return;
+  const { config } = integration;
 
   console.log(`[sync] ${service} for user ${userId} starting`);
   try {
@@ -507,7 +502,7 @@ export async function bootAllSyncs() {
   for (const row of r.rows) {
     startContinuousSync(row.user_id, row.service);
     if (row.service === 'audiobookshelf') {
-      await startAbsSocket(row.user_id, row.config).catch(err => {
+      await Promise.resolve().then(() => startAbsSocket(row.user_id, openConfig(row.config))).catch(err => {
         console.warn(`[ABS socket] user ${row.user_id}:`, err.message);
       });
     }

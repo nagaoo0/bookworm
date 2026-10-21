@@ -2,19 +2,23 @@ import { Router } from 'express';
 import { pool } from '../db.js';
 import { notifyMentions } from '../mentions.js';
 import { idParam } from '../lib/validate.js';
+import { viewerOf, viewerParams, visibleUserSql } from '../lib/visibility.js';
 
 const router = Router({ mergeParams: true });
 
 // GET /api/books/:bookId/comments
 router.get('/', async (req, res, next) => {
   try {
+    // Comments by private users are only visible to themselves and admins
+    const [vid, vadmin] = viewerParams(viewerOf(req));
     const { rows } = await pool.query(
       `SELECT c.id, c.body, c.created_at, u.username
        FROM comments c
        JOIN users u ON u.id = c.user_id
        WHERE c.book_id = $1
+         AND ${visibleUserSql('u', '$2', '$3')}
        ORDER BY c.created_at ASC`,
-      [idParam(req.params.bookId)]
+      [idParam(req.params.bookId), vid, vadmin]
     );
     res.json(rows);
   } catch (err) {

@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { findVisibleUser, viewerOf, viewerParams, visibleUserSql } from '../lib/visibility.js';
+import { notify } from '../lib/notify.js';
 
 const router = Router();
 
 // GET /api/follows — who the current user follows
 router.get('/', async (req, res, next) => {
   try {
+    const [vid, vadmin] = viewerParams(viewerOf(req));
     const { rows } = await pool.query(
       `SELECT u.username, u.is_public,
               COUNT(DISTINCT lb.id)::INT AS book_count
@@ -13,9 +16,10 @@ router.get('/', async (req, res, next) => {
        JOIN users u ON u.id = f.following_id
        LEFT JOIN library_books lb ON lb.user_id = u.id
        WHERE f.follower_id = $1
+         AND ${visibleUserSql('u', '$2', '$3')}
        GROUP BY u.username, u.is_public
        ORDER BY u.username`,
-      [req.user.id]
+      [req.user.id, vid, vadmin]
     );
     res.json(rows);
   } catch (err) {
@@ -29,9 +33,7 @@ router.get('/status', async (req, res, next) => {
     const { username } = req.query;
     if (!username || typeof username !== 'string') return res.status(400).json({ error: 'username required' });
 
-    const { rows: [target] } = await pool.query(
-      'SELECT id FROM users WHERE username = $1', [username]
-    );
+    const target = await findVisibleUser(username, viewerOf(req));
     if (!target) return res.status(404).json({ error: 'User not found' });
 
     const { rows: [row] } = await pool.query(
@@ -47,23 +49,26 @@ router.get('/status', async (req, res, next) => {
 // POST /api/follows/:username — follow a user
 router.post('/:username', async (req, res, next) => {
   try {
-    const { rows: [target] } = await pool.query(
-      'SELECT id FROM users WHERE username = $1', [req.params.username]
-    );
+    const target = await findVisibleUser(req.params.username, viewerOf(req));
     if (!target) return res.status(404).json({ error: 'User not found' });
     if (target.id === req.user.id) return res.status(400).json({ error: 'Cannot follow yourself' });
 
-    await pool.query(
+    const { rowCount } = await pool.query(
       `INSERT INTO follows (follower_id, following_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [req.user.id, target.id]
     );
 
-    // Create notification for the followed user
-    await pool.query(
-      `INSERT INTO notifications (user_id, actor_id, type, payload)
-       VALUES ($1, $2, 'follow', $3)`,
-      [target.id, req.user.id, JSON.stringify({ username: req.user.username })]
-    );
+    // Notify the followed user once per new follow (and not again within 24h
+    // while an identical one is still unread — follow/unfollow toggling)
+    if (rowCount > 0) {
+      await notify(pool, {
+        userId: target.id,
+        actorId: req.user.id,
+        type: 'follow',
+        payload: { username: req.user.username },
+        dedupeKey: 'follow',
+      });
+    }
 
     res.status(204).end();
   } catch (err) {

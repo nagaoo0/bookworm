@@ -32,6 +32,9 @@ services:
       PORT: 3000
       COVERS_DIR: /app/data/covers
       COVERS_MAX_MB: ${COVERS_MAX_MB:-}
+      REQUIRE_INVITE: ${REQUIRE_INVITE:-false}
+      INTEGRATIONS_KEY: ${INTEGRATIONS_KEY:-}
+      INTEGRATION_ALLOWED_HOSTS: ${INTEGRATION_ALLOWED_HOSTS:-}
     volumes:
       - covers:/app/data/covers
     depends_on:

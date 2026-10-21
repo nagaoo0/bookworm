@@ -321,6 +321,45 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS session_comments_session_id_idx  ON session_comments (session_id);
     CREATE INDEX IF NOT EXISTS comments_book_id_idx             ON comments (book_id);
     CREATE INDEX IF NOT EXISTS books_isbn13_idx                 ON books (isbn13) WHERE isbn13 IS NOT NULL;
+
+    -- ── Phase 1b ──────────────────────────────────────────────────────────
+
+    -- Per-user title/author overrides: the shared books row is never edited by a
+    -- single user; their own edits live on their library entry instead.
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS title_override   TEXT;
+    ALTER TABLE library_books ADD COLUMN IF NOT EXISTS authors_override TEXT[];
+
+    -- One-shot data migrations are recorded here so they never run twice
+    CREATE TABLE IF NOT EXISTS schema_flags (
+      name       TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- Profiles are public by default (the UI has no toggle). Existing accounts
+    -- are backfilled once; INSERT ... ON CONFLICT DO NOTHING makes concurrent
+    -- boots safe (only the one that inserted the flag runs the UPDATE).
+    ALTER TABLE users ALTER COLUMN is_public SET DEFAULT true;
+    DO $$
+    BEGIN
+      INSERT INTO schema_flags (name) VALUES ('public_by_default') ON CONFLICT DO NOTHING;
+      IF FOUND THEN
+        UPDATE users SET is_public = true;
+      END IF;
+    END
+    $$;
+
+    -- Synced UI preferences (theme, card size, ...)
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS prefs JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+    -- Plain copy of the integration server's origin: lets the cover proxy decide
+    -- whether a LAN address is trusted without decrypting every stored config
+    ALTER TABLE integrations ADD COLUMN IF NOT EXISTS server_origin TEXT;
+    CREATE INDEX IF NOT EXISTS integrations_server_origin_idx ON integrations (server_origin) WHERE server_origin IS NOT NULL;
+
+    -- Notification de-duplication (see lib/notify.js)
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+    CREATE INDEX IF NOT EXISTS notifications_dedupe_idx
+      ON notifications (user_id, actor_id, type, dedupe_key, created_at DESC) WHERE read_at IS NULL;
   `);
   console.log('Database schema ready.');
 }

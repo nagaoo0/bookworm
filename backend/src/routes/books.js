@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db.js';
 import { searchAll } from '../bookProviders.js';
 import { idParam } from '../lib/validate.js';
+import { viewerOf, viewerParams, visibleUserSql } from '../lib/visibility.js';
 
 const router = Router({ mergeParams: true });
 
@@ -125,6 +126,8 @@ router.get('/recommendations', async (req, res, next) => {
     }
 
     // ── Tier 1: Co-occurrence sprinkle ────────────────────────────────────────
+    // Only readers this viewer may see (public profiles, themselves, admins)
+    const [vid, vadmin] = viewerParams(viewerOf(req));
     const { rows: coPool } = await pool.query(
       `SELECT b.id, b.title, b.authors, b.cover_url, b.published_date, b.google_id, b.open_library_id, b.apple_id,
               COUNT(*) AS co_count
@@ -132,11 +135,11 @@ router.get('/recommendations', async (req, res, next) => {
        JOIN library_books lb2 ON lb2.user_id = lb1.user_id AND lb2.book_id <> lb1.book_id
        JOIN books b ON b.id = lb2.book_id
        JOIN users u ON u.id = lb1.user_id
-       WHERE lb1.book_id = $1 AND u.is_public = true AND b.id <> $1
+       WHERE lb1.book_id = $1 AND ${visibleUserSql('u', '$2', '$3')} AND b.id <> $1
        GROUP BY b.id, b.title, b.authors, b.cover_url, b.published_date, b.google_id, b.open_library_id, b.apple_id
        ORDER BY co_count DESC
        LIMIT 20`,
-      [bookId]
+      [bookId, vid, vadmin]
     );
 
     // ── Sample & shuffle ──────────────────────────────────────────────────────
@@ -170,9 +173,9 @@ router.get('/social', async (req, res, next) => {
          ORDER BY finished_at DESC LIMIT 1
        ) rs ON true
        WHERE f.follower_id = $2
-         AND u.is_public = true
+         AND ${visibleUserSql('u', '$2', '$3')}
        ORDER BY u.username`,
-      [idParam(req.params.bookId), req.user.id]
+      [idParam(req.params.bookId), req.user.id, req.user.is_admin === true]
     );
     res.json(rows);
   } catch (err) {
