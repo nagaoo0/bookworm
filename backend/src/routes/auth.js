@@ -1,12 +1,32 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { pool } from '../db.js';
 import {
   hashPassword, verifyPassword,
   createSession, setSessionCookie, clearSessionCookie,
   authMiddleware, verifyRecaptcha,
 } from '../auth.js';
+import { optHttpUrl } from '../lib/validate.js';
 
 const router = Router();
+
+// Brute-force protection for credential endpoints only (not /me, /config, ...)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
+
+// bcrypt hash of a throwaway password (cost 12, same as real hashes). Compared
+// against when the username doesn't exist so response time doesn't reveal it.
+const DUMMY_HASH = '$2b$12$duNYsR0/ebRiftiGTArxm.dzRaBu4pw8aRq.pj.Hbvpjc50QY2E2q';
+
+const PASSWORD_MIN = 6;
+const PASSWORD_MAX = 128;
+const validPassword = p => typeof p === 'string' && p.length >= PASSWORD_MIN && p.length <= PASSWORD_MAX;
+const PASSWORD_MSG = `Password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters`;
 
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,32}$/;
 
@@ -20,13 +40,17 @@ router.get('/me', authMiddleware, (req, res) => {
 });
 
 // POST /api/auth/register  { username, password, inviteCode? }
-router.post('/register', async (req, res) => {
-  const { username, password, inviteCode, recaptchaToken } = req.body ?? {};
+router.post('/register', loginLimiter, async (req, res) => {
+  const { username, password, inviteCode: rawInviteCode, recaptchaToken } = req.body ?? {};
 
-  if (!USERNAME_RE.test(username ?? ''))
+  if (typeof username !== 'string' || !USERNAME_RE.test(username))
     return res.status(400).json({ error: 'Username must be 2–32 characters (letters, numbers, _ -)' });
-  if (!password || password.length < 6)
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (!validPassword(password))
+    return res.status(400).json({ error: PASSWORD_MSG });
+  if ((rawInviteCode != null && typeof rawInviteCode !== 'string') ||
+      (recaptchaToken != null && typeof recaptchaToken !== 'string'))
+    return res.status(400).json({ error: 'Invalid request' });
+  const inviteCode = rawInviteCode?.trim() || '';
 
   let client;
   try {
@@ -57,10 +81,10 @@ router.post('/register', async (req, res) => {
       }
 
       // Invite code is now optional; if provided, mark it used. If provided and invalid, reject.
-      if (inviteCode?.trim()) {
+      if (inviteCode) {
         const { rows: [invite] } = await client.query(
           `SELECT code FROM invites WHERE code = $1 AND used_by IS NULL`,
-          [inviteCode.trim()]
+          [inviteCode]
         );
         if (!invite) {
           await client.query('ROLLBACK');
@@ -78,10 +102,10 @@ router.post('/register', async (req, res) => {
     );
 
     // Mark invite used
-    if (!isFirst && inviteCode?.trim()) {
+    if (!isFirst && inviteCode) {
       await client.query(
         `UPDATE invites SET used_by = $1, used_at = now() WHERE code = $2`,
-        [user.id, inviteCode.trim()]
+        [user.id, inviteCode]
       );
     }
 
@@ -115,17 +139,19 @@ router.get('/config', (_req, res) => {
 });
 
 // POST /api/auth/login  { username, password }
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const { username, password } = req.body ?? {};
-    if (!username || !password)
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password)
       return res.status(400).json({ error: 'username and password are required' });
 
     const { rows: [user] } = await pool.query(
       `SELECT id, username, password_hash, is_admin, is_public FROM users WHERE username = $1`,
       [username.trim()]
     );
-    if (!user || !(await verifyPassword(password, user.password_hash)))
+    // Always run bcrypt, even for unknown users, to keep timing uniform
+    const passwordOk = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
+    if (!user || !passwordOk)
       return res.status(401).json({ error: 'Wrong username or password' });
 
     const { token, expiresAt } = await createSession(user.id);
@@ -163,6 +189,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     const { isPublic, currentPassword, newPassword, bio, avatarUrl, bannerUrl, accent } = req.body ?? {};
     const updates = [];
     const params = [];
+    let passwordChanged = false;
 
     if (isPublic !== undefined) {
       params.push(!!isPublic);
@@ -170,12 +197,14 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     }
 
     if (newPassword !== undefined) {
-      if (!currentPassword) return res.status(400).json({ error: 'currentPassword is required to change password' });
+      if (!currentPassword || typeof currentPassword !== 'string')
+        return res.status(400).json({ error: 'currentPassword is required to change password' });
       if (!(await verifyPassword(currentPassword, row.password_hash)))
         return res.status(401).json({ error: 'Current password is wrong' });
-      if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      if (!validPassword(newPassword)) return res.status(400).json({ error: `New password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters` });
       params.push(await hashPassword(newPassword));
       updates.push(`password_hash = $${params.length}`);
+      passwordChanged = true;
     }
 
     if (bio !== undefined) {
@@ -185,30 +214,12 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     }
 
     if (avatarUrl !== undefined) {
-      if (avatarUrl && avatarUrl !== null) {
-        try {
-          const u = new URL(avatarUrl);
-          if (u.protocol !== 'http:' && u.protocol !== 'https:')
-            return res.status(400).json({ error: 'avatarUrl must be an http(s) URL' });
-        } catch {
-          return res.status(400).json({ error: 'avatarUrl is not a valid URL' });
-        }
-      }
-      params.push(avatarUrl || null);
+      params.push(optHttpUrl(avatarUrl, 'avatarUrl'));
       updates.push(`avatar_url = $${params.length}`);
     }
 
     if (bannerUrl !== undefined) {
-      if (bannerUrl && bannerUrl !== null) {
-        try {
-          const u = new URL(bannerUrl);
-          if (u.protocol !== 'http:' && u.protocol !== 'https:')
-            return res.status(400).json({ error: 'bannerUrl must be an http(s) URL' });
-        } catch {
-          return res.status(400).json({ error: 'bannerUrl is not a valid URL' });
-        }
-      }
-      params.push(bannerUrl || null);
+      params.push(optHttpUrl(bannerUrl, 'bannerUrl'));
       updates.push(`banner_url = $${params.length}`);
     }
 
@@ -227,6 +238,15 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
        RETURNING id, username, is_admin, is_public, bio, avatar_url, banner_url, accent`,
       params
     );
+
+    // A password change signs out every other device/session
+    if (passwordChanged) {
+      await pool.query(
+        'DELETE FROM sessions WHERE user_id = $1 AND token <> $2',
+        [req.user.id, req.cookies?.bw_session ?? '']
+      );
+    }
+
     res.json({
       id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public,
       bio: user.bio ?? null, avatarUrl: user.avatar_url ?? null, bannerUrl: user.banner_url ?? null, accent: user.accent ?? null,

@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { searchAll } from '../bookProviders.js';
+import { idParam } from '../lib/validate.js';
 
 const router = Router({ mergeParams: true });
 
 // In-memory cache: bookId → { ts, pool[] }
 const recsCache = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const RECS_CACHE_MAX = 500;
 
 function shuffle(arr) {
   const a = [...arr];
@@ -20,7 +22,7 @@ function shuffle(arr) {
 // GET /api/books/:bookId/recommendations
 router.get('/recommendations', async (req, res, next) => {
   try {
-    const bookId = req.params.bookId;
+    const bookId = idParam(req.params.bookId);
 
     const { rows: [book] } = await pool.query(
       `SELECT id, title, authors, categories, google_id, open_library_id, apple_id FROM books WHERE id = $1`,
@@ -96,6 +98,9 @@ router.get('/recommendations', async (req, res, next) => {
           open_library_id: r.openLibraryId,
           apple_id:        r.appleId,
         }));
+      // Bounded: drop the entry's old position, then evict the oldest insertion if full
+      recsCache.delete(bookId);
+      if (recsCache.size >= RECS_CACHE_MAX) recsCache.delete(recsCache.keys().next().value);
       recsCache.set(bookId, { ts: Date.now(), pool: externalPool });
     }
 
@@ -167,7 +172,7 @@ router.get('/social', async (req, res, next) => {
        WHERE f.follower_id = $2
          AND u.is_public = true
        ORDER BY u.username`,
-      [req.params.bookId, req.user.id]
+      [idParam(req.params.bookId), req.user.id]
     );
     res.json(rows);
   } catch (err) {

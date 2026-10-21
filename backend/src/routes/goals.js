@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { reqInt } from '../lib/validate.js';
 
 const router = Router();
 
@@ -19,8 +20,7 @@ router.get('/', async (req, res, next) => {
 // GET /api/goals/:year — get goal for a specific year (includes progress count)
 router.get('/:year', async (req, res, next) => {
   try {
-    const year = parseInt(req.params.year, 10);
-    if (isNaN(year)) return res.status(400).json({ error: 'Invalid year' });
+    const year = reqInt(req.params.year, 'year', { min: 1, max: 9999 });
 
     const { rows: [goal] } = await pool.query(
       `SELECT year, target FROM goals WHERE user_id = $1 AND year = $2`,
@@ -49,10 +49,8 @@ router.get('/:year', async (req, res, next) => {
 // PUT /api/goals/:year — upsert goal for a year
 router.put('/:year', async (req, res, next) => {
   try {
-    const year = parseInt(req.params.year, 10);
-    const target = parseInt(req.body.target, 10);
-    if (isNaN(year) || year < 2000 || year > 2100) return res.status(400).json({ error: 'Invalid year' });
-    if (isNaN(target) || target < 1 || target > 9999) return res.status(400).json({ error: 'Invalid target' });
+    const year = reqInt(req.params.year, 'year', { min: 2000, max: 2100 });
+    const target = reqInt(req.body?.target, 'target', { min: 1, max: 9999 });
 
     await pool.query(
       `INSERT INTO goals (user_id, year, target) VALUES ($1, $2, $3)
@@ -68,7 +66,7 @@ router.put('/:year', async (req, res, next) => {
 // DELETE /api/goals/:year — remove goal
 router.delete('/:year', async (req, res, next) => {
   try {
-    const year = parseInt(req.params.year, 10);
+    const year = reqInt(req.params.year, 'year', { min: 1, max: 9999 });
     await pool.query('DELETE FROM goals WHERE user_id = $1 AND year = $2', [req.user.id, year]);
     res.status(204).end();
   } catch (err) {

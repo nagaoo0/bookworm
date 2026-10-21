@@ -78,6 +78,7 @@ npm run dev
 | `GOOGLE_BOOKS_API_KEY` | _(empty)_ | Optional — higher API quota |
 | `API_PORT` | `3000` | Host port for the API container |
 | `FRONTEND_PORT` | `8080` | Host port for the frontend container |
+| `COVERS_MAX_MB` | _(unset)_ | Optional — cap the cover image cache size in MB; oldest files are pruned on startup and every 24h |
 
 ### reCAPTCHA v3 (optional but recommended for open registration)
 

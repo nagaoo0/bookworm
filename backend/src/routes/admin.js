@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { hashPassword } from '../auth.js';
+import { idParam, reqStr } from '../lib/validate.js';
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.get('/users', async (_req, res, next) => {
 // DELETE /api/admin/users/:id — delete user and all their data
 router.delete('/users/:id', async (req, res, next) => {
   try {
-    const targetId = parseInt(req.params.id, 10);
+    const targetId = idParam(req.params.id);
     if (targetId === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' });
     const { rowCount } = await pool.query('DELETE FROM users WHERE id = $1', [targetId]);
     if (!rowCount) return res.status(404).json({ error: 'User not found' });
@@ -47,10 +48,8 @@ router.delete('/users/:id', async (req, res, next) => {
 // POST /api/admin/users/:id/reset-password  { newPassword }
 router.post('/users/:id/reset-password', async (req, res, next) => {
   try {
-    const targetId = parseInt(req.params.id, 10);
-    const { newPassword } = req.body ?? {};
-    if (!newPassword || newPassword.length < 6)
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    const targetId = idParam(req.params.id);
+    const newPassword = reqStr(req.body?.newPassword, 'newPassword', { min: 6, max: 128, trim: false });
 
     const hash = await hashPassword(newPassword);
     // Invalidate all sessions for the target user so they must re-login
@@ -69,7 +68,7 @@ router.post('/users/:id/reset-password', async (req, res, next) => {
 // PATCH /api/admin/users/:id  { isAdmin? }
 router.patch('/users/:id', async (req, res, next) => {
   try {
-    const targetId = parseInt(req.params.id, 10);
+    const targetId = idParam(req.params.id);
     if (targetId === req.user.id) return res.status(400).json({ error: 'Cannot change your own admin status' });
     const { isAdmin } = req.body ?? {};
     if (isAdmin === undefined) return res.status(400).json({ error: 'Nothing to update' });
@@ -88,7 +87,7 @@ router.patch('/users/:id', async (req, res, next) => {
 // POST /api/admin/users/:id/revoke-sessions — force logout
 router.post('/users/:id/revoke-sessions', async (req, res, next) => {
   try {
-    const targetId = parseInt(req.params.id, 10);
+    const targetId = idParam(req.params.id);
     await pool.query('DELETE FROM sessions WHERE user_id = $1', [targetId]);
     res.json({ ok: true });
   } catch (err) {

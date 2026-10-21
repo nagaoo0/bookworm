@@ -76,7 +76,7 @@ export async function searchAll(queryObj, maxResults = 20) {
 }
 
 export async function getExternalBook(source, externalId) {
-  const provider = PROVIDERS[source];
+  const provider = Object.hasOwn(PROVIDERS, source) ? PROVIDERS[source] : null;
   if (!provider) throw Object.assign(new Error(`Unknown book source: ${source}`), { status: 400 });
   return tag(source, await provider.getBook(externalId));
 }

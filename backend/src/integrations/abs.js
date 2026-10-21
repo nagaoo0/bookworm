@@ -1,4 +1,5 @@
 import { io as socketIO } from 'socket.io-client';
+import { assertFetchableUrl, safeFetchRaw, isHttpUrl } from '../lib/safeUrl.js';
 
 // ---------------------------------------------------------------------------
 // Audiobookshelf REST + Socket.IO client
@@ -12,17 +13,32 @@ function headers(config) {
 }
 
 function base(config) {
-  return config.serverUrl.replace(/\/$/, '');
+  return String(config.serverUrl ?? '').replace(/\/$/, '');
 }
 
-async function absGet(config, path) {
-  const res = await fetch(`${base(config)}${path}`, { headers: headers(config) });
-  if (!res.ok) throw new Error(`ABS ${path} → ${res.status}`);
+const TIMEOUT_MS = 20000;
+
+// The server is a user-configured integration, so LAN addresses are allowed;
+// loopback / link-local / metadata addresses never are (safeFetchRaw checks
+// the URL and every redirect hop).
+function absFetch(config, path, timeoutMs = TIMEOUT_MS) {
+  return safeFetchRaw(`${base(config)}${path}`, {
+    allowPrivate: true, headers: headers(config), timeoutMs,
+  });
+}
+
+async function absGet(config, path, timeoutMs) {
+  const res = await absFetch(config, path, timeoutMs);
+  if (!res.ok) {
+    res.body?.cancel().catch(() => {});
+    throw new Error(`ABS ${path} → ${res.status}`);
+  }
   return res.json();
 }
 
 export async function testConnection(config) {
-  const res = await fetch(`${base(config)}/ping`, { headers: headers(config) });
+  const res = await absFetch(config, '/ping');
+  res.body?.cancel().catch(() => {});
   if (!res.ok) throw new Error(`ABS ping failed: ${res.status}`);
   return true;
 }
@@ -33,7 +49,8 @@ export async function fetchLibraries(config) {
 }
 
 export async function fetchLibraryItems(config, libraryId) {
-  const data = await absGet(config, `/api/libraries/${libraryId}/items?limit=5000`);
+  // Big libraries make a big response — allow more time than the default
+  const data = await absGet(config, `/api/libraries/${encodeURIComponent(libraryId)}/items?limit=5000`, 120000);
   return data.results ?? [];
 }
 
@@ -86,7 +103,8 @@ export function mapItemToBook(item) {
 
 export function getCoverUrl(config, item) {
   if (!item.coverPath) return null;
-  return `${base(config)}/api/items/${item.id}/cover`;
+  const url = `${base(config)}/api/items/${encodeURIComponent(item.id)}/cover`;
+  return isHttpUrl(url) ? url : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +114,7 @@ export function getCoverUrl(config, item) {
 let _io = null;
 
 export async function openEventStream(config, onEvent) {
+  await assertFetchableUrl(config.serverUrl, { allowPrivate: true });
   const socket = socketIO(base(config), {
     transports: ['websocket'],
     auth: { token: config.token },

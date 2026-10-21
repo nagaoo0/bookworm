@@ -9,6 +9,10 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+// An idle client erroring (DB restart, network drop) emits 'error' on the pool;
+// without a listener Node would treat it as uncaught and exit.
+pool.on('error', err => console.error('Unexpected idle DB client error:', err.message));
+
 async function waitForDb(retries = 15, delayMs = 2000) {
   for (let i = 1; i <= retries; i++) {
     try {

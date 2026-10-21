@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { authMiddleware } from '../auth.js';
+import { optInt } from '../lib/validate.js';
 
 export const VALID_SLOTS = new Set([
   'favorite', 'best-plot', 'favorite-series', 'biggest-impact', 'best-prose',
@@ -31,7 +32,8 @@ router.put('/:slot', authMiddleware, async (req, res, next) => {
     const slot = req.params.slot;
     if (!VALID_SLOTS.has(slot)) return res.status(400).json({ error: 'Invalid slot' });
 
-    const { bookId } = req.body;
+    const rawBookId = req.body?.bookId;
+    const bookId = rawBookId === '' ? null : optInt(rawBookId, 'bookId', { min: 1, max: 2147483647 });
 
     if (!bookId) {
       await pool.query(

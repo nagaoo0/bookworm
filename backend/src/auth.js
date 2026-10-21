@@ -52,17 +52,19 @@ export async function createSession(userId) {
   return { token, expiresAt };
 }
 
+// Attributes must be identical on set and clear, or browsers keep the cookie
+const cookieOptions = () => ({
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+});
+
 export function setSessionCookie(res, token, expiresAt) {
-  res.cookie(COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    expires: expiresAt,
-  });
+  res.cookie(COOKIE, token, { ...cookieOptions(), expires: expiresAt });
 }
 
 export function clearSessionCookie(res) {
-  res.clearCookie(COOKIE);
+  res.clearCookie(COOKIE, cookieOptions());
 }
 
 // Express middleware — attaches req.user or sends 401.

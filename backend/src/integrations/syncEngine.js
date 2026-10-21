@@ -484,6 +484,20 @@ export function stopAbsSocket(userId) {
   }
 }
 
+// Graceful shutdown: clear every polling timer, drop every ABS socket and
+// close open SSE streams so the process can exit.
+export function stopAllSyncs() {
+  for (const timer of _timers.values()) clearInterval(timer);
+  _timers.clear();
+  for (const socket of _absSockets.values()) socket.disconnect?.();
+  _absSockets.clear();
+  abs.closeEventStream();
+  for (const clients of sseClients.values()) {
+    for (const res of clients) res.end();
+  }
+  sseClients.clear();
+}
+
 // ---------------------------------------------------------------------------
 // Boot: resume polling for all users who have configured integrations
 // ---------------------------------------------------------------------------

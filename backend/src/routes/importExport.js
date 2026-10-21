@@ -9,74 +9,76 @@ const STATUS_FROM_CSV = { finished: 'done', reading: 'reading', toread: 'to_read
 const STATUS_TO_CSV   = { done: 'finished', reading: 'reading', to_read: 'toread' };
 
 // ── GET /api/import-export/export ─────────────────────────────────────────────
-router.get('/export', async (req, res) => {
-  const uid = req.user.id;
+router.get('/export', async (req, res, next) => {
+  try {
+    const uid = req.user.id;
 
-  const { rows: books } = await pool.query(
-    `SELECT lb.id AS lib_id, lb.status, lb.notes, lb.added_at,
-            b.google_id, b.title, b.authors, b.isbn10, b.isbn13,
-            b.publisher, b.published_date,
-            (SELECT json_agg(rs ORDER BY rs.created_at)
-             FROM reading_sessions rs
-             WHERE rs.book_id = b.id AND rs.user_id = $1) AS sessions,
-            (SELECT string_agg(s.name, '|' ORDER BY s.name)
-             FROM shelf_memberships sm
-             JOIN shelves s ON s.id = sm.shelf_id
-             WHERE sm.library_book_id = lb.id) AS shelf_names
-     FROM library_books lb
-     JOIN books b ON b.id = lb.book_id
-     WHERE lb.user_id = $1
-     ORDER BY lb.added_at DESC`,
-    [uid]
-  );
+    const { rows: books } = await pool.query(
+      `SELECT lb.id AS lib_id, lb.status, lb.notes, lb.added_at,
+              b.google_id, b.title, b.authors, b.isbn10, b.isbn13,
+              b.publisher, b.published_date,
+              (SELECT json_agg(rs ORDER BY rs.created_at)
+               FROM reading_sessions rs
+               WHERE rs.book_id = b.id AND rs.user_id = $1) AS sessions,
+              (SELECT string_agg(s.name, '|' ORDER BY s.name)
+               FROM shelf_memberships sm
+               JOIN shelves s ON s.id = sm.shelf_id
+               WHERE sm.library_book_id = lb.id) AS shelf_names
+       FROM library_books lb
+       JOIN books b ON b.id = lb.book_id
+       WHERE lb.user_id = $1
+       ORDER BY lb.added_at DESC`,
+      [uid]
+    );
 
-  const rows = [];
-  for (const b of books) {
-    const csvStatus = STATUS_TO_CSV[b.status] ?? 'toread';
-    const sessions = b.sessions ?? [];
-    const lastFinished = sessions.filter(s => s.finished_at).sort((a, z) =>
-      new Date(z.finished_at) - new Date(a.finished_at))[0];
-    const shelfYear = lastFinished
-      ? String(new Date(lastFinished.finished_at).getFullYear()) : '';
-    const latest = sessions[0] ?? {};
-    const authorStr = Array.isArray(b.authors) ? b.authors.join(',') : (b.authors ?? '');
+    const rows = [];
+    for (const b of books) {
+      const csvStatus = STATUS_TO_CSV[b.status] ?? 'toread';
+      const sessions = b.sessions ?? [];
+      const lastFinished = sessions.filter(s => s.finished_at).sort((a, z) =>
+        new Date(z.finished_at) - new Date(a.finished_at))[0];
+      const shelfYear = lastFinished
+        ? String(new Date(lastFinished.finished_at).getFullYear()) : '';
+      const latest = sessions[0] ?? {};
+      const authorStr = Array.isArray(b.authors) ? b.authors.join(',') : (b.authors ?? '');
 
-    rows.push({
-      id:             b.google_id ?? '',
-      isbn10:         b.isbn10 ?? '',
-      isbn13:         b.isbn13 ?? '',
-      title:          b.title,
-      author:         authorStr,
-      publisher:      b.publisher ?? '',
-      publishedDate:  b.published_date ?? '',
-      status:         csvStatus,
-      shelf:          b.shelf_names ?? shelfYear,
-      stars:          latest.rating ?? 0,
-      review:         latest.review ?? '',
-      note:           b.notes ?? '',
-      startDate:      latest.started_at ? String(latest.started_at).slice(0, 10) : '',
-      finishDate:     latest.finished_at ? String(latest.finished_at).slice(0, 10) : '',
-      readingMinutes: 0,
-    });
-  }
+      rows.push({
+        id:             b.google_id ?? '',
+        isbn10:         b.isbn10 ?? '',
+        isbn13:         b.isbn13 ?? '',
+        title:          b.title,
+        author:         authorStr,
+        publisher:      b.publisher ?? '',
+        publishedDate:  b.published_date ?? '',
+        status:         csvStatus,
+        shelf:          b.shelf_names ?? shelfYear,
+        stars:          latest.rating ?? 0,
+        review:         latest.review ?? '',
+        note:           b.notes ?? '',
+        startDate:      latest.started_at ? String(latest.started_at).slice(0, 10) : '',
+        finishDate:     latest.finished_at ? String(latest.finished_at).slice(0, 10) : '',
+        readingMinutes: 0,
+      });
+    }
 
-  const header = 'id\tisbn10\tisbn13\ttitle\tauthor\tpublisher\tpublishedDate\tstatus\tshelf\tstars\treview\tnote\tstartDate\tfinishDate\treadingMinutes\n';
-  const body = rows.map(r =>
-    [r.id, r.isbn10, r.isbn13, r.title, r.author, r.publisher, r.publishedDate,
-     r.status, r.shelf, r.stars, r.review, r.note, r.startDate, r.finishDate, r.readingMinutes]
-      .map(v => `"${String(v).replace(/"/g, '""')}"`)
-      .join('\t')
-  ).join('\n');
+    const header = 'id\tisbn10\tisbn13\ttitle\tauthor\tpublisher\tpublishedDate\tstatus\tshelf\tstars\treview\tnote\tstartDate\tfinishDate\treadingMinutes\n';
+    const body = rows.map(r =>
+      [r.id, r.isbn10, r.isbn13, r.title, r.author, r.publisher, r.publishedDate,
+       r.status, r.shelf, r.stars, r.review, r.note, r.startDate, r.finishDate, r.readingMinutes]
+        .map(v => `"${String(v).replace(/"/g, '""')}"`)
+        .join('\t')
+    ).join('\n');
 
-  res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="bookworm-library.csv"');
-  res.send(header + body);
+    res.setHeader('Content-Type', 'text/tab-separated-values; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="bookworm-library.csv"');
+    res.send(header + body);
+  } catch (err) { next(err); }
 });
 
 // ── POST /api/import-export/import ────────────────────────────────────────────
 router.post('/import', async (req, res) => {
   const { csv } = req.body ?? {};
-  if (!csv?.trim()) return res.status(400).json({ error: 'csv field is required' });
+  if (typeof csv !== 'string' || !csv.trim()) return res.status(400).json({ error: 'csv field is required' });
 
   let records;
   try {
@@ -91,8 +93,9 @@ router.post('/import', async (req, res) => {
   const uid = req.user.id;
   let imported = 0, skipped = 0;
 
-  let client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     for (const r of records) {
       const googleId      = r.id?.trim() || null;
       const title         = r.title?.trim();
@@ -210,7 +213,7 @@ router.post('/import', async (req, res) => {
       }
     }
   } finally {
-    client.release();
+    client?.release();
   }
 
   res.json({ imported, skipped, total: records.length });

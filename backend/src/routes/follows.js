@@ -27,7 +27,7 @@ router.get('/', async (req, res, next) => {
 router.get('/status', async (req, res, next) => {
   try {
     const { username } = req.query;
-    if (!username) return res.status(400).json({ error: 'username required' });
+    if (!username || typeof username !== 'string') return res.status(400).json({ error: 'username required' });
 
     const { rows: [target] } = await pool.query(
       'SELECT id FROM users WHERE username = $1', [username]

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { idParam } from '../lib/validate.js';
 
 const router = Router();
 
@@ -53,7 +54,7 @@ router.post('/:id/read', async (req, res, next) => {
   try {
     await pool.query(
       `UPDATE notifications SET read_at = now() WHERE id = $1 AND user_id = $2`,
-      [req.params.id, req.user.id]
+      [idParam(req.params.id), req.user.id]
     );
     res.status(204).end();
   } catch (err) {

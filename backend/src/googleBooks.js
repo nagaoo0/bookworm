@@ -69,7 +69,7 @@ export async function getBook(googleId) {
   const params = new URLSearchParams({ country: 'US' });
   if (process.env.GOOGLE_BOOKS_API_KEY) params.set('key', process.env.GOOGLE_BOOKS_API_KEY);
 
-  const res = await fetchWithTimeout(`${BASE}/${googleId}?${params}`);
+  const res = await fetchWithTimeout(`${BASE}/${encodeURIComponent(googleId)}?${params}`);
   if (!res.ok) throw new Error(`Google Books API error: ${res.status}`);
 
   return normalize(await res.json());

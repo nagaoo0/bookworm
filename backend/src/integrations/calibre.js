@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { XMLParser } from 'fast-xml-parser';
+import { safeFetchRaw, isHttpUrl, sameOrigin } from '../lib/safeUrl.js';
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -19,7 +20,7 @@ const parser = new XMLParser({
 });
 
 function base(config) {
-  return config.serverUrl.replace(/\/$/, '');
+  return String(config.serverUrl ?? '').replace(/\/$/, '');
 }
 
 export function opdsHeaders(config) {
@@ -32,18 +33,27 @@ export function opdsHeaders(config) {
 }
 
 async function fetchFeed(config, url) {
-  const fullUrl = url.startsWith('http') ? url : `${base(config)}${url}`;
-  const res = await fetch(fullUrl, {
+  const fullUrl = /^https?:\/\//i.test(url) ? url : `${base(config)}${url}`;
+  // Feed links come from the remote server — never follow them off-origin
+  if (!sameOrigin(fullUrl, base(config))) {
+    throw new Error('Calibre-Web feed link points outside the configured server');
+  }
+  const res = await safeFetchRaw(fullUrl, {
+    allowPrivate: true,   // user-configured server, usually on the LAN
     headers: opdsHeaders(config),
-    signal: AbortSignal.timeout(15000),
+    timeoutMs: 15000,
   });
 
   if (res.status === 401) {
+    res.body?.cancel().catch(() => {});
     throw new Error(
       'Calibre-Web authentication failed — add your username and password in settings.'
     );
   }
-  if (!res.ok) throw new Error(`Calibre-Web OPDS ${url} → ${res.status}`);
+  if (!res.ok) {
+    res.body?.cancel().catch(() => {});
+    throw new Error(`Calibre-Web OPDS ${url} → ${res.status}`);
+  }
 
   const text = await res.text();
   if (!text.includes('<feed') && !text.startsWith('<?xml')) {
@@ -98,6 +108,11 @@ export async function fetchBooks(config) {
     }
 
     url = extractNextLink(parsed);
+    // A "next" link on another origin means a misbehaving/malicious server — stop here
+    if (url && /^https?:\/\//i.test(url) && !sameOrigin(url, base(config))) {
+      console.warn('[calibre] ignoring off-origin next link; stopping pagination');
+      url = null;
+    }
     page++;
   }
 
@@ -114,7 +129,8 @@ export function getCoverUrl(config, entry) {
   if (!cover) return null;
   const href = cover['@_href'];
   if (!href) return null;
-  return href.startsWith('http') ? href : `${base(config)}${href}`;
+  const full = href.startsWith('http') ? href : `${base(config)}${href}`;
+  return isHttpUrl(full) ? full : null;
 }
 
 export function mapBookToBookworm(entry) {

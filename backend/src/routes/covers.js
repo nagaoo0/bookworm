@@ -3,6 +3,8 @@ import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { pool } from '../db.js';
+import { isHttpUrl, safeFetch } from '../lib/safeUrl.js';
+import { idParam } from '../lib/validate.js';
 
 // ---------------------------------------------------------------------------
 // Cover image proxy + disk cache.
@@ -19,13 +21,16 @@ import { pool } from '../db.js';
 // or any library_books.cover_url_override) — the endpoint can't be used as an
 // open proxy. Cache files are keyed by bookId + src hash, so a cover change
 // produces a new URL and the stale file is simply never requested again.
+//
+// Fetches go through safeFetch (SSRF guard): loopback / link-local / metadata
+// addresses are never reachable; private (LAN) addresses only when the cover's
+// origin is a configured integration server (Calibre / Audiobookshelf).
 // ---------------------------------------------------------------------------
 
 const COVERS_DIR = process.env.COVERS_DIR ?? path.join(process.cwd(), 'data', 'covers');
 const MAX_BYTES = 8 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 10000;
-
-await fs.mkdir(COVERS_DIR, { recursive: true });
+const USER_AGENT = 'Bookworm/1.0 (self-hosted reading tracker)';
 
 const router = Router();
 
@@ -41,40 +46,61 @@ function sniffContentType(buf) {
   return 'application/octet-stream';
 }
 
-async function fetchAndCache(src, filePath) {
-  const res = await fetch(src, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    headers: { 'User-Agent': 'Bookworm/1.0 (self-hosted reading tracker)' },
+// True if `src` lives on the same origin as some user's configured
+// integration server — the only place a private/LAN address is acceptable.
+async function isIntegrationOrigin(src) {
+  let origin;
+  try { origin = new URL(src).origin; } catch { return false; }
+  const { rows } = await pool.query(
+    `SELECT DISTINCT config->>'serverUrl' AS server_url
+     FROM integrations WHERE config->>'serverUrl' IS NOT NULL`
+  );
+  return rows.some(r => {
+    try { return new URL(r.server_url).origin === origin; } catch { return false; }
   });
-  if (!res.ok) throw new Error(`upstream ${res.status}`);
+}
 
-  const type = res.headers.get('content-type') ?? '';
+async function fetchAndCache(src, filePath) {
+  const allowPrivate = await isIntegrationOrigin(src);
+  const { status, headers, buffer } = await safeFetch(src, {
+    allowPrivate,
+    maxBytes: MAX_BYTES,
+    timeoutMs: FETCH_TIMEOUT_MS,
+    headers: { 'User-Agent': USER_AGENT },
+  });
+  if (status < 200 || status >= 300) throw new Error(`upstream ${status}`);
+
+  const type = headers.get('content-type') ?? '';
   if (!type.startsWith('image/')) throw new Error(`not an image: ${type}`);
-  const declared = Number(res.headers.get('content-length') ?? 0);
-  if (declared > MAX_BYTES) throw new Error('image too large');
-
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length === 0 || buf.length > MAX_BYTES) throw new Error('bad image size');
+  if (buffer.length === 0) throw new Error('empty image');
 
   // Write via temp file + rename so a concurrent reader never sees a partial file
+  await fs.mkdir(COVERS_DIR, { recursive: true });
   const tmp = `${filePath}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, buf);
-  await fs.rename(tmp, filePath);
-  return buf;
+  try {
+    await fs.writeFile(tmp, buffer);
+    await fs.rename(tmp, filePath);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => {});
+    throw err;
+  }
+  return buffer;
 }
 
 router.get('/:bookId', async (req, res) => {
-  const bookId = parseInt(req.params.bookId, 10);
-  if (!bookId) return res.status(400).json({ error: 'Invalid book id' });
+  const bookId = idParam(req.params.bookId);
+
+  const rawSrc = req.query.src;
+  if (rawSrc !== undefined && rawSrc !== '' && (typeof rawSrc !== 'string' || !isHttpUrl(rawSrc))) {
+    return res.status(400).json({ error: 'Invalid src' });
+  }
 
   try {
-    let src = req.query.src;
-    if (src && !/^https?:\/\//i.test(src)) return res.status(400).json({ error: 'Invalid src' });
-
+    let src = rawSrc;
     if (!src) {
       const { rows: [book] } = await pool.query('SELECT cover_url FROM books WHERE id = $1', [bookId]);
       src = book?.cover_url;
-      if (!src || !/^https?:\/\//i.test(src)) return res.status(404).json({ error: 'No cover' });
+      if (!isHttpUrl(src)) throw new Error('no cover');
     }
 
     const hash = createHash('sha256').update(src).digest('hex').slice(0, 16);
@@ -82,11 +108,12 @@ router.get('/:bookId', async (req, res) => {
 
     let buf;
     try {
+      // Cache hit: a file only exists for a src that passed the checks below
       buf = await fs.readFile(filePath);
     } catch {
       // Cache miss — only now verify src belongs to this book (skip when src
       // came from the DB one query ago) and fetch it once
-      if (req.query.src) {
+      if (rawSrc) {
         const { rows: [ok] } = await pool.query(
           `SELECT 1 FROM books b
            WHERE b.id = $1 AND (
@@ -96,7 +123,7 @@ router.get('/:bookId', async (req, res) => {
            )`,
           [bookId, src]
         );
-        if (!ok) return res.status(404).json({ error: 'Unknown cover for this book' });
+        if (!ok) throw new Error('src does not belong to book');
       }
 
       if (!inflight.has(filePath)) {
@@ -106,15 +133,62 @@ router.get('/:bookId', async (req, res) => {
     }
 
     res.setHeader('Content-Type', sniffContentType(buf));
-    // URL is keyed by src — content never changes for a given URL
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    // ?src= URLs are keyed by src — content never changes for a given URL.
+    // The bare form follows whatever the book's current cover is, so it may change.
+    res.setHeader('Cache-Control', rawSrc
+      ? 'public, max-age=31536000, immutable'
+      : 'public, max-age=86400');
     res.send(buf);
   } catch (err) {
-    // Proxy failed — fall back to the original URL so covers still render
-    const fallback = req.query.src;
-    if (fallback && /^https?:\/\//i.test(fallback)) return res.redirect(302, fallback);
-    res.status(502).json({ error: `Cover fetch failed: ${err.message}` });
+    console.warn(`[covers] book ${bookId}: ${err.message}`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(404).json({ error: 'Cover unavailable' });
   }
 });
+
+// Keep the cache under COVERS_MAX_MB by deleting the oldest files (by mtime)
+// first. No-op when COVERS_MAX_MB is unset or invalid.
+export async function pruneCoverCache() {
+  const maxMb = Number(process.env.COVERS_MAX_MB);
+  if (!(maxMb > 0)) return;
+  const cap = maxMb * 1024 * 1024;
+
+  try {
+    let names;
+    try { names = await fs.readdir(COVERS_DIR); } catch { return; }
+
+    const files = [];
+    let total = 0;
+    for (const name of names) {
+      const p = path.join(COVERS_DIR, name);
+      try {
+        const st = await fs.stat(p);
+        if (!st.isFile()) continue;
+        if (name.endsWith('.tmp')) {
+          // leftover from a crashed write
+          if (Date.now() - st.mtimeMs > 60 * 60 * 1000) await fs.unlink(p);
+          continue;
+        }
+        files.push({ p, size: st.size, mtimeMs: st.mtimeMs });
+        total += st.size;
+      } catch { /* file vanished — ignore */ }
+    }
+    if (total <= cap) return;
+
+    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    let removed = 0;
+    for (const f of files) {
+      if (total <= cap) break;
+      try {
+        await fs.unlink(f.p);
+        total -= f.size;
+        removed++;
+      } catch { /* ignore */ }
+    }
+    console.log(`[covers] pruned ${removed} cached covers (cap ${maxMb} MB)`);
+  } catch (err) {
+    console.warn('[covers] prune failed:', err.message);
+  }
+}
 
 export default router;

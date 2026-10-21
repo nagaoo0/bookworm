@@ -6,6 +6,10 @@
 // Auth: token lives in the URL path — no extra headers needed.
 // ---------------------------------------------------------------------------
 
+import { safeFetchRaw, sameOrigin } from '../lib/safeUrl.js';
+
+const MAX_PAGES = 200; // hard cap on x-kobo-sync-next pagination
+
 const KOBO_STATUS_MAP = {
   ReadyToRead: 'to_read',
   Reading:     'reading',
@@ -13,7 +17,7 @@ const KOBO_STATUS_MAP = {
 };
 
 function koboBase(serverUrl, koboToken) {
-  return `${serverUrl.replace(/\/$/, '')}/kobo/${koboToken}`;
+  return `${String(serverUrl).replace(/\/$/, '')}/kobo/${encodeURIComponent(koboToken)}`;
 }
 
 // Pull a fresh full sync (no incremental token) and return all ReadingState blocks.
@@ -29,16 +33,19 @@ export async function fetchKoboProgress(config) {
   // sends the full library rather than a delta — we want current state for all books.
   let nextUrl = `${base}/v1/library/sync`;
 
-  while (nextUrl) {
-    const res = await fetch(nextUrl, {
+  for (let page = 0; nextUrl && page < MAX_PAGES; page++) {
+    const res = await safeFetchRaw(nextUrl, {
+      allowPrivate: true,   // user-configured server, usually on the LAN
       headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(30000),
+      timeoutMs: 30000,
     });
 
     if (res.status === 401 || res.status === 403) {
+      res.body?.cancel().catch(() => {});
       throw new Error('Calibre-Web Kobo token is invalid or expired — check your Kobo sync token.');
     }
     if (!res.ok) {
+      res.body?.cancel().catch(() => {});
       throw new Error(`Calibre-Web Kobo sync returned ${res.status}`);
     }
 
@@ -101,7 +108,15 @@ export async function fetchKoboProgress(config) {
     // when there are more pages — but for our full-sync pattern we use the
     // next link in a rel="next" style. In practice Calibre-Web returns all
     // entries in one call for most libraries, but handle pagination if present.
-    nextUrl = res.headers.get('x-kobo-sync-next') ?? null;
+    const next = res.headers.get('x-kobo-sync-next');
+    if (next) {
+      let resolved = null;
+      try { resolved = new URL(next, nextUrl).href; } catch { /* malformed — stop */ }
+      // Only follow pagination that stays on the configured server
+      nextUrl = resolved && sameOrigin(resolved, serverUrl) ? resolved : null;
+    } else {
+      nextUrl = null;
+    }
   }
 
   return results;
@@ -113,10 +128,12 @@ export async function testKoboToken(config) {
   if (!serverUrl || !koboToken) throw new Error('serverUrl and koboToken are required');
 
   const base = koboBase(serverUrl, koboToken);
-  const res = await fetch(`${base}/v1/library/sync`, {
+  const res = await safeFetchRaw(`${base}/v1/library/sync`, {
+    allowPrivate: true,
     headers: { 'Accept': 'application/json' },
-    signal: AbortSignal.timeout(10000),
+    timeoutMs: 10000,
   });
+  res.body?.cancel().catch(() => {});
 
   if (res.status === 401 || res.status === 403) {
     throw new Error('Calibre-Web Kobo token is invalid — go to Calibre-Web → "Connect to Kobo" to get your token.');

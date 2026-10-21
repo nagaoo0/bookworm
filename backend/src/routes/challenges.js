@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { idParam, optInt, reqStr, optStr, optIsoDate } from '../lib/validate.js';
 
 const router = Router();
 
@@ -53,8 +54,11 @@ router.get('/', async (req, res, next) => {
 // POST /api/challenges
 router.post('/', async (req, res, next) => {
   try {
-    const { title, description, startDate, endDate } = req.body;
-    if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
+    const body = req.body ?? {};
+    const title = reqStr(body.title, 'title', { max: 120 });
+    const description = optStr(body.description, 'description', { max: 1000 });
+    const startDate = optIsoDate(body.startDate, 'startDate');
+    const endDate = optIsoDate(body.endDate, 'endDate');
     if (!startDate || !endDate) return res.status(400).json({ error: 'Start and end dates required' });
     if (new Date(endDate) <= new Date(startDate))
       return res.status(400).json({ error: 'End date must be after start date' });
@@ -62,7 +66,7 @@ router.post('/', async (req, res, next) => {
     const { rows: [c] } = await pool.query(
       `INSERT INTO challenges (created_by, title, description, goal, start_date, end_date)
        VALUES ($1, $2, $3, 0, $4, $5) RETURNING id`,
-      [req.user.id, title.trim(), description?.trim() || null, startDate, endDate]
+      [req.user.id, title, description || null, startDate, endDate]
     );
     await pool.query(
       `INSERT INTO challenge_entries (challenge_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -79,22 +83,30 @@ router.post('/', async (req, res, next) => {
 // PATCH /api/challenges/:id — edit (creator only)
 router.patch('/:id', async (req, res, next) => {
   try {
+    const id = idParam(req.params.id);
+    const body = req.body ?? {};
+    const title = body.title === undefined ? undefined : reqStr(body.title, 'title', { max: 120 });
+    const description = optStr(body.description, 'description', { max: 1000 });
+    const startDate = optIsoDate(body.startDate, 'startDate');
+    const endDate = optIsoDate(body.endDate, 'endDate');
+    if (startDate && endDate && new Date(endDate) <= new Date(startDate))
+      return res.status(400).json({ error: 'End date must be after start date' });
+
     const { rows: [c] } = await pool.query(
-      'SELECT created_by FROM challenges WHERE id = $1', [req.params.id]
+      'SELECT created_by FROM challenges WHERE id = $1', [id]
     );
     if (!c) return res.status(404).json({ error: 'Challenge not found' });
     if (c.created_by !== req.user.id && !req.user.is_admin)
       return res.status(403).json({ error: 'Not the creator' });
 
-    const { title, description, startDate, endDate } = req.body;
     const cols = [], vals = [];
-    if (title?.trim())           { cols.push(`title = $${vals.push(title.trim())}`); }
-    if (description !== undefined){ cols.push(`description = $${vals.push(description?.trim() || null)}`); }
+    if (title)                   { cols.push(`title = $${vals.push(title)}`); }
+    if (description !== undefined){ cols.push(`description = $${vals.push(description || null)}`); }
     if (startDate)               { cols.push(`start_date = $${vals.push(startDate)}`); }
     if (endDate)                 { cols.push(`end_date = $${vals.push(endDate)}`); }
     if (!cols.length) return res.status(400).json({ error: 'Nothing to update' });
 
-    vals.push(req.params.id);
+    vals.push(id);
     await pool.query(`UPDATE challenges SET ${cols.join(', ')} WHERE id = $${vals.length}`, vals);
     res.json({ ok: true });
   } catch (err) { next(err); }
@@ -103,13 +115,14 @@ router.patch('/:id', async (req, res, next) => {
 // DELETE /api/challenges/:id
 router.delete('/:id', async (req, res, next) => {
   try {
+    const id = idParam(req.params.id);
     const { rows: [c] } = await pool.query(
-      'SELECT created_by FROM challenges WHERE id = $1', [req.params.id]
+      'SELECT created_by FROM challenges WHERE id = $1', [id]
     );
     if (!c) return res.status(404).json({ error: 'Challenge not found' });
     if (c.created_by !== req.user.id && !req.user.is_admin)
       return res.status(403).json({ error: 'Not the creator' });
-    await pool.query('DELETE FROM challenges WHERE id = $1', [req.params.id]);
+    await pool.query('DELETE FROM challenges WHERE id = $1', [id]);
     res.status(204).end();
   } catch (err) { next(err); }
 });
@@ -117,10 +130,11 @@ router.delete('/:id', async (req, res, next) => {
 // POST /api/challenges/:id/books
 router.post('/:id/books', async (req, res, next) => {
   try {
-    const { bookId } = req.body;
+    const id = idParam(req.params.id);
+    const bookId = optInt(req.body?.bookId, 'bookId', { min: 1, max: 2147483647 });
     if (!bookId) return res.status(400).json({ error: 'bookId required' });
     const { rows: [c] } = await pool.query(
-      'SELECT created_by FROM challenges WHERE id = $1', [req.params.id]
+      'SELECT created_by FROM challenges WHERE id = $1', [id]
     );
     if (!c) return res.status(404).json({ error: 'Challenge not found' });
     if (c.created_by !== req.user.id)
@@ -129,7 +143,7 @@ router.post('/:id/books', async (req, res, next) => {
     if (!b) return res.status(404).json({ error: 'Book not found' });
     await pool.query(
       'INSERT INTO challenge_books (challenge_id, book_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [req.params.id, bookId]
+      [id, bookId]
     );
     res.status(204).end();
   } catch (err) { next(err); }
@@ -138,15 +152,17 @@ router.post('/:id/books', async (req, res, next) => {
 // DELETE /api/challenges/:id/books/:bookId
 router.delete('/:id/books/:bookId', async (req, res, next) => {
   try {
+    const id = idParam(req.params.id);
+    const bookId = idParam(req.params.bookId);
     const { rows: [c] } = await pool.query(
-      'SELECT created_by FROM challenges WHERE id = $1', [req.params.id]
+      'SELECT created_by FROM challenges WHERE id = $1', [id]
     );
     if (!c) return res.status(404).json({ error: 'Challenge not found' });
     if (c.created_by !== req.user.id)
       return res.status(403).json({ error: 'Not the creator' });
     await pool.query(
       'DELETE FROM challenge_books WHERE challenge_id = $1 AND book_id = $2',
-      [req.params.id, req.params.bookId]
+      [id, bookId]
     );
     res.status(204).end();
   } catch (err) { next(err); }
@@ -155,11 +171,12 @@ router.delete('/:id/books/:bookId', async (req, res, next) => {
 // POST /api/challenges/:id/join
 router.post('/:id/join', async (req, res, next) => {
   try {
-    const { rows: [c] } = await pool.query('SELECT id FROM challenges WHERE id = $1', [req.params.id]);
+    const id = idParam(req.params.id);
+    const { rows: [c] } = await pool.query('SELECT id FROM challenges WHERE id = $1', [id]);
     if (!c) return res.status(404).json({ error: 'Challenge not found' });
     await pool.query(
       `INSERT INTO challenge_entries (challenge_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [req.params.id, req.user.id]
+      [id, req.user.id]
     );
     res.status(204).end();
   } catch (err) { next(err); }
@@ -170,7 +187,7 @@ router.delete('/:id/join', async (req, res, next) => {
   try {
     await pool.query(
       'DELETE FROM challenge_entries WHERE challenge_id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
+      [idParam(req.params.id), req.user.id]
     );
     res.status(204).end();
   } catch (err) { next(err); }
@@ -179,11 +196,12 @@ router.delete('/:id/join', async (req, res, next) => {
 // GET /api/challenges/:id/leaderboard
 router.get('/:id/leaderboard', async (req, res, next) => {
   try {
-    const { rows: [c] } = await pool.query('SELECT * FROM challenges WHERE id = $1', [req.params.id]);
+    const id = idParam(req.params.id);
+    const { rows: [c] } = await pool.query('SELECT * FROM challenges WHERE id = $1', [id]);
     if (!c) return res.status(404).json({ error: 'Challenge not found' });
 
     const total = (await pool.query(
-      'SELECT COUNT(*)::INT AS n FROM challenge_books WHERE challenge_id = $1', [req.params.id]
+      'SELECT COUNT(*)::INT AS n FROM challenge_books WHERE challenge_id = $1', [id]
     )).rows[0].n;
 
     const { rows } = await pool.query(
@@ -197,7 +215,7 @@ router.get('/:id/leaderboard', async (req, res, next) => {
        JOIN users u ON u.id = ce.user_id
        WHERE ce.challenge_id = $1
        ORDER BY books_read DESC, u.username`,
-      [req.params.id]
+      [id]
     );
     res.json({ challenge: c, leaderboard: rows, total });
   } catch (err) { next(err); }

@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { HttpError } from '../lib/httpError.js';
+import { isHttpUrl, safeFetchRaw } from '../lib/safeUrl.js';
+import { idParam, optInt, optStr } from '../lib/validate.js';
 import * as absClient from '../integrations/abs.js';
 import * as calibreClient from '../integrations/calibre.js';
 import * as koboClient from '../integrations/koboSync.js';
@@ -13,6 +16,44 @@ import {
 } from '../integrations/syncEngine.js';
 
 const router = Router();
+
+const SERVICE_LABELS = { audiobookshelf: 'Audiobookshelf', calibre: 'Calibre-Web' };
+
+// Validate the posted config and keep only the keys the integrations use.
+// Throws HttpError(400) with a short message on bad input.
+function parseConfig(service, body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new HttpError(400, 'Invalid configuration');
+  }
+  if (!isHttpUrl(body.serverUrl)) throw new HttpError(400, 'serverUrl must be an http(s) URL');
+
+  const config = { serverUrl: body.serverUrl };
+  const intervalMs = optInt(body.intervalMs, 'intervalMs', { min: 60000, max: 86400000 });
+  if (intervalMs != null) config.intervalMs = intervalMs;
+
+  const set = (key, value) => { if (value != null && value !== '') config[key] = value; };
+  if (body.auto_sessions !== undefined) {
+    if (typeof body.auto_sessions !== 'boolean' && typeof body.auto_sessions !== 'string') {
+      throw new HttpError(400, 'auto_sessions is invalid');
+    }
+    config.auto_sessions = String(body.auto_sessions);
+  }
+
+  if (service === 'audiobookshelf') {
+    set('token', optStr(body.token, 'token', { max: 4096, trim: false }));
+  } else {
+    set('username', optStr(body.username, 'username', { max: 500, trim: false }));
+    set('password', optStr(body.password, 'password', { max: 500, trim: false }));
+    set('koboToken', optStr(body.koboToken, 'koboToken', { max: 500 }));
+    const path = optStr(body.opdsStartPath, 'opdsStartPath', { max: 500 });
+    // Must be a path on the configured server, never an absolute URL
+    if (path && (!path.startsWith('/') || path.startsWith('//'))) {
+      throw new HttpError(400, 'opdsStartPath must start with a single /');
+    }
+    set('opdsStartPath', path);
+  }
+  return config;
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/integrations — list all configured integrations for this user
@@ -43,13 +84,20 @@ router.put('/:service', async (req, res, next) => {
   if (!VALID.includes(service)) return res.status(400).json({ error: 'Unknown service' });
 
   try {
-    const config = req.body;
+    const config = parseConfig(service, req.body);
 
     // Validate connectivity before saving
-    if (service === 'audiobookshelf') await absClient.testConnection(config);
-    if (service === 'calibre') {
-      await calibreClient.testConnection(config);
-      if (config.koboToken) await koboClient.testKoboToken(config);
+    try {
+      if (service === 'audiobookshelf') await absClient.testConnection(config);
+      if (service === 'calibre') {
+        await calibreClient.testConnection(config);
+        if (config.koboToken) await koboClient.testKoboToken(config);
+      }
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      // Upstream/network failure: log the detail, tell the client only that it failed
+      console.error(`[integrations] ${service} connection test failed:`, err.message);
+      return res.status(400).json({ error: `Could not connect to ${SERVICE_LABELS[service]}` });
     }
 
     await pool.query(
@@ -61,8 +109,7 @@ router.put('/:service', async (req, res, next) => {
 
     // (Re)start continuous sync
     stopContinuousSync(req.user.id, service);
-    const intervalMs = config.intervalMs ? parseInt(config.intervalMs, 10) : undefined;
-    startContinuousSync(req.user.id, service, intervalMs);
+    startContinuousSync(req.user.id, service, config.intervalMs);
 
     // For ABS, also reconnect the WebSocket
     if (service === 'audiobookshelf') {
@@ -72,9 +119,6 @@ router.put('/:service', async (req, res, next) => {
 
     res.json({ ok: true });
   } catch (err) {
-    if (err.message.startsWith('ABS') || err.message.startsWith('Calibre')) {
-      return res.status(400).json({ error: `Connection failed: ${err.message}` });
-    }
     next(err);
   }
 });
@@ -109,7 +153,8 @@ router.post('/:service/sync', async (req, res, next) => {
     await syncService(req.user.id, service);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`[integrations] manual ${service} sync failed:`, err.message);
+    res.status(500).json({ error: 'Sync failed' });
   }
 });
 
@@ -211,7 +256,7 @@ router.get('/book/:bookId/availability', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT service, external_id, formats, extra
        FROM book_availability WHERE user_id=$1 AND book_id=$2`,
-      [req.user.id, req.params.bookId]
+      [req.user.id, idParam(req.params.bookId)]
     );
     // Also fetch server URLs from integrations config for deep-link building
     const { rows: ints } = await pool.query(
@@ -238,22 +283,26 @@ router.get('/calibre/download/:calibreId/:format', async (req, res, next) => {
     );
     if (!row) return res.status(404).json({ error: 'Calibre not configured' });
 
-    const serverUrl = row.config.serverUrl.replace(/\/$/, '');
-    const downloadUrl = `${serverUrl}/opds/download/${calibreId}/${format}/`;
+    const serverUrl = String(row.config.serverUrl ?? '').replace(/\/$/, '');
+    const downloadUrl =
+      `${serverUrl}/opds/download/${encodeURIComponent(calibreId)}/${encodeURIComponent(format)}/`;
 
-    const upstream = await fetch(downloadUrl, {
+    // Validates the URL and every redirect hop (LAN allowed: user-configured server)
+    const upstream = await safeFetchRaw(downloadUrl, {
+      allowPrivate: true,
       headers: calibreClient.opdsHeaders(row.config),
-      signal: AbortSignal.timeout(60000),
+      timeoutMs: 60000,
     });
 
     if (!upstream.ok) {
-      return res.status(upstream.status).json({ error: `Calibre returned ${upstream.status}` });
+      upstream.body?.cancel().catch(() => {});
+      return res.status(upstream.status >= 500 ? 502 : upstream.status).json({ error: 'Download failed' });
     }
 
     res.setHeader('Content-Type', upstream.headers.get('Content-Type') ?? 'application/octet-stream');
     const disposition = upstream.headers.get('Content-Disposition');
     if (disposition) res.setHeader('Content-Disposition', disposition);
-    else res.setHeader('Content-Disposition', `attachment; filename="book.${format}"`);
+    else res.setHeader('Content-Disposition', `attachment; filename="book.${format.replace(/[^A-Za-z0-9]/g, '')}"`);
 
     const reader = upstream.body.getReader();
     const pump = async () => {

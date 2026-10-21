@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { idParam } from '../lib/validate.js';
 
 const router = Router();
 
 // POST /api/sessions/:id/like
 router.post('/:id/like', async (req, res, next) => {
   try {
-    const sessionId = parseInt(req.params.id, 10);
-    if (!sessionId) return res.status(400).json({ error: 'Invalid session id' });
+    const sessionId = idParam(req.params.id);
 
     // Fetch session to get owner + book title for notification
     const { rows: [session] } = await pool.query(
@@ -45,8 +45,7 @@ router.post('/:id/like', async (req, res, next) => {
 // DELETE /api/sessions/:id/like
 router.delete('/:id/like', async (req, res, next) => {
   try {
-    const sessionId = parseInt(req.params.id, 10);
-    if (!sessionId) return res.status(400).json({ error: 'Invalid session id' });
+    const sessionId = idParam(req.params.id);
 
     await pool.query(
       `DELETE FROM session_likes WHERE user_id = $1 AND session_id = $2`,

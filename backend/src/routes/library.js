@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { getExternalBook, findBestMatch } from '../bookProviders.js';
+import {
+  idParam, optInt, optStr, reqStr, optStrArray, optHttpUrl, oneOf,
+} from '../lib/validate.js';
+
+const STATUSES = ['to_read', 'reading', 'done'];
 
 const router = Router();
 
@@ -34,12 +39,13 @@ const LIBRARY_SELECT = `
 // ── GET /api/library?shelfId=&status= ─────────────────────────────────────────
 router.get('/', async (req, res, next) => {
   try {
-    const { shelfId, status } = req.query;
+    const status = req.query.status === '' ? undefined : req.query.status;
+    const shelfId = req.query.shelfId === '' ? undefined : optInt(req.query.shelfId, 'shelfId', { min: 1, max: 2147483647 });
     const conditions = ['lb.user_id = $1'];
     const params = [req.user.id];
 
-    if (status) {
-      params.push(status);
+    if (status !== undefined) {
+      params.push(oneOf(status, 'status', STATUSES));
       conditions.push(`lb.status = $${params.length}`);
     }
 
@@ -87,9 +93,24 @@ router.get('/status', async (req, res, next) => {
 
 // ── POST /api/library ─────────────────────────────────────────────────────────
 // Body: { googleId?, openLibraryId?, appleId?, title, authors, coverUrl, ..., categories?, shelfId?, status? }
-router.post('/', async (req, res) => {
+router.post('/', async (req, res, next) => {
   let { googleId, openLibraryId, appleId, title, authors, coverUrl, pageCount, publishedDate,
-        description, categories, isbn13, isbn10, shelfId, status } = req.body;
+        description, categories, isbn13, isbn10, shelfId, status } = req.body ?? {};
+
+  googleId      = optStr(googleId,      'googleId',      { max: 200 });
+  openLibraryId = optStr(openLibraryId, 'openLibraryId', { max: 200 });
+  appleId       = optStr(appleId,       'appleId',       { max: 200 });
+  title         = optStr(title,         'title',         { max: 500 });
+  authors       = optStrArray(authors,  'authors',       { maxItems: 20, maxLen: 200 });
+  coverUrl      = optHttpUrl(coverUrl,  'coverUrl');
+  pageCount     = optInt(pageCount,     'pageCount',     { min: 1, max: 100000 });
+  publishedDate = optStr(publishedDate, 'publishedDate', { max: 50 });
+  description   = optStr(description,   'description',   { max: 20000, trim: false });
+  categories    = optStrArray(categories, 'categories',  { maxItems: 50, maxLen: 200 });
+  isbn13        = optStr(isbn13,        'isbn13',        { max: 20 });
+  isbn10        = optStr(isbn10,        'isbn10',        { max: 20 });
+  shelfId       = optInt(shelfId,       'shelfId',       { min: 1, max: 2147483647 });
+  status        = status === undefined ? undefined : oneOf(status, 'status', STATUSES);
 
   const source = googleId ? 'google' : openLibraryId ? 'openlibrary' : appleId ? 'apple' : null;
   const externalId = googleId ?? openLibraryId ?? appleId;
@@ -173,9 +194,8 @@ router.post('/', async (req, res) => {
     );
     res.status(201).json(full);
   } catch (err) {
-    await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
   } finally {
     client.release();
   }
@@ -184,12 +204,16 @@ router.post('/', async (req, res) => {
 // ── PATCH /api/library/:id — set status, notes, and/or progress ──────────────
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { status, notes, progress_page, progress_pct } = req.body;
+    const id = idParam(req.params.id);
+    const { status } = req.body ?? {};
+    const notes         = optStr(req.body?.notes, 'notes', { max: 10000, trim: false });
+    const progress_page = optInt(req.body?.progress_page, 'progress_page', { min: 0, max: 10000000 });
+    const progress_pct  = optInt(req.body?.progress_pct, 'progress_pct', { min: 0, max: 100 });
     const hasField = [status, notes, progress_page, progress_pct].some(v => v !== undefined);
     if (!hasField)
       return res.status(400).json({ error: 'At least one field required' });
 
-    if (status !== undefined && !['to_read', 'reading', 'done'].includes(status))
+    if (status !== undefined && !STATUSES.includes(status))
       return res.status(400).json({ error: 'Invalid status value' });
 
     const { rows } = await pool.query(
@@ -207,7 +231,7 @@ router.patch('/:id', async (req, res, next) => {
         status ?? null, notes !== undefined, notes ?? null,
         progress_page !== undefined, progress_page ?? null,
         progress_pct  !== undefined, progress_pct  ?? null,
-        req.params.id, req.user.id,
+        id, req.user.id,
       ]
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
@@ -224,28 +248,38 @@ router.patch('/:id', async (req, res, next) => {
 // ── PATCH /api/library/:id/metadata — update per-user overrides ───────────────
 router.patch('/:id/metadata', async (req, res, next) => {
   try {
+    const id = idParam(req.params.id);
+    const body = req.body ?? {};
+
+    // Validate everything up front, before touching the DB
+    const googleId      = optStr(body.googleId,      'googleId',      { max: 200 });
+    const openLibraryId = optStr(body.openLibraryId, 'openLibraryId', { max: 200 });
+    const appleId       = optStr(body.appleId,       'appleId',       { max: 200 });
+    const coverUrl      = optHttpUrl(body.coverUrl,  'coverUrl');
+    const categories    = optStrArray(body.categories, 'categories',  { maxItems: 50, maxLen: 200 });
+    const pageCount     = optInt(body.pageCount,     'pageCount',     { min: 1, max: 100000 });
+    const publishedDate = optStr(body.publishedDate, 'publishedDate', { max: 50 });
+    const description   = optStr(body.description,   'description',   { max: 20000, trim: false });
+    const title         = body.title === undefined ? undefined : reqStr(body.title, 'title', { max: 500 });
+    const authors       = optStrArray(body.authors,  'authors',       { maxItems: 20, maxLen: 200 });
+
     const { rows: [lb] } = await pool.query(
       `SELECT id, book_id FROM library_books WHERE id = $1 AND user_id = $2`,
-      [req.params.id, req.user.id]
+      [id, req.user.id]
     );
     if (!lb) return res.status(404).json({ error: 'Not found' });
-
-    const { googleId, openLibraryId, appleId, coverUrl, categories, pageCount, publishedDate, description, title, authors } = req.body;
 
     // Title and authors are written to the shared books record (no per-user override columns)
     if (title !== undefined || authors !== undefined) {
       const setParts = [];
       const vals = [];
-      if (title !== undefined && title.trim()) {
+      if (title !== undefined) {
         setParts.push(`title = $${vals.length + 1}`);
-        vals.push(title.trim());
+        vals.push(title);
       }
       if (authors !== undefined) {
-        const arr = Array.isArray(authors)
-          ? authors
-          : authors.split(',').map(a => a.trim()).filter(Boolean);
         setParts.push(`authors = $${vals.length + 1}`);
-        vals.push(arr);
+        vals.push(authors ?? []);
       }
       if (setParts.length) {
         vals.push(lb.book_id);
@@ -337,12 +371,13 @@ router.patch('/:id/metadata', async (req, res, next) => {
 // ── POST /api/library/:id/shelves  { shelfId } ───────────────────────────────
 router.post('/:id/shelves', async (req, res, next) => {
   try {
-    const { shelfId } = req.body;
+    const id = idParam(req.params.id);
+    const shelfId = optInt(req.body?.shelfId, 'shelfId', { min: 1, max: 2147483647 });
     if (!shelfId) return res.status(400).json({ error: 'shelfId is required' });
 
     const { rows: [lb] } = await pool.query(
       `SELECT id FROM library_books WHERE id = $1 AND user_id = $2`,
-      [req.params.id, req.user.id]
+      [id, req.user.id]
     );
     if (!lb) return res.status(404).json({ error: 'Not found' });
 
@@ -369,15 +404,17 @@ router.post('/:id/shelves', async (req, res, next) => {
 // ── DELETE /api/library/:id/shelves/:shelfId ──────────────────────────────────
 router.delete('/:id/shelves/:shelfId', async (req, res, next) => {
   try {
+    const id = idParam(req.params.id);
+    const shelfId = idParam(req.params.shelfId);
     const { rows: [lb] } = await pool.query(
       `SELECT id FROM library_books WHERE id = $1 AND user_id = $2`,
-      [req.params.id, req.user.id]
+      [id, req.user.id]
     );
     if (!lb) return res.status(404).json({ error: 'Not found' });
 
     await pool.query(
       `DELETE FROM shelf_memberships WHERE library_book_id = $1 AND shelf_id = $2`,
-      [lb.id, req.params.shelfId]
+      [lb.id, shelfId]
     );
     res.status(204).end();
   } catch (err) {
@@ -388,6 +425,7 @@ router.delete('/:id/shelves/:shelfId', async (req, res, next) => {
 // ── DELETE /api/library/:id ───────────────────────────────────────────────────
 router.delete('/:id', async (req, res, next) => {
   try {
+    const id = idParam(req.params.id);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -395,7 +433,7 @@ router.delete('/:id', async (req, res, next) => {
       // Fetch book_id before deleting so we can cascade to reading_sessions
       const { rows: [lb] } = await client.query(
         `DELETE FROM library_books WHERE id = $1 AND user_id = $2 RETURNING book_id`,
-        [req.params.id, req.user.id]
+        [id, req.user.id]
       );
       if (!lb) {
         await client.query('ROLLBACK');
@@ -474,8 +512,14 @@ router.get('/duplicates', async (req, res, next) => {
 // Merge two duplicate books: keep one, absorb/delete the other.
 // Body: { keepId, removeId }  (both are books.id values)
 router.post('/merge', async (req, res, next) => {
-  const { keepId, removeId } = req.body ?? {};
-  if (!keepId || !removeId || keepId === removeId) {
+  let keepId, removeId;
+  try {
+    keepId = idParam(req.body?.keepId);
+    removeId = idParam(req.body?.removeId);
+  } catch {
+    return res.status(400).json({ error: 'keepId and removeId are required and must differ' });
+  }
+  if (keepId === removeId) {
     return res.status(400).json({ error: 'keepId and removeId are required and must differ' });
   }
 

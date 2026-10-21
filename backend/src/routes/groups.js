@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { randomBytes } from 'crypto';
+import { idParam, reqStr, optStr } from '../lib/validate.js';
 
 const router = Router();
 
@@ -30,13 +31,13 @@ router.get('/', async (req, res, next) => {
 // POST /api/groups — create a group
 router.post('/', async (req, res, next) => {
   try {
-    const { name, description } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: 'Name required' });
+    const name = reqStr(req.body?.name, 'name', { max: 120 });
+    const description = optStr(req.body?.description, 'description', { max: 1000 });
     const inviteCode = randomBytes(4).toString('hex');
     const { rows: [g] } = await pool.query(
       `INSERT INTO reading_groups (name, description, invite_code, created_by)
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [name.trim(), description?.trim() || null, inviteCode, req.user.id]
+      [name, description || null, inviteCode, req.user.id]
     );
     await pool.query(
       `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'admin')`,
@@ -51,10 +52,10 @@ router.post('/', async (req, res, next) => {
 // POST /api/groups/join — join by invite code
 router.post('/join', async (req, res, next) => {
   try {
-    const { code } = req.body;
-    if (!code?.trim()) return res.status(400).json({ error: 'Invite code required' });
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!code || code.length > 64) return res.status(400).json({ error: 'Invite code required' });
     const { rows: [g] } = await pool.query(
-      `SELECT id FROM reading_groups WHERE invite_code = $1`, [code.trim()]
+      `SELECT id FROM reading_groups WHERE invite_code = $1`, [code]
     );
     if (!g) return res.status(404).json({ error: 'Invalid invite code' });
     await pool.query(
@@ -72,7 +73,7 @@ router.post('/:id/leave', async (req, res, next) => {
   try {
     await pool.query(
       'DELETE FROM group_members WHERE group_id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
+      [idParam(req.params.id), req.user.id]
     );
     res.status(204).end();
   } catch (err) {
@@ -83,10 +84,11 @@ router.post('/:id/leave', async (req, res, next) => {
 // GET /api/groups/:id/feed — recent sessions from group members
 router.get('/:id/feed', async (req, res, next) => {
   try {
+    const groupId = idParam(req.params.id);
     // Verify membership
     const { rows: [mem] } = await pool.query(
       'SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
+      [groupId, req.user.id]
     );
     if (!mem) return res.status(403).json({ error: 'Not a member' });
 
@@ -101,7 +103,7 @@ router.get('/:id/feed', async (req, res, next) => {
        WHERE (rs.review IS NOT NULL OR rs.rating IS NOT NULL)
        ORDER BY COALESCE(rs.finished_at, rs.created_at) DESC
        LIMIT 50`,
-      [req.params.id]
+      [groupId]
     );
     res.json(rows);
   } catch (err) {
