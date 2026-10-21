@@ -68,6 +68,28 @@ npm run dev
 # Open http://localhost:5173
 ```
 
+### Tests
+
+The backend has an integration test suite (`node --test` + `supertest`) that drives the real Express app over HTTP against a **real Postgres engine** - migrations, every route's SQL, visibility rules, notifications, encrypted integration configs, import/export, the cover proxy's SSRF guard. Outbound HTTP (book providers, reCAPTCHA, cover upstreams, Audiobookshelf/Calibre) is stubbed; no network is used.
+
+```bash
+cd backend
+npm install
+npm test            # ~25 s, no Docker or Postgres install needed (Node 22.3+; developed on Node 26)
+```
+
+By default the database is [PGlite](https://pglite.dev) (Postgres compiled to WASM, with `pg_trgm`) running in-process behind its wire-protocol socket server, so the app's real `pg` pool is exercised. Each test file gets a fresh in-memory database. Because PGlite is a single Postgres session, the harness sets `PG_POOL_MAX=1`; this means true multi-connection races (two simultaneous first registrations, the same invite redeemed twice) are serialised there. To run against a real server instead - recommended before releases - use Docker:
+
+```bash
+cd backend
+docker compose -f docker-compose.test.yml up -d      # postgres:16-alpine on localhost:5433
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5433/postgres npm test
+# PowerShell:  $env:TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5433/postgres'; npm test
+docker compose -f docker-compose.test.yml down
+```
+
+With `TEST_DATABASE_URL` set, every test file creates and drops its own database on that server (the role needs `CREATEDB` and the ability to `CREATE EXTENSION pg_trgm`), and the pool uses its normal size. Run a single file with `node --test --experimental-test-module-mocks test/library.test.js`.
+
 ## Environment variables
 
 | Variable | Default | Description |
@@ -81,6 +103,7 @@ npm run dev
 | `COVERS_MAX_MB` | _(unset)_ | Optional — cap the cover image cache size in MB; oldest files are pruned on startup and every 24h |
 | `REQUIRE_INVITE` | `false` | Set to `true` for invite-only registration: every account except the very first (the admin) must supply a valid, unused invite code |
 | `INTEGRATIONS_KEY` | _(unset)_ | Encrypts Audiobookshelf / Calibre-Web / Kobo credentials at rest (AES-256-GCM). A 32-byte key as hex or base64, or any passphrase. **Recommended.** Without it credentials are stored as plaintext and a warning is logged at boot |
+| `PG_POOL_MAX` | _(unset → 10)_ | Optional — maximum database connections in the API's pool (the test suite sets `1`) |
 | `INTEGRATION_ALLOWED_HOSTS` | _(unset)_ | Optional comma-separated hostnames (e.g. `calibre.lan,192.168.1.20`) that integrations may point at. **Recommended for multi-user instances**; when unset, any user can aim an integration at any LAN host |
 
 ### Registration and invites

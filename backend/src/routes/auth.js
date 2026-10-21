@@ -168,18 +168,22 @@ router.post('/register', loginLimiter, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    // Hand the connection back before createSession(), which takes its own one
+    // from the pool (holding both would deadlock a small pool)
+    client.release();
+    client = null;
 
     const { token, expiresAt } = await createSession(user.id);
     setSessionCookie(res, token, expiresAt);
     res.status(201).json({ id: user.id, username: user.username, isAdmin: user.is_admin, isPublic: user.is_public });
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client?.query('ROLLBACK').catch(() => {});
     if (err.code === '23505')
       return res.status(409).json({ error: 'Username already taken' });
     console.error(err);
     res.status(500).json({ error: 'Registration failed' });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 

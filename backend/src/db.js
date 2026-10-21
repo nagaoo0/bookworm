@@ -7,7 +7,12 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// PG_POOL_MAX caps the pool size (the test harness sets 1 for single-session
+// PGlite); unset keeps node-postgres' default of 10.
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: Number(process.env.PG_POOL_MAX) || undefined,
+});
 
 // An idle client erroring (DB restart, network drop) emits 'error' on the pool;
 // without a listener Node would treat it as uncaught and exit.

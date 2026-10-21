@@ -20,7 +20,7 @@ router.get('/export', async (req, res, next) => {
               COALESCE(lb.authors_override, b.authors) AS authors,
               b.isbn10, b.isbn13,
               b.publisher, b.published_date,
-              (SELECT json_agg(rs ORDER BY rs.created_at)
+              (SELECT json_agg(rs ORDER BY rs.created_at DESC) -- newest first: sessions[0] is the latest read
                FROM reading_sessions rs
                WHERE rs.book_id = b.id AND rs.user_id = $1) AS sessions,
               (SELECT string_agg(s.name, '|' ORDER BY s.name)
@@ -122,6 +122,7 @@ router.post('/import', async (req, res) => {
 
       try {
         await client.query('BEGIN');
+        let inserted = false;
 
         // Upsert book
         let bookId;
@@ -165,7 +166,7 @@ router.post('/import', async (req, res) => {
            RETURNING id, xmax`,
           [uid, bookId, status, note]
         );
-        if (lb.xmax === '0') imported++;  // xmax=0 means INSERT (not UPDATE)
+        inserted = lb.xmax === '0';  // xmax=0 means INSERT (not UPDATE)
 
         // Shelves: find-or-create each named shelf, then add membership
         for (const name of shelfNames) {
@@ -206,6 +207,8 @@ router.post('/import', async (req, res) => {
         }
 
         await client.query('COMMIT');
+        // Counted only once the row is really in: a rolled-back row is "skipped", never both
+        if (inserted) imported++;
       } catch (err) {
         await client.query('ROLLBACK').catch(async () => {
           // If ROLLBACK fails the connection is broken — replace it to avoid poisoned state

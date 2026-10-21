@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test --experimental-test-module-mocks --test-concurrency=4 --test-timeout=30000 \"test/**/*.test.js\""
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -18,5 +19,10 @@
     "node-fetch": "^3.3.2",
     "pg": "^8.11.5",
     "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite-socket": "^0.2.14",
+    "supertest": "^7.3.1"
   }
 }

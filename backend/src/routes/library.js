@@ -218,8 +218,9 @@ router.post('/', async (req, res, next) => {
 
     await client.query('COMMIT');
 
-    // Return full row with shelf_ids
-    const { rows: [full] } = await pool.query(
+    // Return full row with shelf_ids (on the same connection: taking a second
+    // one from the pool while holding this one can deadlock a small pool)
+    const { rows: [full] } = await client.query(
       `${LIBRARY_SELECT} WHERE lb.id = $1 GROUP BY lb.id, b.id`, [lb.id]
     );
     res.status(201).json(full);
