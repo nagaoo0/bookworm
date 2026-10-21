@@ -189,7 +189,7 @@ html {
   --font-display: 'Lora', Georgia, serif;
   --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  --bottom-bar-h: 3.75rem;
+  --bottom-bar-h: 4rem; /* spec §6.4: 64px + safe-area */
 }
 
 /* ── 2. Accent (per <html data-accent>, or any .accent-scope[data-accent]) ────
@@ -1379,7 +1379,8 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
   max-width: calc(100vw - 2rem);
 }
 .toast-live { display: contents; }
-@media (max-width: 639px) {
+/* < md: the bottom bar is visible (spec §6.4), so toasts and the bulk bar sit above it */
+@media (max-width: 767px) {
   #toast-container { bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + .75rem); }
   #bulk-bar        { bottom: calc(var(--bottom-bar-h) + 1.5rem); }
 }
@@ -1558,8 +1559,8 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 .bottom-bar__add:hover { background: var(--accent-hover); }
 .bottom-bar__add:active { transform: translateY(-10px) scale(.94); }
 
-/* Keep main content clear of the bottom bar */
-@media (max-width: 639px) {
+/* Keep main content clear of the bottom bar (< md, spec §6.1) */
+@media (max-width: 767px) {
   #main-content { padding-bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + 1rem); }
 }
 

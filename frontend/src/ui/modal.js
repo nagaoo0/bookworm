@@ -65,7 +65,10 @@ export function openModal(opts = {}) {
   document.body.appendChild(el);
   lockScroll();
   const untrap = trapFocus(panel);
-  el.querySelector('[data-autofocus]')?.focus();
+  // Initial focus: [data-autofocus] → first control in the body → first footer action → (trapFocus already
+  // focused the first focusable, i.e. the Close button) — so a form modal lands on its first field, not on Close.
+  const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  (el.querySelector('[data-autofocus]') ?? body.querySelector(FOCUSABLE) ?? el.querySelector(`.modal__footer ${FOCUSABLE}`))?.focus();
   panel.addEventListener('animationend', () => { panel.style.animation = 'none'; }, { once: true });
 
   let closed = false;

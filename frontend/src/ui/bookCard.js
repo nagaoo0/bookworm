@@ -63,12 +63,14 @@ export function bookCard(entry, { variant = 'grid', showStatus = false, selectab
   const hasMenu = !readOnly && !searchMode && !selectable && variant !== 'compact' && !!entry.id;
   const label = [title, authors && `by ${authors}`].filter(Boolean).join(' ') + (sMeta ? `, ${sMeta.label}` : '');
 
+  // Keyboard model (spec §5.14): the card is the tab stop (roving tabindex across the grid, see mountBookGrid);
+  // Enter opens, so the title link is not a second stop. The ⋯ / select controls are tabbable only on the active card.
   const titleEl = link
-    ? html`<h3 class="book-card__heading"><a class="book-card__title" href="${safeUrl(link)}">${title}</a></h3>`
+    ? html`<h3 class="book-card__heading"><a class="book-card__title" href="${safeUrl(link)}" tabindex="-1">${title}</a></h3>`
     : html`<h3 class="book-card__heading"><span class="book-card__title">${title}</span></h3>`;
 
   const menuBtn = hasMenu
-    ? iconButton({ icon: 'more-horizontal', label: `More options for ${title}`, variant: variant === 'list' ? 'ghost' : 'overlay', size: 'sm', cls: 'book-card__menu', attrs: 'data-book-menu aria-haspopup="menu"' })
+    ? iconButton({ icon: 'more-horizontal', label: `More options for ${title}`, variant: variant === 'list' ? 'ghost' : 'overlay', size: 'sm', cls: 'book-card__menu', attrs: 'data-book-menu aria-haspopup="menu" tabindex="-1"' })
     : '';
 
   const readingProgress = status === 'reading' && pct !== null && !readOnly;
@@ -91,7 +93,7 @@ export function bookCard(entry, { variant = 'grid', showStatus = false, selectab
         <div class="book-card__meta">${metaRow}</div>
         ${readingProgress ? progressBar({ value: pct, size: 'sm', label: `Progress for ${title}`, cls: 'mt-1' }) : ''}
       </div>
-      ${selectable ? checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select' }) : ''}
+      ${selectable ? checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select tabindex="-1"' }) : ''}
       ${menuBtn}
     </article>`;
   }
@@ -101,7 +103,7 @@ export function bookCard(entry, { variant = 'grid', showStatus = false, selectab
       ${cover({ url: entry.cover_url ?? entry.coverUrl, bookId, title, size: 'md' })}
       ${readingProgress && variant === 'grid' ? html`<div class="book-card__progress">${progressBar({ value: pct, size: 'sm', onCover: true, label: `Progress for ${title}` })}</div>` : ''}
       ${alsoRead && !selectable ? html`<span class="book-card__flag">${badge({ label: LABEL.youReadThis, variant: 'accent', icon: 'check' })}</span>` : ''}
-      ${selectable ? html`<span class="book-card__select">${checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select' })}</span>` : ''}
+      ${selectable ? html`<span class="book-card__select">${checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select tabindex="-1"' })}</span>` : ''}
       ${menuBtn}
     </div>
     <div class="book-card__body">
@@ -150,6 +152,8 @@ export function bookMenuItems(entry, { shelves = [] } = {}) {
  *
  * Interactions: click cover/body → open; Enter on a focused card → open; arrow keys move focus between cards;
  * ⋯ button, right-click, long-press (500 ms) or the context-menu key → the card Menu; selectable cards toggle on click.
+ * Keyboard: roving tabindex — per container only one card is a Tab stop (plus that card's ⋯ / checkbox);
+ * Arrow keys / Home / End move between cards, Tab leaves the grid. Survives re-renders (MutationObserver).
  *
  * @param {Element} root
  * @param {{ entries?: object[]|(() => object[]), getShelves?: () => object[],
@@ -281,9 +285,32 @@ export function mountBookGrid(root, opts = {}) {
     if (Math.hypot(t.clientX - pressStart.x, t.clientY - pressStart.y) > 10) cancelPress();
   };
 
+  // Roving tabindex: one tabbable card (and its own ⋯ / checkbox) per container.
+  const INNER = '[data-book-menu], [data-book-select]';
+  const setActive = (card) => {
+    const cards = [...card.parentElement.querySelectorAll(':scope > .book-card')];
+    for (const c of cards) {
+      const on = c === card;
+      c.tabIndex = on ? 0 : -1;
+      c.querySelectorAll(INNER).forEach((b) => { b.tabIndex = on ? 0 : -1; });
+    }
+  };
+  const initRoving = () => {
+    const parents = new Set([...root.querySelectorAll('.book-card')].map(c => c.parentElement));
+    for (const p of parents) {
+      const cards = [...p.querySelectorAll(':scope > .book-card')];
+      if (cards.length) setActive(cards.find(c => c.contains(document.activeElement)) ?? cards[0]);
+    }
+  };
+  const onFocusIn = (e) => { const card = cardOf(e.target); if (card) setActive(card); };
+  initRoving();
+  const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(initRoving) : null;
+  mo?.observe(root, { childList: true, subtree: true });
+
   root.addEventListener('click', onClick);
   root.addEventListener('change', onChange);
   root.addEventListener('keydown', onKeyDown);
+  root.addEventListener('focusin', onFocusIn);
   root.addEventListener('contextmenu', onContext);
   root.addEventListener('touchstart', onTouchStart, { passive: true });
   root.addEventListener('touchmove', onTouchMove, { passive: true });
@@ -291,9 +318,11 @@ export function mountBookGrid(root, opts = {}) {
   root.addEventListener('touchcancel', cancelPress);
   return () => {
     cancelPress();
+    mo?.disconnect();
     root.removeEventListener('click', onClick);
     root.removeEventListener('change', onChange);
     root.removeEventListener('keydown', onKeyDown);
+    root.removeEventListener('focusin', onFocusIn);
     root.removeEventListener('contextmenu', onContext);
     root.removeEventListener('touchstart', onTouchStart);
     root.removeEventListener('touchmove', onTouchMove);

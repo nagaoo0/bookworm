@@ -26,6 +26,8 @@ const off = mountBookGrid(container, { onStatus, onRemove });   // one delegated
 - `iconButton` requires `label` (throws under `vite dev`, falls back to the icon name in production).
 - Overlays register in `ui/overlay.js`; the router should call `closeAllOverlays()` before mounting a view
   (a `hashchange` safety net does it too).
+- BookCard keyboard model: one Tab stop per grid/list container (roving tabindex managed by `mountBookGrid`), arrows move,
+  Enter opens, Tab from the active card reaches its ⋯ button, Shift+F10 / context-menu key opens the Menu.
 - Theming: `data-theme` / `data-accent` on `<html>` (set by `prefs.js`); wrap another user's profile in
   `class="accent-scope" data-accent="…"` to scope their accent. Components use tokens only — no hard-coded colours.
 

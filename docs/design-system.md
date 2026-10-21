@@ -1018,3 +1018,50 @@ Global rule in `styles.css` stays: `@media (prefers-reduced-motion: reduce) { *,
 | Should "Reading" status follow the user's accent? | **No** — status colours stay semantic and fixed (reading amber, finished green, to-read neutral). | Consistent meaning across profiles with different accents. |
 | Trending section on Discover | **Dropped** for now (`GET /api/books/trending` not built; section omitted). | Avoids cross-user aggregation of reading data; can be added later restricted to public users. |
 | Mobile Settings layout | **List → section drill-down** (hash sub-routes), as specified above. | Matches `#settings/<section>` routing; simpler than an accordion. |
+
+---
+
+## 13. Implementer notes (foundation as built)
+
+Reviewed and approved at commit `c2c96a5` (+ review fixes). Everything below is binding for the screen rebuilds.
+
+**Imports.** One line per view: `import { html, raw } from '../utils.js'` and `import { … } from '../ui/index.js'` (re-exports every `ui/*` module). Theme helpers: `import { loadPrefs, savePrefs, THEMES, ACCENT_KEYS } from '../prefs.js'`. Nothing from `components/` in new code.
+
+**The calls every screen uses** (full signatures in the JSDoc of each `ui/*.js`):
+
+| Call | Notes |
+|---|---|
+| `button({ label, variant, size, icon, attrs })` · `iconButton({ icon, label, variant, size, badge })` · `setButtonLoading(el, bool)` | `label` on iconButton is the aria-label and is required (throws in dev). |
+| `field({ name, label, type, value, hint, error, icon })` · `select({ name, label, options, value })` · `switchRow({ label, checked })` · `checkbox({ label, checked })` · `setFieldError(el, msg\|null)` | Call **`mountFields(root)`** once per view: it wires switches (`change` event, `detail.checked`), the password eye, textarea counters, indeterminate boxes. |
+| `chipGroup({ name, items, value \| values, multi })` · `segmented({ name, items, value })` · `mountChipGroup(root, ({ name, value, values, active }) => …)` | Single-select is a radiogroup with arrow keys; `multi` is aria-pressed toggles. |
+| `badge({ label, variant })` · `statusBadge(key)` · `STATUS`, `STATUS_ORDER`, `statusLabel(key)` | Never spell a status label. Source badges: `badge({ label:'Google', variant:'outline' })`. |
+| `card({ content, padding, interactive, as, href })` | An interactive card must be `as:'a'` with `href` (a `div` gets `tabindex` but no Enter handling). |
+| `sectionHeader({ title, count, href, actions, dot, id })` | Pass your own `id` and wrap the section in `<section aria-labelledby="{id}">`. |
+| `emptyState({ icon, title, body, action, secondary, size })` · `EMPTY.*` from `copy.js` | Buttons without `href` need `attrs:'data-action="…"'` + delegation. |
+| `skeletonBookGrid(n)` · `skeletonList(n)` · `skeletonCard()` · `spinner({ size })` | Skeleton for page loads; spinner only inside buttons / inline refreshes. |
+| `cover({ url, bookId, title, size, zoomable })` · `mountCoverZoom(root)` · `avatar({ username, avatarUrl, size, ring })` | Broken images fall back automatically (document-level `error` listener). |
+| `bookCard(entry, { variant, showStatus, selectable, selected, readOnly, alsoRead, searchMode, footer })` · `mountBookGrid(root, { onOpen, onStatus, onShelfToggle, onRemove, onProgress, onFinish, onLogRead, onSelect, onMenu })` | One `mountBookGrid` per container, before or after rendering (it observes re-renders). `bookMenuItems(entry, { shelves })` if you need the ⋯ items elsewhere. |
+| `progressBar({ value, size, showValue, tone })` · `progressRing({ value, max, size, label, sublabel })` · `progressSlider({ value })` + `mountProgressSlider(root, onCommit)` | `progressBar` default size is `md` (8 px); use `size:'sm'` on covers/list rows. |
+| `stars({ value, size })` · `starInput({ name, value })` + `mountStarInput(root, onChange)` | |
+| `openModal({ title, content, footer, size, dismissible, onClose })` · `openSheet(opts)` · `openLightbox({ src, alt })` → `{ el, body, close, setBusy }` | Mark the first field `data-autofocus`; elements with `data-modal-close` close it. Footer: primary button **last** in the DOM (CSS flips it first on mobile). |
+| `openMenu({ trigger \| point, items, onSelect })` · `mountMenuTriggers(root, { selector, getItems, onSelect })` · `openPopover({ trigger, content, width })` | Item kinds: `item · radio · checkbox · separator · heading · submenu`. Submenus are inline accordions on every viewport; > 6 items on `< md` opens as a Sheet. |
+| `tabs({ id, items, value, variant })` · `tabPanel({ tabsId, value, active, content })` · `mountTabs(root, onChange)` | Hash-routed tabs: give items `href` and call `mountTabs` again after the view re-renders. |
+| `toast(msg, { type, action })` · `undoToast(msg, { onUndo, onCommit })` · `TOAST.*`, `ERROR.*` from `copy.js` | Undo toasts do not dismiss on body click (that would commit early). |
+| `mountConfirmInline(root, { onConfirm })` (triggers carry `data-confirm`, `data-confirm-verb`) · `confirmPopover({ trigger, question, verb, onConfirm })` | Use `confirmPopover` from inside Menus/Modals. |
+| `openCommandPalette({ initialQuery })` · `mountCommandPaletteShortcuts({ isEnabled })` | Shell only. |
+| `icon(name, { size, label })` · `uid(prefix)` · `delegate(root, type, selector, handler)` · `plural`, `timeAgo`, `formatDate` | `uid`/`plural`/`timeAgo` live in `ui/dom.js` / `ui/copy.js` (not `utils.js` as §5 said). |
+
+**Accepted deviations from §2–§5** (do not "fix" them): default theme `dark`; heading styles are classes (`.display .h1 .h2 .h3 .label`), never element selectors; the legacy alias block (`--color-bg`, `text-amber-*` compat, `.field-input`, `.shelf-chip`, `#bottom-nav`, `#mobile-fab` with their 640 px breakpoints) stays until migration step 8; submenus render as inline accordions on desktop too; `ConfirmInline` verb defaults to "Delete"; action toasts last 6 s; `progressBar` defaults to `md`; `mountChipGroup`'s callback receives one object; `openModal` has `top` (palette) and `data-autofocus`; palette rows are custom (not BookCard list rows); `icons.js` keeps the §4 ids where Lucide renamed them (`home`, `bar-chart-3`, `check-circle-2`, `alert-triangle`, …); `bookCard` additionally supports `searchMode`/`footer`, `mountBookGrid` adds `onProgress`/`onFinish`/`onLogRead`.
+
+**Rules for screen implementers**
+
+1. **No legacy classes or helpers in new code**: not `bg-bg`, `text-muted`, `text-amber-*`, `.field-input`, `.glass-card`, `.shelf-chip`, `.card-section`, `showToast`, `sourceBadgeHTML`, `confirm()`, `onclick=`. Grep gates in §12.2 apply to every rebuilt file.
+2. Colour only through tokens/utilities from §2.7 or component classes. Never a hex or a Tailwind palette class (`amber-500`, `stone-*`, `red-400`…).
+3. Interpolate component output directly into `html\`\`` (it returns `SafeHTML`); never `String(x)` or `escHtml` it first. `attrs` strings are trusted: build them from constants, never from user data.
+4. Every view: `mount(container, params, ctx)` renders, then calls the `mount*` helpers it needs **once** on the container and returns a cleanup that calls every returned cleanup. The router already calls `closeAllOverlays()` before each mount; do not keep modal/menu handles across routes.
+5. Behaviour is delegated on the view container (`delegate()` or `mount*`); re-renders must not re-bind.
+6. Profile accent: on the profile view's root element set `class="accent-scope" data-accent="{user.accent}"` (one of `ACCENT_KEYS`); every `--accent*` token and utility inside follows it. Never set `--color-amber-*` or `--accent` inline.
+7. Theme/accent/card-size changes go through `savePrefs({ theme })`; listen to `window` `bw:prefs` (`detail.resolvedTheme`) to re-read tokens (charts).
+8. BookCard keyboard model (as built): one tab stop per grid/list container, arrows move, Enter opens, Tab from a card reaches its ⋯ button, Shift+F10 / the context-menu key opens the Menu. Do not add extra tabbable controls inside cards; use the ⋯ Menu.
+9. Modal footers: primary action last in DOM; destructive confirms inside modals use `confirmPopover`, never a second modal.
+10. Sizes below `text-caption` (12 px) are forbidden outside `.bottom-bar__label`, `.icon-btn__badge` and cover placeholders — the components already handle those.
