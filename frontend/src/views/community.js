@@ -120,7 +120,10 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
     const users = (uRes.status === 'fulfilled' ? uRes.value : [])
       .filter(u => !viewer || (u.username !== viewer.username && !u.you_follow)).slice(0, 4);
     const today = localDayKey();
-    const challenge = (cRes.status === 'fulfilled' ? cRes.value : []).find(c => dayOf(c.end_date) >= today);
+    const all = cRes.status === 'fulfilled' ? cRes.value : [];
+    const running = all.find(c => dayOf(c.start_date) <= today && today <= dayOf(c.end_date));
+    const upcoming = running ? null : all.filter(c => dayOf(c.start_date) > today).sort((a, b) => dayOf(a.start_date).localeCompare(dayOf(b.start_date)))[0];
+    const challenge = running ?? upcoming;
     const groups = gRes.status === 'fulfilled' ? gRes.value : [];
 
     const cards = [];
@@ -136,9 +139,9 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
       const pct = goal > 0 ? Math.min(100, Math.round(((challenge.progress ?? 0) / goal) * 100)) : 0;
       cards.push(html`
         <section class="card card--sm" aria-labelledby="rail-challenge">
-          <p class="label mb-1">Active challenge</p>
+          <p class="label mb-1">${running ? 'Active challenge' : 'Upcoming challenge'}</p>
           <h2 class="h3 break-words" id="rail-challenge">${challenge.title}</h2>
-          <p class="mt-0.5 text-caption text-text-2">Until ${formatDate(dayDate(challenge.end_date))} · ${challenge.participant_count} joined</p>
+          <p class="mt-0.5 text-caption text-text-2">${running ? `Until ${formatDate(dayDate(challenge.end_date))}` : `Starts ${formatDate(dayDate(challenge.start_date))}`} · ${challenge.participant_count} joined</p>
           ${goal > 0 && challenge.joined ? html`<div class="mt-3">${progressBar({ value: pct, tone: pct >= 100 ? 'success' : 'accent', label: `Your progress in ${challenge.title}` })}<p class="mt-1 text-caption tabular-nums text-text-2">${challenge.progress ?? 0} of ${goal} done</p></div>` : ''}
           <div class="mt-3">${button({ label: challenge.joined ? 'View' : ACTION.join, variant: challenge.joined ? 'secondary' : 'primary', size: 'sm', attrs: 'data-action="goto-challenges"' })}</div>
         </section>`);
@@ -264,6 +267,7 @@ function peopleSection(panel, { viewer, isDisposed }) {
   }
 
   async function load() {
+    lbCache.clear();
     body.setAttribute('aria-busy', 'true');
     setHTML(body, html`<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${[1, 2, 3, 4, 5, 6].map(() => skeletonCard())}</div>`);
     try {
@@ -360,6 +364,7 @@ function challengesSection(panel, { isDisposed }) {
     : '');
   function hydrateStacks(list = challenges) {
     for (const c of list) {
+      if (isPast(c)) continue;
       fetchLb(c.id).then(({ leaderboard }) => {
         if (isDisposed()) return;
         const slot = body.querySelector(`[data-ch-stack="${Number(c.id)}"]`);
@@ -471,6 +476,7 @@ function challengesSection(panel, { isDisposed }) {
 
   // Refresh the list without a skeleton flash (after edits / book changes)
   async function refresh() {
+    lbCache.clear();
     try {
       const data = await api.getChallenges();
       if (isDisposed()) return;
@@ -479,12 +485,11 @@ function challengesSection(panel, { isDisposed }) {
     } catch { /* keep what is on screen */ }
   }
 
-  function replaceCard(c, focusSel) {
+  function replaceCard(c, focusSel, { stacks = true } = {}) {
     const node = body.querySelector(`[data-challenge-id="${Number(c.id)}"]`);
     if (!node) { render(); return; }
     node.outerHTML = String(cardHTML(c));
-    lbCache.delete(String(c.id));
-    hydrateStacks([c]);
+    if (stacks) { lbCache.delete(String(c.id)); hydrateStacks([c]); }
     if (focusSel) body.querySelector(`[data-challenge-id="${Number(c.id)}"] ${focusSel}`)?.focus();
   }
 
@@ -647,10 +652,10 @@ function challengesSection(panel, { isDisposed }) {
       joinBusy.add(c.id);
       c.joined = true;                                        // optimistic
       c.participant_count = (c.participant_count ?? 0) + 1;
-      replaceCard(c, '[data-ch-leave]');
+      replaceCard(c, '[data-ch-leave]', { stacks: false });   // the leaderboard is fetched once the join has landed
       try {
         await api.joinChallenge(c.id);
-        if (!isDisposed()) toast(TOAST.joined(c.title));
+        if (!isDisposed()) { toast(TOAST.joined(c.title)); lbCache.delete(String(c.id)); hydrateStacks([c]); }
       } catch {
         if (!isDisposed()) {
           c.joined = false;

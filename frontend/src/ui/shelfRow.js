@@ -88,8 +88,14 @@ export function mountShelfRows(root) {
 
   ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => rows.forEach((r) => r.update())) : null;
   scan();
-  const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(() => { scan(); rows.forEach((r) => r.update()); }) : null;
-  mo?.observe(root, { childList: true, subtree: true });
+  // Only structural changes matter (rows or cards added / removed); text/attribute ticks (SSE) are ignored and bursts coalesce to one frame.
+  let moRaf = 0;
+  const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver((list) => {
+    if (!list.some((m) => m.type === 'childList' && (m.addedNodes.length || m.removedNodes.length))) return;
+    cancelAnimationFrame(moRaf);
+    moRaf = requestAnimationFrame(() => { scan(); rows.forEach((r) => r.update()); });
+  }) : null;
+  mo?.observe(root, { childList: true, subtree: true });   // childList only: attribute/text changes are not observed
 
   const scrollRow = (row, dir) => {
     const track = trackOf(row);
@@ -106,6 +112,7 @@ export function mountShelfRows(root) {
 
   return () => {
     mo?.disconnect();
+    cancelAnimationFrame(moRaf);
     ro?.disconnect();
     rows.forEach((r) => r.off());
     rows.clear();

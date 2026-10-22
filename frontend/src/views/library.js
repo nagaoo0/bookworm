@@ -626,7 +626,16 @@ export function renderLibrary(el, params = {}) {
     return String(html`<div class="flex items-center gap-1.5 pt-1" data-teaser aria-hidden="true">${entries.slice(0, 5).map((b) => html`<span class="w-9 shrink-0">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, author: authorsOf(b)[0], size: 'xs' })}</span>`)}${entries.length > 5 ? html`<span class="ml-1 text-small tabular-nums text-text-3">+${entries.length - 5}</span>` : ''}</div>`);
   }
 
+  // Rebuild the teaser only when its first five covers (or the "+N" count) change
+  function setTeaser(rec, entries) {
+    const key = `${entries.slice(0, 5).map((b) => b.id).join(',')}|${entries.length > 5 ? entries.length : 0}`;
+    if (rec.teaserKey === key && rec.slot.querySelector('[data-teaser]')) return;
+    rec.teaserKey = key;
+    rec.slot.innerHTML = teaserHTML(entries);
+  }
+
   function mountGrid(rec) {
+    rec.teaserKey = null;
     rec.slot.innerHTML = '';
     const grid = document.createElement('div');
     grid.className = cx(S.layout === 'list' ? 'flex flex-col' : (rowGroup(rec.key) ? 'grid gap-4 lg:grid-cols-2' : 'book-grid'), S.animate && 'stagger');
@@ -685,7 +694,7 @@ export function renderLibrary(el, params = {}) {
       rec.slot = section.querySelector('[data-slot]');
       S.secs.set(rec.key, rec);
       if (!rec.collapsed) mountGrid(rec);
-      else rec.slot.innerHTML = teaserHTML(rec.entries);
+      else setTeaser(rec, rec.entries);
     });
     S.animate = false;
   }
@@ -716,7 +725,7 @@ export function renderLibrary(el, params = {}) {
     rec.entries = g.entries;
     const count = rec.section.querySelector('.section-header__title-row .badge');
     if (count) count.textContent = String(g.entries.length);
-    if (rec.collapsed) { rec.slot.innerHTML = teaserHTML(g.entries); return; }
+    if (rec.collapsed) { setTeaser(rec, g.entries); return; }
     if (!rec.gridEl) return;
     const n = Math.min(Math.max(rec.rendered, GRID_CHUNK), g.entries.length);
     const want = g.entries.slice(0, n);
@@ -758,7 +767,7 @@ export function renderLibrary(el, params = {}) {
       rec.io = null;
       rec.sentinel = null;
       rec.gridEl = null;
-      rec.slot.innerHTML = teaserHTML(rec.entries);
+      setTeaser(rec, rec.entries);
     } else {
       mountGrid(rec);
     }

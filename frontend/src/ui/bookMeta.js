@@ -34,7 +34,7 @@ export function authorsHero(authors, { cls = '' } = {}) {
   const a = formatAuthorsHero(authors);
   if (!a.text) return '';
   return html`<span class="${cls}"${a.title ? html` title="${a.title}"` : ''}>${a.text}${
-    a.extra > 0 ? html` <button type="button" class="text-small font-medium text-accent-text hover:underline" data-authors-more="${json(a.all)}" aria-haspopup="dialog" aria-label="Show all ${a.all.length} authors">+${a.extra} more</button>` : ''
+    a.extra > 0 ? html` <button type="button" class="text-small font-medium text-accent-text hover:underline" data-authors-more="${JSON.stringify(a.all)}" aria-haspopup="dialog" aria-label="Show all ${a.all.length} authors">+${a.extra} more</button>` : ''
   }</span>`;
 }
 

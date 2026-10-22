@@ -1,7 +1,7 @@
 // Story card (visual-v2 §3.15, §6.8): the Year-in-review "story" — 9:16, always dark whatever the theme, tinted by the user's
 // accent and by the ambient colour of their top book, with grain. Content: eyebrow, the year in Lora 96, @user, three stat
 // rows, the top three covers fanned, favourite author + top genre pills, and the wordmark.
-import { html } from '../utils.js';
+import { html, raw } from '../utils.js';
 import { avatar } from './avatar.js';
 import { cover } from './cover.js';
 import { LABEL } from './copy.js';
@@ -39,9 +39,9 @@ export function storyCard({ year, username, avatarUrl, stats = {}, topBooks = []
     <div class="story-card__user">${avatar({ username, avatarUrl, size: 32 })}<span>@${username}</span></div>
     <hr class="story-card__rule">
     <div class="story-card__stats">${statRows.map((s) => html`<div class="story-card__stat"><span class="story-card__stat-value">${s.value}</span><span class="story-card__stat-label">${s.label}</span></div>`)}</div>
-    ${top.length ? html`<div class="story-card__covers cover-fan cover-fan--${top.length}" data-ambient-source>${order.map((i) => {
+    ${top.length ? html`<div class="story-card__covers cover-fan cover-fan--${top.length}">${order.map((i) => {
       const b = top[i];
-      return html`<div>${cover({ url: b.cover_url ?? b.coverUrl, bookId: b.book_id ?? b.id, title: b.title, author: Array.isArray(b.authors) ? b.authors[0] : b.authors, size: 'md' })}</div>`;
+      return html`<div${i === 0 ? raw(' data-ambient-source') : ''}>${cover({ url: b.cover_url ?? b.coverUrl, bookId: b.book_id ?? b.id, title: b.title, author: Array.isArray(b.authors) ? b.authors[0] : b.authors, size: 'md' })}</div>`;
     })}</div>` : ''}
     ${(author || genre) ? html`<div class="story-card__pills">${
       author ? html`<span class="story-card__pill"><small>${LABEL.favouriteAuthor}</small><span>${author}</span></span>` : ''

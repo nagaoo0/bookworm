@@ -158,7 +158,6 @@ mountCommandPaletteShortcuts({ isEnabled: () => !!getState().user, open: openPal
 function openAddSheet() {
   const rows = [
     { icon: 'search', label: 'Search books', palette: true },
-    { icon: 'scan-line', label: 'Scan a barcode', href: '#discover?scan=1' },
     { icon: 'pencil', label: 'Add manually', href: '#discover?manual=1' },
     { icon: 'upload', label: 'Import a library file', href: '#settings/library-tools' },
   ];
@@ -507,7 +506,7 @@ function presentAuth({ next, mode } = {}) {
   updateNav(null, false);
   window.scrollTo(0, 0);
   const root = document.createElement('div');
-  root.classList.add('page-enter');
+  // no page-enter here: its transform would become the containing block of the auth screen's fixed overlay
   mainEl.replaceChildren(root);
   currentCleanup = renderAuth(root, {
     next, mode,
@@ -708,7 +707,9 @@ function announce(text) {
 function focusHeading(root) {
   stopHeadingWatch();
   const apply = (late) => {
-    const h1 = root.querySelector('h1');
+    // a view may carry one h1 per breakpoint (the other is display:none): focus the one that is rendered
+    const all = [...root.querySelectorAll('h1')];
+    const h1 = all.find((h) => h.getClientRects().length) ?? all[0];
     if (!h1) return false;
     const active = document.activeElement;
     const viewHasFocus = active && active !== document.body && root.contains(active);

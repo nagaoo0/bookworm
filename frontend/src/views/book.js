@@ -221,7 +221,7 @@ function createPage(el, data, user) {
       <section aria-label="Book details" class="mt-3 md:mt-6" data-slot="hero"></section>
       <div class="md:hidden mt-6" data-slot="tabs"></div>
       <div class="mt-6 md:mt-12 grid gap-8 md:gap-10 lg:grid-cols-1 lg:data-[aside=true]:grid-cols-[minmax(0,1fr)_var(--aside-w)]" data-layout data-aside="false">
-        <aside class="min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-[84px] lg:self-start" role="tabpanel" id="${tid}-panel-reading" aria-labelledby="${tid}-tab-reading" data-panel="reading" hidden><div data-slot="reading"></div></aside>
+        <aside class="min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-[84px] lg:self-start lg:max-h-[calc(100dvh-100px)] lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:thin]" role="tabpanel" id="${tid}-panel-reading" aria-labelledby="${tid}-tab-reading" data-panel="reading" hidden><div data-slot="reading"></div></aside>
         <div class="min-w-0 space-y-10 md:space-y-12 lg:col-start-1 lg:row-start-1">
           <div role="tabpanel" id="${tid}-panel-about" aria-labelledby="${tid}-tab-about" data-panel="about"><div data-slot="about"></div></div>
           <div role="tabpanel" id="${tid}-panel-community" aria-labelledby="${tid}-tab-community" data-panel="community"><div data-slot="community"></div></div>
@@ -477,14 +477,15 @@ function createPage(el, data, user) {
 
   function aboutHTML() {
     const v = view();
-    const desc = plainText(v.description);
+    const rendered = renderDescription(plainText(v.description));
+    const desc = String(rendered).trim() ? rendered : '';
     return html`
       <section aria-labelledby="${ids.about}">
         ${sectionHeader({ title: 'About', id: ids.about })}
         <div class="space-y-8">
           ${desc ? html`
             <div data-desc>
-              <div class="text-body text-text-1 break-words line-clamp-6 [&_p+p]:mt-3 [&_strong]:font-semibold" data-desc-text>${renderDescription(desc)}</div>
+              <div class="text-body text-text-1 break-words line-clamp-6 [&_p+p]:mt-3 [&_strong]:font-semibold" data-desc-text>${desc}</div>
               <button type="button" class="btn btn--ghost btn--sm -ml-2 mt-1" data-action="toggle-desc" aria-expanded="false" hidden><span class="btn__label">${ACTION.showMore}</span></button>
             </div>` : html`<p class="text-small text-text-3">No description available.</p>`}
           <div class="space-y-8" data-slot="avail"></div>

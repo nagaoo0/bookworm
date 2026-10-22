@@ -54,8 +54,8 @@ export function heroCard({ entry, others = [], ambient = true, eyebrow = 'Contin
         </div>
         <h2 class="hero-card__title">${href ? html`<a href="${href}">${title}</a>` : title}</h2>
         ${authors ? html`<p class="hero-card__author">${authors}</p>` : ''}
-        ${caption ? html`<p class="hero-card__meta">${caption}</p>` : ''}
-        <div class="hero-card__progress">${progressSlider({ value: pct, variant: 'hero', label: `Progress for ${title}` })}</div>
+        ${caption ? html`<p class="hero-card__meta" data-hero-meta${meta === undefined ? html` data-started="${started}"` : ''}>${caption}</p>` : ''}
+        <div class="hero-card__progress">${progressSlider({ value: pct, variant: 'hero', label: `Progress for ${title}` })}<span class="block mt-1 min-h-4 text-caption text-success opacity-0 transition-opacity duration-[var(--dur-base)]" data-saved role="status"></span></div>
         <div class="hero-card__actions">
           ${button({ label: ACTION.updateProgress, variant: 'primary', attrs: 'data-hero-action="update"' })}
           ${button({ label: ACTION.finish, variant: 'secondary', attrs: 'data-hero-action="finish"' })}
@@ -88,6 +88,14 @@ export function mountHeroCard(root, { entries, onProgress, onFinish, onUpdate, o
     const card = input.closest('[data-hero-card]');
     return card ? onProgress?.(entryOf(card), value) : undefined;
   });
+  // the "≈ X left" label follows the slider while it moves
+  const offInput = delegate(root, 'input', '.slider__input', (e, input) => {
+    const card = input.closest('[data-hero-card]');
+    const meta = card?.querySelector('[data-hero-meta][data-started]');
+    if (!meta) return;
+    const eta = etaLabel({ ...entryOf(card), progress_pct: Number(input.value), status: 'reading' });
+    meta.textContent = [meta.dataset.started, eta].filter(Boolean).join(' · ');
+  });
   const offClick = delegate(root, 'click', '[data-hero-action]', (e, btn) => {
     const entry = entryOf(btn);
     const action = btn.dataset.heroAction;
@@ -96,5 +104,5 @@ export function mountHeroCard(root, { entries, onProgress, onFinish, onUpdate, o
     else if (action === 'menu') onMenu?.(entry, btn);
     else if (action === 'also-update') onAlsoUpdate?.(entry);
   });
-  return () => { offAmbient(); offSlider(); offClick(); };
+  return () => { offAmbient(); offSlider(); offInput(); offClick(); };
 }

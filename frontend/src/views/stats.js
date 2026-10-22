@@ -527,6 +527,7 @@ function yearBodyHTML({ stats, feed, person, year, headingLevel, shareUrl, own }
   const author = stats.favoriteAuthorByYear?.[year] ?? null;
   const topGenre = genresForYear(stats, year).find(g => !g.other)?.name ?? null;
   const audioBooks = stats.absSessionsByYear?.[year] ?? 0;
+  const audioHours = stats.absMinutesByYear?.[year] ? Math.round(stats.absMinutesByYear[year] / 60) : null;
   const monthly = MONTHS.map((_, i) => stats.monthly?.[year]?.[i + 1] ?? 0);
   const maxMonth = Math.max(0, ...monthly);
   const peak = maxMonth > 0 ? MONTHS[monthly.indexOf(maxMonth)] : null;
@@ -540,12 +541,16 @@ function yearBodyHTML({ stats, feed, person, year, headingLevel, shareUrl, own }
   const heading = headingLevel === 1 ? 'h1' : 'h2';
 
   if (!hasAny) {
-    return html`<div class="rounded-[24px] bg-surface-2 p-5 md:p-10">${emptyState({ icon: 'calendar', title: `Nothing finished in ${year}`, body: own ? 'Finish a book to start your year in review.' : 'No finished books for this year yet.', size: 'sm' })}</div>`;
+    return html`<div class="space-y-6">
+      ${raw(`<${heading} class="h2">`)}${NAV.yearInReview} ${year}${raw(`</${heading}>`)}
+      <p class="text-small text-text-2 -mt-4">@${person.username}</p>
+      <div class="rounded-[24px] bg-surface-2 p-5 md:p-10">${emptyState({ icon: 'calendar', title: `Nothing finished in ${year}`, body: own ? 'Finish a book to start your year in review.' : 'No finished books for this year yet.', size: 'sm' })}</div></div>`;
   }
 
   const story = storyCard({
     year, username: person.username, avatarUrl: person.avatarUrl,
     stats: { finished, pages, avgRating: stats.avgRating },
+    accent: person.accent,
     topBooks: top, favouriteAuthor: author ?? undefined, topGenre: topGenre ?? undefined,
   });
 
@@ -566,6 +571,12 @@ function yearBodyHTML({ stats, feed, person, year, headingLevel, shareUrl, own }
 
       <div class="min-w-0 space-y-8">
         ${raw(`<${heading} class="h2">`)}${NAV.yearInReview} ${year}${raw(`</${heading}>`)}
+
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+          ${statCard({ label: 'Finished all time', value: stats.totalBooks ?? 0, size: 'sm' })}
+          ${audioBooks > 0 ? statCard({ label: LABEL.audiobooks, value: audioBooks, hint: `finished in ${year}`, size: 'sm' }) : ''}
+          ${audioHours ? statCard({ label: LABEL.hoursListened, value: `${audioHours} h`, size: 'sm' }) : ''}
+        </div>
 
         <section aria-labelledby="${barsId}">
           <div class="flex items-center justify-between gap-3 mb-3">
@@ -806,7 +817,7 @@ export function renderYearInReview(el, { username, year } = {}) {
       inner = mountYearReview(wrap, {
         stats: data.stats ?? {},
         feed: data.feed ?? [],
-        person: { username: data.username, avatarUrl: data.avatarUrl },
+        person: { username: data.username, avatarUrl: data.avatarUrl, accent: ACCENT_KEYS.includes(data.accent) ? data.accent : undefined },
         year,
         basePath: `#u/${encodeURIComponent(data.username)}/year/`,
         headingLevel: 1,

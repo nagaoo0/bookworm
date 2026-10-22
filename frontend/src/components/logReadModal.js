@@ -31,7 +31,7 @@ export function dayKey(value) {
   return Number.isNaN(d.getTime()) ? '' : localDayKey(d);
 }
 
-export function openLogReadModal(book, onSaved) {
+export function openLogReadModal(book, onSaved, { onClosed } = {}) {
   const session = book?.session ?? null;
   const editing = !!session;
   const today = localDayKey();
@@ -61,7 +61,7 @@ export function openLogReadModal(book, onSaved) {
     header: 'ambient',
     content,
     footer,
-    onClose: () => offs.forEach(off => off()),
+    onClose: () => { offs.forEach(off => off()); onClosed?.(); },
   });
   offs.push(mountFields(modal.body), mountStarInput(modal.body));
 

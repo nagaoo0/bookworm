@@ -321,8 +321,7 @@ html {
   --ambient-h: 35;
   --ambient-s: 40%;
 
-  /* chart palette (theme-independent part) */
-  --chart-1: var(--accent);
+  /* chart palette (theme-independent part; --chart-1 follows the accent, see the derived block below) */
   --chart-grid: var(--border-1);
   --chart-text: var(--text-2);
 }
@@ -356,6 +355,7 @@ html[data-accent],
 .accent-scope[data-accent] {
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   --focus-ring: var(--accent-text);
+  --chart-1: var(--accent);
 }
 
 /* ── 3. Tailwind bindings ─────────────────────────────────────────────────────

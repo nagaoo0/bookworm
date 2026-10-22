@@ -6,7 +6,13 @@
 // in which case extraction yields null and a hash-derived hue is used instead. Nothing here blocks rendering.
 import { coverProxySrc } from '../utils.js';
 
-const cache = new Map();                    // id → { h, s }
+const cache = new Map();                    // id → { h, s }, LRU-ish, bounded
+const CACHE_MAX = 300;
+function cacheSet(key, v) {
+  cache.delete(key);
+  cache.set(key, v);
+  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+}
 const STORE_KEY = 'bw_ambient:v1';          // one localStorage entry: { [id]: [h, s] }, insertion-ordered
 const STORE_MAX = 150;                      // bounded: oldest entries are evicted first
 const WAIT_MS = 3500;                       // how long to wait for an <img> before settling for the hash hue
@@ -95,9 +101,9 @@ export function extractAmbient(img) {
 export function peekAmbient(id) {
   if (id === undefined || id === null || id === '') return null;
   const key = String(id);
-  if (cache.has(key)) return cache.get(key);
+  if (cache.has(key)) { const c = cache.get(key); cacheSet(key, c); return c; }
   const v = asValue(loadStore()[key]);
-  if (v) cache.set(key, v);
+  if (v) cacheSet(key, v);
   return v;
 }
 
@@ -138,12 +144,12 @@ export async function ambientFor({ bookId, img, url, seed } = {}) {
     let source = img ?? null;
     if (!source && url && bookId) {
       const src = coverProxySrc(url, bookId);
-      if (src && src.startsWith('/')) source = await loadImage(src);     // same-origin only, never a tainting URL
+      if (src && /^\/(?!\/)/.test(src)) source = await loadImage(src);     // same-origin only, never a tainting URL
     }
     if (source && await whenLoaded(source)) v = extractAmbient(source);
   } catch { v = null; }
   if (v) {
-    if (key !== null) { cache.set(key, v); remember(key, v); }
+    if (key !== null) { cacheSet(key, v); remember(key, v); }
     return v;
   }
   return fallback();

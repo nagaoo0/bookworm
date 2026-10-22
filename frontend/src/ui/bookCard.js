@@ -135,7 +135,7 @@ export function bookCard(entry, { variant = 'grid', size = 'md', showStatus = fa
 
   // built-in Discover controls: the split "Add" button, or "In library" + Open
   const addControls = (!searchMode || footer) ? '' : (owned
-    ? html`<div class="book-card__add book-card__add--owned">${badge({ label: LABEL.inLibrary, variant: 'success', icon: 'check' })}${button({ label: ACTION.open, variant: 'ghost', size: 'sm', attrs: `data-book-open aria-label="Open ${escAttr(title)}" tabindex="-1"` })}</div>`
+    ? html`<div class="book-card__add book-card__add--owned">${badge({ label: LABEL.inLibrary, variant: 'success', icon: 'check' })}${button({ label: ACTION.open, variant: 'ghost', size: 'sm', attrs: `data-book-open aria-label="Open ${escAttr(title)}" tabindex="-1"` })}${button({ label: ACTION.logAnotherRead, variant: 'ghost', size: 'sm', attrs: `data-book-action="log" aria-label="Log another read of ${escAttr(title)}" tabindex="-1"` })}</div>`
     : html`<div class="book-card__add"><div class="btn-split">${
       button({ label: ACTION.add, variant: 'secondary', size: 'sm', attrs: `data-book-add="to_read" aria-label="Add ${escAttr(title)} to your library" tabindex="-1"` })
     }<button type="button" class="btn-split__toggle" data-book-add-menu aria-haspopup="menu" aria-label="More ways to add ${escAttr(title)}" tabindex="-1">${icon('chevron-down', { size: 16 })}</button></div></div>`);
@@ -157,17 +157,17 @@ export function bookCard(entry, { variant = 'grid', size = 'md', showStatus = fa
   if (variant === 'row') {
     const p = Math.round(Number(pct) || 0);
     return html`<article class="${klass}" tabindex="0" aria-label="${label}" ${dataAttrs}>
-      <div class="book-card__cover">${cover({ url: coverUrl, bookId, title, author: firstAuthor, size: 'md' })}</div>
+      <div class="book-card__cover">${cover({ url: coverUrl, bookId, title, author: firstAuthor, size: 'md' })}${selectable ? html`<span class="book-card__select">${checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select tabindex="-1"' })}</span>` : ''}</div>
       <div class="book-card__body">
         ${titleEl}
         ${authors ? html`<p class="book-card__authors"${authorsFull ? html` title="${authorsFull}"` : ''}>${authors}</p>` : ''}
         ${status === 'reading' ? html`<div class="book-card__row-progress">${progressBar({ value: p, label: `Progress for ${title}` })}<span class="book-card__row-pct">${p}%</span></div>` : (statusEl ? html`<div class="book-card__meta">${statusEl}</div>` : '')}
         ${eta ? html`<p class="book-card__eta">${eta}</p>` : ''}
-        ${(status === 'reading' && !readOnly) ? html`<div class="book-card__row-actions">${
+        ${(status === 'reading' && !readOnly && !selectable) ? html`<div class="book-card__row-actions">${
           button({ label: 'Update', variant: 'ghost', size: 'sm', attrs: `data-book-action="progress" aria-label="Update progress for ${escAttr(title)}" tabindex="-1"` })
         }${button({ label: ACTION.finish, variant: 'secondary', size: 'sm', attrs: `data-book-action="finish" aria-label="Mark ${escAttr(title)} as finished" tabindex="-1"` })}</div>` : ''}
       </div>
-      ${menuBtn}
+      ${selectable ? '' : menuBtn}
     </article>`;
   }
 
@@ -320,6 +320,7 @@ export function mountBookGrid(root, opts = {}) {
       const entry = entryOf(card);
       if (actionBtn.dataset.bookAction === 'finish') onFinish?.(entry);
       else if (actionBtn.dataset.bookAction === 'progress') onProgress?.(entry);
+      else if (actionBtn.dataset.bookAction === 'log') onLogRead?.(entry, card);
       return;
     }
     const openBtn = t.closest('[data-book-open]');

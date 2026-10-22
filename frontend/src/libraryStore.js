@@ -13,7 +13,7 @@ let _resetPending = false;
 export function resetLibraryStore() {
   _libraryLoadSeq++;
   _resetPending = true;
-  setState({ shelves: [], library: [], libraryLoaded: false, loading: false, error: null });
+  setState({ shelves: [], library: [], libraryLoaded: false, loading: false, error: null, monthlyByYear: {} });
 }
 
 export async function loadLibrary() {
@@ -23,7 +23,7 @@ export async function loadLibrary() {
   try {
     const [shelves, library] = await Promise.all([api.getShelves(), api.getLibrary()]);
     if (seq !== _libraryLoadSeq) return; // a newer load is in flight and wins
-    setState({ shelves, library, loading: false, error: null, libraryLoaded: true });
+    setState({ shelves, library, loading: false, error: null, libraryLoaded: true, monthlyByYear: {} });
   } catch (err) {
     if (seq !== _libraryLoadSeq) return;
     if (getState().libraryLoaded) showToast(`Couldn't refresh your library: ${err.message}`, 'error');
@@ -38,12 +38,13 @@ export function upsertLibraryEntry(entry) {
   const lib = getState().library ?? [];
   const i = lib.findIndex(b => String(b.id) === String(entry.id));
   const next = i === -1 ? [entry, ...lib] : lib.map((b, j) => (j === i ? entry : b));
-  setState({ library: next });
+  const statusChanged = i === -1 || lib[i].status !== entry.status;
+  setState(statusChanged ? { library: next, monthlyByYear: {} } : { library: next });
 }
 
 // Remove library entries locally by library-entry id.
 export function removeLibraryEntries(ids) {
   if (_resetPending) return;
   const drop = new Set(ids.map(String));
-  setState({ library: (getState().library ?? []).filter(b => !drop.has(String(b.id))) });
+  setState({ library: (getState().library ?? []).filter(b => !drop.has(String(b.id))), monthlyByYear: {} });
 }

@@ -16,7 +16,7 @@ import {
 } from '../ui/index.js';
 import { feedCardHTML, mountFeedCards } from './feedCard.js';
 import {
-  bookActionHandlers, commitProgress, dispatchBookMenu, findLibraryEntry, finishBook, onboardingHTML, setSliderValue,
+  bookActionHandlers, commitProgress, dispatchBookMenu, findLibraryEntry, finishBook, flashSaved, onboardingHTML, setSliderValue,
 } from './library.js';
 
 // The shared loader lives in libraryStore.js; other modules may still import it from here during the transition.
@@ -241,13 +241,20 @@ export function renderHome(el) {
     }
     paintGoal();
     paintSummary();
-    // Monthly finishes for the sparkline: decorative, so a failure just leaves it out
+    // Monthly finishes for the sparkline: decorative, so a failure just leaves it out. Only fetched when a goal exists,
+    // cached for the session (libraryStore clears it when the library changes), and the series stops at the current month.
+    if (!H.goal.data?.target) return;
     try {
-      const stats = await api.getStats();
-      if (H.disposed) return;
-      const byMonth = stats?.monthly?.[year] ?? {};
-      const last = Math.max(8, new Date().getMonth() + 1);
-      H.spark = Array.from({ length: last }, (_, i) => Number(byMonth[i + 1]) || 0);
+      let series = getState().monthlyByYear?.[year];
+      if (!series) {
+        const stats = await api.getStats();
+        if (H.disposed) return;
+        const byMonth = stats?.monthly?.[year] ?? {};
+        const last = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
+        series = Array.from({ length: last }, (_, i) => Number(byMonth[i + 1]) || 0);
+        setState({ monthlyByYear: { ...getState().monthlyByYear, [year]: series } });
+      }
+      H.spark = series;
       if (H.goal.state === 'ok') paintGoal();
     } catch { /* no sparkline */ }
   }
@@ -398,6 +405,9 @@ export function renderHome(el) {
       if (!ok) {
         const input = q('reading').querySelector('[data-hero-card] .slider__input');
         if (input) setSliderValue(input, before);
+      } else {
+        const card = [...q('reading').querySelectorAll('[data-hero-card]')].find((c) => c.dataset.libId === String(entry.id));
+        if (card) flashSaved(card.querySelector('.hero-card__progress') ?? card);
       }
       return ok;
     },

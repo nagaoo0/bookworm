@@ -18,6 +18,7 @@ let _state = {
   searchResults: [],
   searchQuery: '',
   stats: null,
+  monthlyByYear: {},      // session cache of finished-per-month series keyed by year (Home goal sparkline); libraryStore.js clears it
   modal: null,
   selectedShelfId: null,
   loading: false,

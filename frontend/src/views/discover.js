@@ -350,13 +350,22 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   }
 
   // ── Adding books ───────────────────────────────────────────────────────────
-  function afterAdd(row, title, status) {
+  function afterAdd(row, title, status, b) {
     upsertLibraryEntry(row);
     if (disposed) return;   // the book is saved either way; don't toast or open a modal over another page
     toast(TOAST.addedTo(statusLabel(status)), {
       action: { label: ACTION.view, onClick: () => { location.hash = `#book/${row.book_id}`; } },
     });
-    if (status === 'done') openLogReadModal({ id: row.book_id, title: row.title ?? title }, () => loadLibrary());
+    if (status === 'done') {
+      // the card is swapped for its "In library" version, so the opener is gone: put focus on the new card's control
+      const refocus = () => {
+        if (disposed) return;
+        const i = b ? shown.indexOf(b) : -1;
+        const c = i >= 0 ? resultsEl.querySelector(`.book-card[data-result-index="${i}"]`) : null;
+        (c?.querySelector('[data-book-open]') ?? c)?.focus();
+      };
+      openLogReadModal({ id: row.book_id, title: row.title ?? title }, () => loadLibrary(), { onClosed: refocus });
+    }
   }
 
   async function addResult(b, target, cardEl) {
@@ -385,7 +394,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
       return;
     }
     adding.delete(b);
-    afterAdd(row, b.title, status);       // updates the store → refreshCards swaps this card to "In library"
+    afterAdd(row, b.title, status, b);       // updates the store → refreshCards swaps this card to "In library"
     if (!disposed) refreshCards();
   }
 
@@ -528,6 +537,10 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   cleanups.push(mountBookGrid(resultsEl, {
     entries: () => shown,
     onOpen: openFromCard,
+    onLogRead: (entry) => {
+      const own = ownedEntry(entry);
+      if (own?.book_id) openLogReadModal({ id: own.book_id, title: own.title, startedAt: own.started_reading_at }, () => loadLibrary());
+    },
     onAdd: (entry, target, cardEl) => { addResult(entry, target, cardEl); },
   }));
   cleanups.push(mountBookGrid(forYouEl, { onOpen: openFromCard }));

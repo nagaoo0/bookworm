@@ -174,7 +174,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   function sectionBodyHTML(key) {
     const def = sections.get(key);
     if (def.shelf) {
-      return shelfRow({ label: def.title, items: def.books.map(b => bookCard(b, { variant: 'compact', readOnly: true, alsoRead: def.alsoRead && alsoReadOf(b) })) });
+      return shelfRow({ label: def.title, size: 'sm', items: def.books.map(b => bookCard(b, { variant: 'compact', size: 'sm', readOnly: true, alsoRead: def.alsoRead && alsoReadOf(b) })) });
     }
     const open = expanded.has(key);
     const shown = open ? def.books : def.books.slice(0, SECTION_CAP);
