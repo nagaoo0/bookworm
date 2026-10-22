@@ -48,7 +48,7 @@ export function renderSettings(el, { section } = {}) {
     const def = visible.find(s => s.id === current);
 
     el.innerHTML = String(html`
-      <div class="max-w-[1120px] mx-auto space-y-6">
+      <div class="space-y-6">
         <h1 class="h1${def ? ' sr-only md:not-sr-only' : ''}">Settings</h1>
         <div class="md:grid md:grid-cols-[240px_minmax(0,1fr)] md:gap-10">
           <nav aria-label="Settings sections" class="${def ? 'hidden md:block' : ''} md:sticky md:top-20 md:self-start">

@@ -615,7 +615,7 @@ export function renderLibrary(el, params = {}) {
     return html`<section aria-labelledby="${headingId}" data-group="${g.key}" class="mb-10">
       ${sectionHeader({
         title, count: g.entries.length, dot, id: headingId,
-        actions: grouped ? iconButton({ icon: collapsed ? 'chevron-down' : 'chevron-up', label: `${collapsed ? 'Expand' : 'Collapse'} ${title}`, size: 'sm', cls: '!bg-transparent !text-text-2 hover:!bg-surface-2', attrs: `data-collapse="${g.key}" aria-expanded="${!collapsed}"` }) : undefined,
+        actions: grouped ? iconButton({ icon: collapsed ? 'chevron-down' : 'chevron-up', label: `${collapsed ? 'Expand' : 'Collapse'} ${title}`, size: 'sm', cls: 'bg-transparent text-text-2 hover:bg-surface-2', attrs: `data-collapse="${g.key}" aria-expanded="${!collapsed}"` }) : undefined,
       })}
       <div data-slot></div>
     </section>`;
@@ -785,7 +785,7 @@ export function renderLibrary(el, params = {}) {
               <h1 class="h1" data-focus-target>Library</h1>
               <p class="text-small text-text-3" data-region="count"></p>
             </div>
-            <div class="lg:hidden"><button type="button" class="btn btn--secondary btn--sm" data-action="filters" aria-haspopup="dialog"><span class="btn__icon">${icon('filter', { size: 16 })}</span><span class="btn__label">Filters</span><span data-filter-badge></span></button></div>
+            <div><button type="button" class="btn btn--secondary btn--sm lg:hidden" data-action="filters" aria-haspopup="dialog"><span class="btn__icon">${icon('filter', { size: 16 })}</span><span class="btn__label">Filters</span><span data-filter-badge></span></button></div>
           </div>
           <div class="flex flex-wrap items-center gap-2 md:flex-nowrap">
             <div class="min-w-full flex-1 md:min-w-0">

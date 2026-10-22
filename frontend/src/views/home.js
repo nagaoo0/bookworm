@@ -82,7 +82,7 @@ export function renderHome(el) {
           <h1 class="h1 mt-1" data-focus-target>${greeting(user)}</h1>
           <p class="text-small text-text-2" data-region="summary"></p>
         </div>
-        <div class="hidden md:block">${button({ label: 'Add a book', icon: 'plus', variant: 'secondary', attrs: 'data-action="add-book" data-region="add-btn"' })}</div>
+        ${button({ label: 'Add a book', icon: 'plus', variant: 'secondary', cls: 'hidden md:inline-flex', attrs: 'data-action="add-book" data-region="add-btn"' })}
       </header>
       <div data-region="gate"></div>
       <div class="space-y-8 md:space-y-10" data-region="dash" hidden>

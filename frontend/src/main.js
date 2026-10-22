@@ -34,7 +34,7 @@ document.getElementById('app').innerHTML = String(html`
   <div class="flex min-h-screen flex-col">
     <button type="button" data-shell="skip" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[var(--z-toast)] focus:rounded-md focus:bg-surface-1 focus:px-4 focus:py-2 focus:text-small focus:text-text-1 focus:shadow-2">Skip to content</button>
     <header id="app-header" class="glass-header sticky top-0 z-[var(--z-sticky)] pt-[env(safe-area-inset-top,0px)]" hidden></header>
-    <main id="main-content" tabindex="-1" class="mx-auto w-full max-w-7xl flex-1 px-4 py-5 outline-none md:px-6 md:py-8" data-focus-target></main>
+    <main id="main-content" tabindex="-1" class="w-full flex-1 py-5 outline-none md:py-8" data-focus-target></main>
     <div id="bottom-bar-slot"></div>
     <div id="route-announcer" class="sr-only" role="status" aria-live="polite"></div>
   </div>`);
@@ -66,7 +66,7 @@ function logoHtml() {
 
 function appHeaderHtml(user) {
   const unread = getState().unreadCount;
-  return html`<div class="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 md:h-[60px] md:px-6">
+  return html`<div class="page flex h-14 items-center gap-2 md:h-[60px]">
     ${logoHtml()}
     <div class="ml-4 hidden md:block">
       <nav aria-label="Primary" class="nav">
@@ -91,7 +91,7 @@ function appHeaderHtml(user) {
 
 function publicHeaderHtml() {
   const cur = THEMES.find(t => t.value === loadPrefs().theme) ?? THEMES[0];
-  return html`<div class="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 md:h-[60px] md:px-6">
+  return html`<div class="page flex h-14 items-center gap-2 md:h-[60px]">
     ${logoHtml()}
     <div class="ml-auto flex items-center gap-2">
       ${iconButton({ icon: cur.icon, label: `Theme: ${cur.label}`, size: 'header', attrs: 'data-shell="theme" aria-haspopup="menu"' })}
@@ -559,9 +559,9 @@ const COMMUNITY_TABS = new Set(['feed', 'people', 'challenges', 'groups']);
 const SETTINGS_SECTIONS = new Set(['profile', 'account', 'appearance', 'reading', 'integrations', 'library-tools', 'admin']);
 
 const WIDTH_CLASS = {
-  wide: '',
-  reading: 'mx-auto w-full max-w-3xl',
-  form: 'mx-auto w-full max-w-5xl',
+  wide: 'page',
+  reading: 'page page--reading',
+  form: 'page page--reading',
 };
 
 const ROUTES = [
@@ -777,7 +777,7 @@ async function navigate() {
   // render is in flight, the stale render keeps writing into a detached element and cannot
   // overwrite the new view.
   const root = document.createElement('div');
-  root.className = WIDTH_CLASS[route.width] ?? '';
+  root.className = WIDTH_CLASS[route.width] ?? 'page';
   root.classList.add('page-enter');
   root.addEventListener('animationend', (e) => { if (e.target === root) root.classList.remove('page-enter'); });
   mainEl.replaceChildren(root);

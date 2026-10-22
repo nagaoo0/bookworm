@@ -215,8 +215,6 @@ function createPage(el, data, user) {
   // ── Skeleton of the page: slots are filled by the render* functions below ──
   // The ambient backdrop is a page-wide wash: the wrapper bleeds past the reading column (never past the viewport)
   // so the radial gradients fade out before they reach an edge. Content keeps the column via equal inner padding.
-  el.style.maxWidth = 'var(--reading-max)';
-  el.style.marginInline = 'auto';
   el.innerHTML = String(html`
     <div class="book-page ambient ambient--page pb-20 md:pb-0" data-page style="--bleed:min(240px,max(0px,calc((100vw - 100% - 16px) / 2)));margin-inline:calc(-1 * var(--bleed));padding-inline:var(--bleed);margin-top:-96px;padding-top:96px">
       <div class="pt-1">${button({ label: 'Back', variant: 'ghost', size: 'sm', icon: 'arrow-left', cls: '-ml-2', attrs: 'data-action="back"' })}</div>

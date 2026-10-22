@@ -548,7 +548,7 @@ function yearBodyHTML({ stats, feed, person, year, headingLevel, shareUrl, own }
   });
 
   return html`
-    <div class="rounded-[24px] bg-surface-2 p-4 md:p-10 grid gap-8 lg:grid-cols-[400px_minmax(0,1fr)] lg:gap-12 items-start">
+    <div class="rounded-[24px] bg-surface-2 p-4 md:p-10 grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[400px_minmax(0,1fr)] lg:gap-12 items-start">
       <div class="flex flex-col items-center gap-5 max-md:-mx-4 max-md:-mt-4 max-md:mb-0">
         ${story}
         <div class="w-full max-w-[400px] flex flex-col items-center gap-3 max-md:px-4">
@@ -673,7 +673,7 @@ function mountYearReview(container, { stats, feed, person, year, basePath, headi
 // ── Exported views ───────────────────────────────────────────────────────────
 
 function pageShell(inner) {
-  return html`<div class="max-w-[1120px] mx-auto space-y-4 md:space-y-6">${inner}</div>`;
+  return html`<div class="space-y-4 md:space-y-6">${inner}</div>`;
 }
 
 /**
@@ -798,7 +798,7 @@ export function renderYearInReview(el, { username, year } = {}) {
         scope.add(() => { el.classList.remove('accent-scope'); delete el.dataset.accent; });
       }
       const wrap = document.createElement('div');
-      wrap.className = 'max-w-[1120px] mx-auto';
+      wrap.className = '';
       el.innerHTML = '';
       el.appendChild(wrap);
       inner = mountYearReview(wrap, {
