@@ -213,10 +213,9 @@ function createPage(el, data, user) {
   }
 
   // ── Skeleton of the page: slots are filled by the render* functions below ──
-  // The ambient backdrop is a page-wide wash: the wrapper bleeds past the reading column (never past the viewport)
-  // so the radial gradients fade out before they reach an edge. Content keeps the column via equal inner padding.
+  // The ambient backdrop is a page-wide wash: its ::before spans the full viewport width (see .ambient--page) while content keeps the column.
   el.innerHTML = String(html`
-    <div class="book-page ambient ambient--page pb-20 md:pb-0" data-page style="--bleed:min(240px,max(0px,calc((100vw - 100% - 16px) / 2)));margin-inline:calc(-1 * var(--bleed));padding-inline:var(--bleed);margin-top:-96px;padding-top:96px">
+    <div class="book-page ambient ambient--page pb-20 md:pb-0" data-page style="margin-top:-96px;padding-top:96px">
       <div class="pt-1">${button({ label: 'Back', variant: 'ghost', size: 'sm', icon: 'arrow-left', cls: '-ml-2', attrs: 'data-action="back"' })}</div>
       <section aria-label="Book details" class="mt-3 md:mt-6" data-slot="hero"></section>
       <div class="md:hidden mt-6" data-slot="tabs"></div>

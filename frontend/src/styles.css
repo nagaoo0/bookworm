@@ -523,6 +523,7 @@ body::after {
 .field__input:focus-visible { outline: none; }   /* fields use --shadow-ring instead */
 
 /* Containers (visual-v2 §4.2) */
+html { overflow-x: clip; }                                      /* full-bleed 50vw tricks must never add a horizontal scrollbar */
 .page         { width: 100%; max-width: var(--page-max); margin-inline: auto; padding-inline: var(--gutter); }
 .page--reading { max-width: var(--reading-max); }
 .page--narrow  { max-width: 720px; }
@@ -656,7 +657,7 @@ kbd.kbd {
 .ambient--page::before {                                        /* page hero: tint only, fades out, no surface band */
   background: var(--ambient-gradients);
   border-radius: 0;
-  inset: -1px 0 auto 0;
+  inset: -1px calc(50% - 50vw) auto;                            /* full viewport width, centred on the page column */
   height: 420px;
   -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent);
           mask-image: linear-gradient(to bottom, #000 40%, transparent);
@@ -2195,7 +2196,13 @@ html[data-theme="light"] .shelf-row--ledge::after, html[data-theme="sepia"] .she
 .hero-card__also-pct { min-width: 2.25rem; text-align: right; font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--text-2); }
 @media (max-width: 767px) {
   .hero-card { padding: 20px; }
-  .hero-card__main { gap: 16px; }
+  /* cover + title/meta side by side; slider, percentage and buttons run full width below the cover row */
+  .hero-card__main { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; row-gap: 4px; align-items: start; }
+  .hero-card__body { display: contents; }
+  .hero-card__cover { grid-column: 1; grid-row: 1 / span 5; }
+  .hero-card__top, .hero-card__title, .hero-card__author, .hero-card__meta { grid-column: 2; }
+  .hero-card__progress, .hero-card__actions { grid-column: 1 / -1; }
+  .hero-card__progress { margin-top: 12px; }
   .hero-card__cover .cover { width: 96px; }
   .hero-card__title { font-size: 1.25rem; line-height: 1.625rem; }
   .hero-card__actions .btn { flex: 1 1 auto; padding-inline: 12px; }   /* side by side when they fit, stacked when not */

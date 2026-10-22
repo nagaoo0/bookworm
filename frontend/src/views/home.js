@@ -4,7 +4,7 @@
 // Library-driven sections repaint from the store; the other sections load on their own and fail on their own,
 // so one broken request never blanks the page.
 import { api } from '../api.js';
-import { getState, subscribe } from '../store.js';
+import { getState, setState, subscribe } from '../store.js';
 import { loadLibrary, upsertLibraryEntry } from '../libraryStore.js';
 import { openSse } from '../sse.js';
 import { html } from '../utils.js';
@@ -214,6 +214,8 @@ export function renderHome(el) {
     const diff = booksRead - Math.round(target * dayOfYear() / 365);
     const reached = booksRead >= target;
     const pace = reached ? 'Goal reached' : (diff > 0 ? `${diff} ahead of pace` : (diff < 0 ? `${-diff} behind pace` : 'Right on pace'));
+    const monthsLeft = Math.max(1, 12 - new Date().getMonth());
+    const perMonth = (Math.round(Math.max(0, target - booksRead) / monthsLeft * 10) / 10).toString();
     const paceTone = reached || diff > 0 ? 'text-success-fg' : 'text-text-2';
     region.innerHTML = String(html`${card({ cls: 'flex flex-col', content: html`
       <p class="eyebrow" id="${ids.goal}">${LABEL.yourGoal(year)}</p>
@@ -224,7 +226,12 @@ export function renderHome(el) {
           <p class="text-small ${paceTone}">${pace}</p>
         </div>
       </div>
-      ${H.spark.length ? html`<div class="mb-5 mt-6"><div class="text-accent-text">${sparkline({ values: H.spark, width: 320, height: H.wide ? 64 : 40, cls: 'h-auto w-full' })}</div><p class="mt-1 text-caption text-text-3">Books finished per month</p></div>` : ''}
+      ${H.spark.length ? html`<div class="mt-4"><div class="text-accent-text">${sparkline({ values: H.spark, width: 320, height: H.wide ? 72 : 48, cls: 'h-auto w-full' })}</div><p class="mt-1.5 text-caption text-text-3">Finished by month</p></div>` : ''}
+      <dl class="mb-3 mt-4 space-y-1.5 border-t border-border-1 pt-4 text-small">
+        ${H.spark.length ? html`<div class="flex items-baseline justify-between gap-3"><dt class="text-text-2">This month</dt><dd class="font-medium text-text-1">${plural(H.spark[H.spark.length - 1], 'book')}</dd></div>` : ''}
+        ${reached ? '' : html`<div class="flex items-baseline justify-between gap-3"><dt class="text-text-2">To reach your goal</dt><dd class="font-medium text-text-1">${perMonth} a month</dd></div>`}
+        <div class="flex items-baseline justify-between gap-3"><dt class="text-text-2">Books left</dt><dd class="font-medium text-text-1">${Math.max(0, target - booksRead)}</dd></div>
+      </dl>
       <div class="mt-auto border-t border-border-1 pt-3 ${H.spark.length ? '' : 'mt-4'}"><a class="btn btn--ghost btn--sm -ml-3" href="#settings/reading"><span class="btn__label">Edit goal</span></a></div>` })}`);
   }
 

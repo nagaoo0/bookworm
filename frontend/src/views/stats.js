@@ -572,11 +572,13 @@ function yearBodyHTML({ stats, feed, person, year, headingLevel, shareUrl, own }
       <div class="min-w-0 space-y-8">
         ${raw(`<${heading} class="h2">`)}${NAV.yearInReview} ${year}${raw(`</${heading}>`)}
 
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-          ${statCard({ label: 'Finished all time', value: stats.totalBooks ?? 0, size: 'sm' })}
-          ${audioBooks > 0 ? statCard({ label: LABEL.audiobooks, value: audioBooks, hint: `finished in ${year}`, size: 'sm' }) : ''}
-          ${audioHours ? statCard({ label: LABEL.hoursListened, value: `${audioHours} h`, size: 'sm' }) : ''}
-        </div>
+        <dl class="flex flex-wrap gap-x-8 gap-y-3 border-y border-border-1 py-4">
+          ${[
+    [ 'Finished all time', stats.totalBooks ?? 0 ],
+    audioBooks > 0 ? [ LABEL.audiobooks, audioBooks ] : null,
+    audioHours ? [ LABEL.hoursListened, `${audioHours} h` ] : null,
+  ].filter(Boolean).map(([k, v]) => html`<div><dt class="label">${k}</dt><dd class="mt-0.5 font-display text-[1.5rem] font-semibold leading-none tabular-nums text-text-1">${v}</dd></div>`)}
+        </dl>
 
         <section aria-labelledby="${barsId}">
           <div class="flex items-center justify-between gap-3 mb-3">
