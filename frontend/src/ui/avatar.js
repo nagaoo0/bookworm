@@ -4,7 +4,10 @@ import { cx } from './dom.js';
 
 /** Hue 0–359 derived from the username (same algorithm the app has always used). */
 export function avatarHue(username) {
-  return [...String(username ?? '')].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+  // FNV-1a style mix so similar short names land on different hues (a plain char sum put june/maya/theo all on green)
+  let h = 2166136261;
+  for (const c of String(username ?? '')) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return h % 360;
 }
 
 /**

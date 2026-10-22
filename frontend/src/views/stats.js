@@ -144,7 +144,7 @@ function heatmapHTML(daily) {
 
   const max = Math.max(1, ...Object.values(daily));
   const activeDays = Object.values(daily).filter(v => v > 0).length;
-  const CELL = 12, GAP = 3;
+  const CELL = 14, GAP = 4;
 
   const weeks = [];
   const cur = new Date(start);
@@ -294,6 +294,8 @@ function overviewBodyHTML({ stats, year, goal, absConnected, compact }) {
   const daily = stats.dailySessions ?? {};
   const streak = computeStreak(daily);
   const monthly = MONTHS.map((_, i) => stats.monthly?.[year]?.[i + 1] ?? 0);
+  // sparkline: months that have happened (future months would draw a false drop to zero)
+  const monthlySoFar = year === new Date().getFullYear() ? monthly.slice(0, new Date().getMonth() + 1) : monthly;
   const pageSeries = Object.keys(stats.pagesByYear ?? {}).map(Number).sort((a, b) => a - b).slice(-6).map(y => stats.pagesByYear[y]);
 
   const finishedDelta = prevFinished !== undefined && prevFinished !== finished
@@ -313,7 +315,7 @@ function overviewBodyHTML({ stats, year, goal, absConnected, compact }) {
   return html`
     <div class="space-y-4 md:space-y-6">
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 max-xl:[&_svg.sparkline]:hidden">
-        ${statCard({ label: LABEL.finished, value: finished, hint: `${stats.totalBooks ?? 0} all time`, icon: 'check-circle-2', delta: finishedDelta, spark: monthly.some(Boolean) ? monthly : undefined })}
+        ${statCard({ label: LABEL.finished, value: finished, hint: `${stats.totalBooks ?? 0} all time`, icon: 'check-circle-2', delta: finishedDelta, spark: monthlySoFar.some(Boolean) ? monthlySoFar : undefined })}
         ${statCard({ label: LABEL.pagesRead, value: pages > 0 ? pages.toLocaleString() : null, hint: pages > 0 ? `in ${year}` : 'Page counts not tracked', icon: 'file-text', delta: pagesDelta, spark: pageSeries.length > 1 ? pageSeries : undefined })}
         ${statCard({ label: LABEL.averageRating, value: stats.avgRating ? stats.avgRating.toFixed(1) : null, hint: 'across all reads', icon: 'star' })}
         ${statCard({ label: 'Reading now', value: stats.currentlyReading ?? 0, hint: compact ? undefined : 'books in progress', icon: 'book-open', href: compact ? undefined : '#library/status/reading' })}
@@ -548,8 +550,8 @@ function yearBodyHTML({ stats, feed, person, year, headingLevel, shareUrl, own }
   });
 
   return html`
-    <div class="rounded-[24px] bg-surface-2 p-4 md:p-10 grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[400px_minmax(0,1fr)] lg:gap-12 items-start">
-      <div class="flex flex-col items-center gap-5 max-md:-mx-4 max-md:-mt-4 max-md:mb-0">
+    <div class="grid grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[400px_minmax(0,1fr)] lg:gap-12 items-start">
+      <div class="flex flex-col items-center gap-5">
         ${story}
         <div class="w-full max-w-[400px] flex flex-col items-center gap-3 max-md:px-4">
           <div class="flex flex-wrap justify-center gap-2">

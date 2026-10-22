@@ -4,7 +4,8 @@
 // Exit code 1 when any row is below its target (use it as a plain `node` step in CI).
 import { readFileSync } from 'node:fs';
 
-const CSS = readFileSync(new URL('../frontend/src/styles.css', import.meta.url), 'utf8');
+// Normalise CRLF (autocrlf checkouts) so the multi-line selectors below still match.
+const CSS = readFileSync(new URL('../frontend/src/styles.css', import.meta.url), 'utf8').split('\r\n').join('\n');
 
 // ── read tokens out of styles.css ────────────────────────────────────────────
 function blockAfter(selectorStart) {

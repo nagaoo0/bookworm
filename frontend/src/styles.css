@@ -561,6 +561,9 @@ kbd.kbd {
   column-gap: var(--grid-gap-x);
   row-gap: var(--grid-gap-y);
 }
+@media (max-width: 480px) {
+  .book-grid { grid-template-columns: repeat(auto-fill, minmax(max(72px, calc(var(--grid-min-col) * .78)), 1fr)); column-gap: 12px; row-gap: 18px; }
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -791,7 +794,7 @@ kbd.kbd {
 .icon-btn--sm { width: 32px; height: 32px; }
 .icon-btn--xs { width: 28px; height: 28px; border-radius: var(--radius-sm); }
 .icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text-1); }
-.icon-btn[aria-pressed="true"], .icon-btn[aria-expanded="true"] { color: var(--accent-text); background: var(--accent-soft); }
+.icon-btn[aria-pressed="true"], .icon-btn[aria-haspopup][aria-expanded="true"] { color: var(--accent-text); background: var(--accent-soft); }
 .icon-btn--solid { background: var(--surface-2); color: var(--text-1); box-shadow: inset 0 1px 0 var(--highlight), 0 0 0 1px var(--border-2); }
 .icon-btn--solid:hover:not(:disabled) { background: var(--surface-3); }
 .icon-btn--primary {
@@ -1009,8 +1012,8 @@ button.chip--tag { cursor: pointer; }
 .chip-group__scroll { display: flex; gap: .5rem; overflow-x: auto; padding: 2px 1px; }
 .chip-group--wrap .chip-group__scroll { flex-wrap: wrap; overflow: visible; }
 .chip-group--fade .chip-group__scroll {
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 20px), transparent 100%);
-          mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 20px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+          mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
 }
 
 .segmented {
@@ -1379,9 +1382,10 @@ button.chip--tag { cursor: pointer; }
   position: absolute; inset: -10%;
   display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; align-content: center;
   transform: rotate(-4deg) scale(1.15);
-  filter: blur(1.5px) saturate(1.1);
-  opacity: .55;
+  filter: blur(2px) saturate(1.05);
+  opacity: .42;
 }
+.cover-mosaic { background: var(--surface-0); }
 .cover-mosaic__grid .cover { box-shadow: none; border-radius: 2px; }
 
 /* Fanned covers (Year-in-review story card) */
@@ -1506,8 +1510,10 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 .book-card--row .book-card__menu { position: absolute; top: 10px; right: 10px; bottom: auto; opacity: 1; }
 
 /* search mode (Discover): source badge + split "Add" button */
-.book-card__source { margin-top: 6px; }
-.book-card__add { margin-top: 10px; }
+.book-card__source { margin-top: 4px; }
+.book-card__source .badge { height: auto; padding: 0; box-shadow: none; background: transparent; color: var(--text-3); }   /* quiet: a caption, not a chip, 37 times per page */
+.book-card__add { margin-top: auto; padding-top: 10px; }
+.book-grid > .book-card:has(.book-card__add) { display: flex; flex-direction: column; }
 .book-card__add .btn-split { width: 100%; }
 .book-card__add--owned { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
@@ -1766,8 +1772,8 @@ a.book-card__title:hover, .book-card:hover .book-card__title { color: var(--acce
 .tabs__list { position: relative; display: flex; gap: 24px; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
 .tabs__list::-webkit-scrollbar { display: none; }
 .tabs--fade .tabs__list {
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 20px), transparent 100%);
-          mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 20px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+          mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
 }
 /* full-bleed variant: the hairline reaches the viewport edge while the tabs stay on the page gutter */
 .tabs--bleed { margin-inline: calc(-1 * var(--gutter)); }
@@ -2086,6 +2092,9 @@ html.is-scrolled .glass-header { border-bottom-color: var(--border-1); box-shado
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .hero-pill { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); } }
 button.hero-pill, a.hero-pill { cursor: pointer; }
 button.hero-pill:hover, a.hero-pill:hover { background: rgba(10, 8, 7, .68); }
+/* pills outside the hero (mobile profile): paper pills instead of glass */
+.hero-pills--flat .hero-pill { background: var(--surface-2); color: var(--text-1); box-shadow: inset 0 1px 0 var(--highlight), 0 0 0 1px var(--border-1); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.hero-pills--flat button.hero-pill:hover, .hero-pills--flat a.hero-pill:hover { background: var(--surface-3); }
 
 /* ── Rail rows (Library / Settings navigation) ────────────────────────────── */
 .rail { display: flex; flex-direction: column; gap: 2px; }
@@ -2189,8 +2198,7 @@ html[data-theme="light"] .shelf-row--ledge::after, html[data-theme="sepia"] .she
   .hero-card__main { gap: 16px; }
   .hero-card__cover .cover { width: 96px; }
   .hero-card__title { font-size: 1.25rem; line-height: 1.625rem; }
-  .hero-card__actions { flex-direction: column; align-items: stretch; }
-  .hero-card__actions .btn { width: 100%; }
+  .hero-card__actions .btn { flex: 1 1 auto; padding-inline: 12px; }   /* side by side when they fit, stacked when not */
   .hero-card__also-bar { display: none; }
   .hero-card__also-row .cover { width: 36px; }
 }

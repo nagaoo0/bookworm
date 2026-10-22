@@ -399,10 +399,8 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   function setCounts(next) {
     if (next.followers !== undefined) followers = Math.max(0, next.followers);
     if (next.following !== undefined) followingCount = Math.max(0, next.following);
-    const f = root.querySelector('[data-count="followers"]');
-    const g = root.querySelector('[data-count="following"]');
-    if (f) f.textContent = plural(followers, 'follower');
-    if (g) g.textContent = `${followingCount} following`;
+    root.querySelectorAll('[data-count="followers"]').forEach((f) => { f.textContent = plural(followers, 'follower'); });
+    root.querySelectorAll('[data-count="following"]').forEach((g) => { g.textContent = `${followingCount} following`; });
   }
 
   cleanups.push(delegate(root, 'click', '[data-copy-link]', async () => {
@@ -535,16 +533,23 @@ function heroHTML({ data, isOwn, viewer, following, followers, followingCount })
   const action = isOwn
     ? html`<a class="btn btn--glass" href="#settings/profile"><span class="btn__icon">${icon('pencil', { size: 16 })}</span><span class="btn__label">Edit profile</span></a>`
     : (viewer ? followButton(name, following, { size: 'md' }) : '');
+  const pills = html`
+              <span class="hero-pill">${plural(library.length, 'book')}</span>
+              <button type="button" class="hero-pill" data-follow-list="followers" data-count="followers" aria-haspopup="dialog">${plural(followers, 'follower')}</button>
+              <button type="button" class="hero-pill" data-follow-list="following" data-count="following" aria-haspopup="dialog">${followingCount} following</button>
+              ${avg ? html`<span class="hero-pill">${icon('star', { size: 14, fill: true })}${avg} avg</span>` : ''}
+              <a href="#u/${enc(name)}/year" class="hero-pill">${icon('sparkles', { size: 14 })}Year in review</a>
+              <button type="button" class="hero-pill" data-copy-link>${icon('link', { size: 14 })}${ACTION.copyLink}</button>`;
   const bio = data.bio ? html`<p class="mt-1 max-w-prose text-small line-clamp-2 whitespace-pre-line" style="opacity:.92">${data.bio}</p>` : '';
 
   return html`
     <div>
       <div class="relative">
-        <header class="hero h-[240px] md:h-[300px]">
+        <header class="hero h-[180px] md:h-[300px]">
           ${banner
             ? html`<img class="absolute inset-0 h-full w-full object-cover" src="${banner}" alt="" loading="lazy" decoding="async">`
             : html`<div class="cover-mosaic" aria-hidden="true"><div class="cover-mosaic__grid">${mosaic.map(b => cover({ url: b.generated ? null : b.cover_url, bookId: b.generated ? null : b.book_id, title: b.generated ? b.title : '', size: 'md' }))}</div></div>`}
-          <div class="absolute inset-0" style="background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 40%,transparent),transparent 70%);pointer-events:none"></div>
+          <div class="absolute inset-0" style="background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 28%,transparent),transparent 70%);pointer-events:none"></div>
           <div class="hero__scrim"></div>
           <div class="relative flex h-full flex-col justify-end gap-4 p-5 pb-14 md:p-8">
             <div class="flex items-end gap-6">
@@ -555,14 +560,7 @@ function heroHTML({ data, isOwn, viewer, following, followers, followingCount })
               </div>
               <div class="absolute right-4 top-4 md:static md:shrink-0">${action}</div>
             </div>
-            <div class="flex flex-wrap gap-2 md:pl-28 md:pb-0">
-              <span class="hero-pill">${plural(library.length, 'book')}</span>
-              <button type="button" class="hero-pill" data-follow-list="followers" data-count="followers" aria-haspopup="dialog">${plural(followers, 'follower')}</button>
-              <button type="button" class="hero-pill" data-follow-list="following" data-count="following" aria-haspopup="dialog">${followingCount} following</button>
-              ${avg ? html`<span class="hero-pill">${icon('star', { size: 14, fill: true })}${avg} avg</span>` : ''}
-              <a href="#u/${enc(name)}/year" class="hero-pill">${icon('sparkles', { size: 14 })}Year in review</a>
-              <button type="button" class="hero-pill" data-copy-link>${icon('link', { size: 14 })}${ACTION.copyLink}</button>
-            </div>
+            <div class="hidden flex-wrap gap-2 md:flex md:pl-28 md:pb-0">${pills}</div>
           </div>
         </header>
         <span class="absolute -bottom-6 left-5 md:hidden">${avatar({ username: name, avatarUrl: data.avatarUrl, size: 72, ring: true })}</span>
@@ -570,6 +568,7 @@ function heroHTML({ data, isOwn, viewer, following, followers, followingCount })
       <div class="mt-10 md:hidden">
         <h1 class="display break-words" data-focus-target>@${name}</h1>
         ${data.bio ? html`<p class="mt-1 max-w-prose text-small text-text-2 line-clamp-3 whitespace-pre-line">${data.bio}</p>` : ''}
+        <div class="hero-pills--flat mt-3 flex flex-wrap gap-2">${pills}</div>
       </div>
     </div>`;
 }
