@@ -3,6 +3,11 @@ import { pgOptions } from './lib/pgTimezone.js';
 
 const { Pool } = pg;
 
+// Postgres DATE (oid 1082) is a calendar day with no time zone. node-postgres
+// would turn it into a local-midnight JS Date, which serialises to the previous
+// day in UTC for any server east of Greenwich. Keep it as 'YYYY-MM-DD'.
+pg.types.setTypeParser(1082, v => v);
+
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is not set');
   process.exit(1);
