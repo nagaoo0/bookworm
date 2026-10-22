@@ -1,11 +1,12 @@
-// CommandPalette (design-system §5.23): search your library, find books online, jump to a page.
-// Modal `sm` (top-aligned) on desktop, bottom sheet on mobile. combobox + listbox with aria-activedescendant.
+// CommandPalette (design-system §5.23; visual-v2 §3.11): search your library, find books online, jump to a page.
+// 640 px modal (top-aligned) on desktop, bottom sheet on mobile: a 56 px borderless input row with a shortcut hint,
+// 52 px rows (cover thumbs / section roundels), a legend footer. combobox + listbox with aria-activedescendant.
 import { html } from '../utils.js';
 import { api } from '../api.js';
 import { getState } from '../store.js';
 import { icon } from './icons.js';
 import { openModal } from './modal.js';
-import { field } from './field.js';
+import { illustration } from './illustrations.js';
 import { cover } from './cover.js';
 import { badge, statusBadge } from './badge.js';
 import { toast } from './toast.js';
@@ -30,6 +31,10 @@ function goToTargets() {
 
 const norm = (s) => String(s ?? '').toLowerCase();
 
+function shortcutHint() {
+  try { return /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K'; } catch { return 'Ctrl K'; }
+}
+
 /**
  * Open the palette. Library rows and "Go to" rows navigate; "Find online" rows add the book as To read.
  * @param {{ initialQuery?: string, onAdded?: (result: object, book: object) => void,
@@ -50,13 +55,18 @@ export function openCommandPalette({ initialQuery = '', onAdded, onAdd } = {}) {
 
   const modal = openModal({
     ariaLabel: 'Search',
-    size: 'sm',
+    size: 'palette',
     top: true,
     onClose: () => { clearTimeout(timer); token++; },
     content: html`<div class="cmdk">
-      ${field({ name: 'q', type: 'search', icon: 'search', placeholder: PLACEHOLDER.commandPalette, ariaLabel: 'Search', autocomplete: 'off', value: initialQuery,
-        attrs: `data-autofocus data-cmdk-input role="combobox" aria-expanded="true" aria-controls="${listId}" aria-autocomplete="list" aria-activedescendant=""` })}
+      <div class="cmdk__input">
+        ${icon('search', { size: 20 })}
+        <input type="search" class="cmdk__field" name="q" value="${initialQuery}" placeholder="${PLACEHOLDER.commandPalette}" aria-label="Search" autocomplete="off" spellcheck="false"
+          data-autofocus data-cmdk-input role="combobox" aria-expanded="true" aria-controls="${listId}" aria-autocomplete="list" aria-activedescendant="">
+        <kbd class="kbd" aria-hidden="true">${shortcutHint()}</kbd>
+      </div>
       <div class="cmdk__results" id="${listId}" role="listbox" aria-label="Results" data-cmdk-results></div>
+      <div class="cmdk__footer" aria-hidden="true"><span><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> Navigate</span><span><kbd class="kbd">↵</kbd> Open</span><span><kbd class="kbd">Esc</kbd> Close</span></div>
     </div>`,
   });
 
@@ -104,8 +114,7 @@ export function openCommandPalette({ initialQuery = '', onAdded, onAdd } = {}) {
           return html`<div class="cmdk__row" role="option" id="${id}" aria-selected="false" aria-disabled="${done ? 'true' : 'false'}" data-row="${rows.length - 1}">
             ${cover({ url: b.coverUrl, title: b.title, size: 'xs' })}
             <div class="cmdk__row-main"><div class="cmdk__row-title">${b.title}</div><div class="cmdk__row-sub">${(b.authors ?? []).join(', ')}</div></div>
-            ${b.source ? badge({ label: SOURCE_LABEL[b.source] ?? b.source, variant: 'outline' }) : ''}
-            <span class="btn btn--secondary btn--sm" aria-hidden="true">${done ? html`${icon('check', { size: 16 })}<span class="btn__label">${LABEL.inLibrary}</span>` : html`<span class="btn__label">${ACTION.add}</span>`}</span>
+            <span class="cmdk__row-hint">${b.source ? badge({ label: SOURCE_LABEL[b.source] ?? b.source, variant: 'outline' }) : ''}${done ? badge({ label: LABEL.inLibrary, variant: 'success', icon: 'check' }) : html`<kbd class="kbd">${ACTION.add}</kbd>`}</span>
           </div>`;
         });
       }
@@ -115,11 +124,11 @@ export function openCommandPalette({ initialQuery = '', onAdded, onAdd } = {}) {
     const goHtml = go.length ? group('Go to', go.map((t) => {
       const id = optId();
       rows.push({ kind: 'link', id, href: t.href });
-      return html`<div class="cmdk__row" role="option" id="${id}" aria-selected="false" data-row="${rows.length - 1}"><span class="menu__icon">${icon(t.icon, { size: 20 })}</span><div class="cmdk__row-main"><div class="cmdk__row-title">${t.label}</div></div></div>`;
+      return html`<div class="cmdk__row" role="option" id="${id}" aria-selected="false" data-row="${rows.length - 1}"><span class="cmdk__row-icon">${icon(t.icon, { size: 16 })}</span><div class="cmdk__row-main"><div class="cmdk__row-title">${t.label}</div></div></div>`;
     })) : '';
 
     results.innerHTML = String(html`${libHtml}${onlineHtml}${goHtml}`) || '';
-    if (!rows.length && !onlineHtml) results.innerHTML = '<div class="cmdk__empty">No matches</div>';
+    if (!rows.length && !onlineHtml) results.innerHTML = String(html`<div class="cmdk__empty cmdk__empty--art"><div class="empty-state__art">${illustration('search', { width: 80 })}</div><div>${q ? html`No results for “${input.value.trim()}”` : 'No matches'}</div></div>`);
     active = Math.min(active, Math.max(0, rows.length - 1));
     paintActive();
   }

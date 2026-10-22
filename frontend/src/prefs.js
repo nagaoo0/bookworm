@@ -22,10 +22,11 @@ export const ACCENT_COLORS = {
   rose:  { main: '#e11d48', hover: '#f43f5e' },
 };
 
-export const CARD_SIZES = { miniature: '58px', small: '80px', medium: '110px', large: '158px' };
+// Minimum cover-card width per size (visual-v2 §6.3); medium is the default.
+export const CARD_SIZES = { miniature: '84px', small: '108px', medium: '128px', large: '168px' };
 
 // Page background (--surface-0) per resolved theme; used for <meta name="theme-color">.
-const SURFACE_0 = { dark: '#0c0a09', light: '#faf8f5', sepia: '#f4ecd8' };
+const SURFACE_0 = { dark: '#0d0b0a', light: '#f6f1ea', sepia: '#f0e6cf' };
 
 // Spec §2.1: dark unless the user picked something else.
 const DEFAULTS = { theme: 'dark', cardSize: 'medium', accent: 'amber', searchLanguage: '' };

@@ -1,5 +1,7 @@
-// Toast (design-system §5.20): one region, polite live announcements (errors assertive), max 3 stacked,
+// Toast (design-system §5.20; visual-v2 §3.12): one region, polite live announcements (errors assertive), max 3 stacked,
 // hover/focus pauses, optional action button, undo variant with the original showUndoToast semantics.
+// A pill when it fits on one line, a 16 px radius when it wraps; the icon sits in a tinted 24 px roundel; it enters from
+// below with a spring. Ctrl/Cmd+Z triggers the newest open Undo toast (not while typing in a field).
 import { html } from '../utils.js';
 import { icon } from './icons.js';
 import { button } from './button.js';
@@ -10,6 +12,25 @@ const ICON = { success: 'check-circle', error: 'x-circle', info: 'info' };
 
 let _container = null;
 const _pendingUndos = new Set();   // undo toasts whose Undo window is still open
+
+// Ctrl/Cmd+Z undoes the newest open Undo toast. Listening only while one is open keeps the page's own undo (text fields) intact.
+function onUndoKey(e) {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z' || e.defaultPrevented) return;
+  const t = e.target instanceof Element ? e.target : null;
+  if (t?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+  const newest = [..._pendingUndos].pop();
+  if (!newest) return;
+  e.preventDefault();
+  newest.undo();
+}
+let _undoKeyOn = false;
+function syncUndoShortcut() {
+  const want = _pendingUndos.size > 0;
+  if (want === _undoKeyOn) return;
+  _undoKeyOn = want;
+  if (want) document.addEventListener('keydown', onUndoKey);
+  else document.removeEventListener('keydown', onUndoKey);
+}
 
 function getContainer() {
   if (!_container || !document.body.contains(_container)) {
@@ -43,11 +64,11 @@ function remove(el) {
   setTimeout(() => el.remove(), 220);
 }
 
-function build(message, type, actionLabel) {
+function build(message, type, actionLabel, { hint } = {}) {
   const el = document.createElement('div');
   el.className = `toast-item toast-${type}`;
   el.innerHTML = String(html`<span class="toast-icon" aria-hidden="true">${icon(ICON[type] ?? ICON.info, { size: 16, class: 'toast-icon-svg' })}</span><span class="toast-message">${message}</span>${
-    actionLabel ? button({ label: actionLabel, variant: 'ghost', size: 'sm', cls: 'toast-action', attrs: 'data-toast-action' }) : ''
+    actionLabel ? button({ label: hint ? html`${actionLabel}<kbd class="kbd" aria-hidden="true">${hint}</kbd>` : actionLabel, variant: 'ghost', size: 'sm', cls: 'toast-action', attrs: `data-toast-action${hint ? ' aria-keyshortcuts="Control+Z Meta+Z"' : ''}` }) : ''
   }`);
   return el;
 }
@@ -57,6 +78,7 @@ function show(el, type) {
   const existing = liveToasts();
   for (const old of existing.slice(0, Math.max(0, existing.length - (MAX_STACK - 1)))) (old._dismiss ?? (() => remove(old)))();
   liveRegion(type).appendChild(el);
+  if (el.offsetHeight > 48) el.classList.add('toast-item--wrap');   // two lines or more: soften the pill to a 16 px radius
   requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('toast-visible')));
 }
 
@@ -114,13 +136,14 @@ export function toast(message, { type = 'success', action, duration } = {}) {
  * @returns {{ commit: () => void, undo: () => void }}
  */
 export function undoToast(message, { onUndo, onCommit, duration = 6000 } = {}) {
-  const el = build(message, 'info', 'Undo');
+  const el = build(message, 'info', 'Undo', { hint: 'Z' });
   let settled = false;
   let stop = () => {};
   const settle = (undone) => {
     if (settled) return;
     settled = true;
     _pendingUndos.delete(handle);
+    syncUndoShortcut();
     stop();
     remove(el);
     return (undone ? onUndo : onCommit)?.();
@@ -131,6 +154,7 @@ export function undoToast(message, { onUndo, onCommit, duration = 6000 } = {}) {
   el._dismiss = () => settle(false);
   const handle = { commit: () => settle(false), undo: () => settle(true) };
   _pendingUndos.add(handle);
+  syncUndoShortcut();
   show(el, 'info');
   return handle;
 }

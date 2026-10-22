@@ -1,12 +1,13 @@
-// BookCard (design-system §5.14): grid / list / compact variants + mountBookGrid() behaviour.
-import { html, safeUrl } from '../utils.js';
+// BookCard (design-system §5.14; visual-v2 §5.13): grid / list / compact / row variants, the Discover search card with its
+// split "Add" button, and mountBookGrid() behaviour.
+import { html, safeUrl, escHtml } from '../utils.js';
 import { getState } from '../store.js';
 import { icon } from './icons.js';
 import { cover } from './cover.js';
 import { badge, statusBadge } from './badge.js';
 import { stars } from './stars.js';
 import { progressBar } from './progress.js';
-import { iconButton } from './button.js';
+import { button, iconButton } from './button.js';
 import { checkbox } from './field.js';
 import { openMenu } from './menu.js';
 import { STATUS, statusLabel } from './status.js';
@@ -15,6 +16,7 @@ import { cx, prefersReducedMotion } from './dom.js';
 
 const AUTHORS_SHOWN = 2;
 const AUTHORS_TITLE_MAX = 5;
+const SOURCE_LABEL = { google: 'Google', openlibrary: 'Open Library', apple: 'Apple Books' };
 
 /**
  * Author line for cards: at most the first two names, then " et al." (providers sometimes return dozens of authors
@@ -33,6 +35,7 @@ export function fullAuthorsIfShort(authors) {
 }
 
 const authorsText = (b) => formatAuthors(b.authors);
+const escAttr = (s) => escHtml(s);
 
 /** "2h 5m left" for audiobooks in progress (from the Audiobookshelf availability extras), or null. */
 function etaText(entry) {
@@ -49,30 +52,54 @@ function etaText(entry) {
 function availabilityBadges(entry) {
   return (entry.availability ?? []).map((a) => {
     if (a.service === 'audiobookshelf') {
-      return html`<span class="badge badge--info" role="img" aria-label="In Audiobookshelf" title="In Audiobookshelf">${icon('headphones', { size: 16 })}</span>`;
+      return html`<span class="badge badge--info badge--roundel" role="img" aria-label="In Audiobookshelf" title="In Audiobookshelf">${icon('headphones', { size: 12 })}</span>`;
     }
     if (a.service === 'calibre') {
       const fmts = (a.formats ?? []).map(f => String(f).toUpperCase()).join(' · ');
       const t = `In Calibre library${fmts ? ': ' + fmts : ''}`;
-      return html`<span class="badge badge--success" role="img" aria-label="${t}" title="${t}">${icon('book-copy', { size: 16 })}</span>`;
+      return html`<span class="badge badge--success badge--roundel" role="img" aria-label="${t}" title="${t}">${icon('book-copy', { size: 12 })}</span>`;
     }
     return '';
   });
 }
 
 /**
+ * Items of the Discover "Add" split-button menu: Add to To read · Add as Reading · Add as Finished · separator · Add to shelf.
+ * Item ids: `add:<status>` and `addshelf:<id>` (mountBookGrid turns them into `onAdd` calls).
+ * @param {{ shelves?: Array<{ id: number|string, name: string }> }} [o]
+ */
+export function bookAddMenuItems({ shelves = [] } = {}) {
+  const items = [
+    { id: 'add:to_read', label: `Add to ${statusLabel('to_read')}`, icon: STATUS.to_read.icon },
+    { id: 'add:reading', label: `Add as ${statusLabel('reading')}`, icon: STATUS.reading.icon },
+    { id: 'add:done', label: `Add as ${statusLabel('done')}`, icon: STATUS.done.icon },
+  ];
+  if (shelves.length) {
+    items.push({ kind: 'separator' });
+    items.push({ kind: 'submenu', id: 'shelves', label: 'Add to shelf', icon: 'library-big', items: shelves.map(s => ({ id: `addshelf:${s.id}`, label: s.name })) });
+  }
+  return items;
+}
+
+/**
  * @param {object} entry  library entry / search result:
  *   { id (library id), book_id, title, authors, cover_url|coverUrl, status, rating, progress_pct, availability,
  *     googleId, openLibraryId, appleId, notes, source, shelf_ids }
- * @param {{ variant?: 'grid'|'list'|'compact', showStatus?: boolean, selectable?: boolean, selected?: boolean,
- *   readOnly?: boolean, alsoRead?: boolean, href?: string, searchMode?: boolean, footer?: any }} [o]
- *   readOnly: no ⋯ menu / progress (other people's shelves). searchMode: online result — source Badge, no menu, `footer` slot
- *   (e.g. the Add button). selectable: checkbox top-left, card click toggles selection.
+ * @param {{ variant?: 'grid'|'list'|'compact'|'row', size?: 'md'|'sm', showStatus?: boolean, selectable?: boolean, selected?: boolean,
+ *   readOnly?: boolean, alsoRead?: boolean, href?: string, searchMode?: boolean, footer?: any, owned?: boolean, index?: number }} [o]
+ *   grid: cover (3D tilt on hover), title, author, then status dot · availability · stars. list: 64 px row with the status and
+ *   stars on the right. compact: cover + title + author only (144 / 168 px wide; `size: 'sm'` 112 / 128) for shelf rows.
+ *   row: the currently-reading card (88 px cover, progress bar, "Update" + "Finish" buttons: wire `onProgress` / `onFinish`).
+ *   readOnly: no more-options menu / progress (other people's shelves). selectable: checkbox top-left, card click toggles selection.
+ *   searchMode: online result (Discover) — an outline source badge, no more-options menu, and a built-in split "Add" button
+ *   (or, with `owned: true`, an "In library" badge + "Open"). `index` is the position in the results list, so `onAdd` /
+ *   `onOpen` receive the right entry. A `footer` replaces the built-in controls (kept for compatibility).
  * Wire interactions with mountBookGrid().
  */
-export function bookCard(entry, { variant = 'grid', showStatus = false, selectable = false, selected = false, readOnly = false, alsoRead = false, href, searchMode = false, footer } = {}) {
+export function bookCard(entry, { variant = 'grid', size = 'md', showStatus = false, selectable = false, selected = false, readOnly = false, alsoRead = false, href, searchMode = false, footer, owned = false, index } = {}) {
   const title = entry.title ?? '';
   const authors = authorsText(entry);
+  const firstAuthor = Array.isArray(entry.authors) ? entry.authors[0] : entry.authors;
   const status = entry.status ?? null;
   const sMeta = status ? STATUS[status] : null;
   const pct = entry.progress_pct ?? null;
@@ -82,45 +109,71 @@ export function bookCard(entry, { variant = 'grid', showStatus = false, selectab
   const hasMenu = !readOnly && !searchMode && !selectable && variant !== 'compact' && !!entry.id;
   const authorsFull = fullAuthorsIfShort(entry.authors);
   const label = [title, authors && `by ${authorsFull || authors}`].filter(Boolean).join(' ') + (sMeta ? `, ${sMeta.label}` : '');
+  const coverUrl = entry.cover_url ?? entry.coverUrl;
 
   // Keyboard model (spec §5.14): the card is the tab stop (roving tabindex across the grid, see mountBookGrid);
-  // Enter opens, so the title link is not a second stop. The ⋯ / select controls are tabbable only on the active card.
+  // Enter opens, so the title link is not a second stop. The menu / select / action controls are tabbable only on the active card.
   const titleEl = link
     ? html`<h3 class="book-card__heading"><a class="book-card__title" href="${safeUrl(link)}" tabindex="-1">${title}</a></h3>`
     : html`<h3 class="book-card__heading"><span class="book-card__title">${title}</span></h3>`;
 
   const menuBtn = hasMenu
-    ? iconButton({ icon: 'more-horizontal', label: `More options for ${title}`, variant: variant === 'list' ? 'ghost' : 'overlay', size: 'sm', cls: 'book-card__menu', attrs: 'data-book-menu aria-haspopup="menu" tabindex="-1"' })
+    ? iconButton({ icon: 'more-horizontal', label: `More options for ${title}`, variant: (variant === 'list' || variant === 'row') ? 'ghost' : 'overlay', size: 'sm', cls: 'book-card__menu', attrs: 'data-book-menu aria-haspopup="menu" tabindex="-1"' })
     : '';
 
   const readingProgress = status === 'reading' && pct !== null && !readOnly;
-  const metaRow = html`
-    ${showStatus && status ? statusBadge(status) : ''}
-    ${searchMode && entry.source ? badge({ label: { google: 'Google', openlibrary: 'Open Library', apple: 'Apple Books' }[entry.source] ?? entry.source, variant: 'outline' }) : ''}
-    ${availabilityBadges(entry)}
-    ${entry.rating ? stars({ value: entry.rating, size: 14 }) : ''}`;
+  const statusEl = showStatus && status ? statusBadge(status) : '';
+  const starsEl = entry.rating ? stars({ value: entry.rating, size: 12 }) : '';
+  const metaRow = html`${statusEl}${availabilityBadges(entry)}${starsEl}`;
+  const sourceBadge = searchMode && entry.source
+    ? html`<div class="book-card__source">${badge({ label: SOURCE_LABEL[entry.source] ?? entry.source, variant: 'outline' })}</div>`
+    : '';
   const eta = etaText(entry);
 
-  const dataAttrs = html`data-lib-id="${libId}" data-book-id="${entry.book_id ?? ''}" data-status="${status ?? ''}" data-google-id="${entry.googleId ?? ''}" data-open-library-id="${entry.openLibraryId ?? ''}" data-apple-id="${entry.appleId ?? ''}" data-notes="${entry.notes ?? ''}" data-progress-pct="${pct ?? ''}"`;
-  const klass = cx('book-card', `book-card--${variant}`, selectable && 'book-card--selectable', selected && 'book-card--selected', readOnly && 'book-card--readonly');
+  const dataAttrs = html`data-lib-id="${libId}" data-book-id="${entry.book_id ?? ''}" data-status="${status ?? ''}" data-google-id="${entry.googleId ?? ''}" data-open-library-id="${entry.openLibraryId ?? ''}" data-apple-id="${entry.appleId ?? ''}" data-notes="${entry.notes ?? ''}" data-progress-pct="${pct ?? ''}"${index === undefined ? '' : html` data-result-index="${index}"`}`;
+  const klass = cx('book-card', `book-card--${variant}`, size === 'sm' && 'book-card--sm', selectable && 'book-card--selectable', selected && 'book-card--selected', readOnly && 'book-card--readonly');
+
+  // built-in Discover controls: the split "Add" button, or "In library" + Open
+  const addControls = (!searchMode || footer) ? '' : (owned
+    ? html`<div class="book-card__add book-card__add--owned">${badge({ label: LABEL.inLibrary, variant: 'success', icon: 'check' })}${button({ label: ACTION.open, variant: 'ghost', size: 'sm', attrs: `data-book-open aria-label="Open ${escAttr(title)}" tabindex="-1"` })}</div>`
+    : html`<div class="book-card__add"><div class="btn-split">${
+      button({ label: ACTION.add, variant: 'secondary', size: 'sm', attrs: `data-book-add="to_read" aria-label="Add ${escAttr(title)} to your library" tabindex="-1"` })
+    }<button type="button" class="btn-split__toggle" data-book-add-menu aria-haspopup="menu" aria-label="More ways to add ${escAttr(title)}" tabindex="-1">${icon('chevron-down', { size: 16 })}</button></div></div>`);
 
   if (variant === 'list') {
     return html`<article class="${klass}" tabindex="0" aria-label="${label}" ${dataAttrs}>
-      <div class="book-card__cover">${cover({ url: entry.cover_url ?? entry.coverUrl, bookId, title, size: 'xs' })}</div>
+      <div class="book-card__cover">${cover({ url: coverUrl, bookId, title, author: firstAuthor, size: 'xs' })}</div>
       <div class="book-card__body">
         ${titleEl}
         ${authors ? html`<p class="book-card__authors"${authorsFull ? html` title="${authorsFull}"` : ''}>${authors}</p>` : ''}
-        <div class="book-card__meta">${metaRow}</div>
         ${readingProgress ? progressBar({ value: pct, size: 'sm', label: `Progress for ${title}`, cls: 'mt-1' }) : ''}
       </div>
+      <div class="book-card__aside">${metaRow}</div>
       ${selectable ? checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select tabindex="-1"' }) : ''}
+      ${menuBtn}
+    </article>`;
+  }
+
+  if (variant === 'row') {
+    const p = Math.round(Number(pct) || 0);
+    return html`<article class="${klass}" tabindex="0" aria-label="${label}" ${dataAttrs}>
+      <div class="book-card__cover">${cover({ url: coverUrl, bookId, title, author: firstAuthor, size: 'md' })}</div>
+      <div class="book-card__body">
+        ${titleEl}
+        ${authors ? html`<p class="book-card__authors"${authorsFull ? html` title="${authorsFull}"` : ''}>${authors}</p>` : ''}
+        ${status === 'reading' ? html`<div class="book-card__row-progress">${progressBar({ value: p, label: `Progress for ${title}` })}<span class="book-card__row-pct">${p}%</span></div>` : (statusEl ? html`<div class="book-card__meta">${statusEl}</div>` : '')}
+        ${eta ? html`<p class="book-card__eta">${eta}</p>` : ''}
+        ${(status === 'reading' && !readOnly) ? html`<div class="book-card__row-actions">${
+          button({ label: 'Update', variant: 'ghost', size: 'sm', attrs: `data-book-action="progress" aria-label="Update progress for ${escAttr(title)}" tabindex="-1"` })
+        }${button({ label: ACTION.finish, variant: 'secondary', size: 'sm', attrs: `data-book-action="finish" aria-label="Mark ${escAttr(title)} as finished" tabindex="-1"` })}</div>` : ''}
+      </div>
       ${menuBtn}
     </article>`;
   }
 
   return html`<article class="${klass}" tabindex="0" aria-label="${label}" ${dataAttrs}>
     <div class="book-card__cover">
-      ${cover({ url: entry.cover_url ?? entry.coverUrl, bookId, title, size: 'md' })}
+      ${cover({ url: coverUrl, bookId, title, author: firstAuthor, size: 'md', tilt: true })}
       ${readingProgress && variant === 'grid' ? html`<div class="book-card__progress">${progressBar({ value: pct, size: 'sm', onCover: true, label: `Progress for ${title}` })}</div>` : ''}
       ${alsoRead && !selectable ? html`<span class="book-card__flag">${badge({ label: LABEL.youReadThis, variant: 'accent', icon: 'check' })}</span>` : ''}
       ${selectable ? html`<span class="book-card__select">${checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select tabindex="-1"' })}</span>` : ''}
@@ -129,17 +182,18 @@ export function bookCard(entry, { variant = 'grid', showStatus = false, selectab
     <div class="book-card__body">
       ${titleEl}
       ${authors ? html`<p class="book-card__authors"${authorsFull ? html` title="${authorsFull}"` : ''}>${authors}</p>` : ''}
+      ${sourceBadge}
       ${variant === 'compact' ? '' : html`<div class="book-card__meta">${metaRow}</div>`}
       ${eta && variant !== 'compact' ? html`<p class="book-card__eta">${eta}</p>` : ''}
-      ${footer ?? ''}
+      ${footer ?? addControls}
     </div>
   </article>`;
 }
 
 /**
- * Items for a library book's ⋯ menu, in the order of design-system §5.14:
+ * Items for a library book's more-options menu, in the order of design-system §5.14:
  * Open · Update progress / Mark as finished (reading) · Start reading (to_read) · Log another read (done) ·
- * Move to (radio) · Shelves ▸ (checkbox per shelf) · Remove from library.
+ * Move to (radio) · Shelves (checkbox per shelf) · Remove from library.
  * Item ids: open, progress, finish, start, log, status:<key>, shelf:<id>, remove.
  */
 export function bookMenuItems(entry, { shelves = [] } = {}) {
@@ -167,12 +221,14 @@ export function bookMenuItems(entry, { shelves = [] } = {}) {
 }
 
 /**
- * One delegated handler set for a grid / list of bookCard()s. Safe to call once on a long-lived container:
+ * One delegated handler set for a grid / list / shelf of bookCard()s. Safe to call once on a long-lived container:
  * re-rendering its children needs no re-binding. Returns cleanup.
  *
  * Interactions: click cover/body → open; Enter on a focused card → open; arrow keys move focus between cards;
- * ⋯ button, right-click, long-press (500 ms) or the context-menu key → the card Menu; selectable cards toggle on click.
- * Keyboard: roving tabindex — per container only one card is a Tab stop (plus that card's ⋯ / checkbox);
+ * more-options button, right-click, long-press (500 ms) or the context-menu key → the card Menu; selectable cards toggle on click;
+ * row-card "Update" / "Finish" buttons → onProgress / onFinish; search cards: "Add" → onAdd(entry, { status: 'to_read' }),
+ * the ▾ toggle → a Menu (bookAddMenuItems) → onAdd(entry, { status } | { status: 'to_read', shelfId }), "Open" → open.
+ * Keyboard: roving tabindex — per container only one card is a Tab stop (plus that card's menu button / checkbox / buttons);
  * Arrow keys / Home / End move between cards, Tab leaves the grid. Survives re-renders (MutationObserver).
  *
  * @param {Element} root
@@ -180,18 +236,20 @@ export function bookMenuItems(entry, { shelves = [] } = {}) {
  *   onOpen?: (entry, card) => void, onMenu?: (entry, items) => (object[]|void),
  *   onSelect?: (entry, selected: boolean) => void, onStatus?: (entry, statusKey: string) => void,
  *   onShelfToggle?: (entry, shelf, on: boolean) => void, onRemove?: (entry) => void,
- *   onProgress?: (entry) => void, onFinish?: (entry) => void, onLogRead?: (entry) => void }} [opts]
- *   entries defaults to the store's `library`. onFinish / onLogRead should open the Log-a-read modal.
- *   When omitted, onOpen navigates to #book/:id.
+ *   onProgress?: (entry) => void, onFinish?: (entry) => void, onLogRead?: (entry) => void,
+ *   onAdd?: (entry, target: { status: string, shelfId?: string|number }, card: Element) => void }} [opts]
+ *   entries defaults to the store's `library`; search cards (`index` option of bookCard) resolve against `entries` by position.
+ *   onFinish / onLogRead should open the Log-a-read modal. When onOpen is omitted it navigates to #book/:id.
  */
 export function mountBookGrid(root, opts = {}) {
-  const { onOpen, onMenu, onSelect, onStatus, onShelfToggle, onRemove, onProgress, onFinish, onLogRead } = opts;
+  const { onOpen, onMenu, onSelect, onStatus, onShelfToggle, onRemove, onProgress, onFinish, onLogRead, onAdd } = opts;
   const getEntries = () => (typeof opts.entries === 'function' ? opts.entries() : (opts.entries ?? getState().library ?? []));
   const getShelves = () => (opts.getShelves ? opts.getShelves() : (getState().shelves ?? []));
 
   const entryOf = (card) => {
-    const { libId, bookId } = card.dataset;
+    const { libId, bookId, resultIndex } = card.dataset;
     const list = getEntries();
+    if (resultIndex !== undefined && resultIndex !== '' && list[Number(resultIndex)]) return list[Number(resultIndex)];
     return (libId && list.find(b => String(b.id) === libId))
       ?? (bookId && list.find(b => String(b.book_id) === bookId))
       ?? { id: libId || undefined, book_id: bookId || undefined, status: card.dataset.status || undefined, title: card.querySelector('.book-card__title')?.textContent ?? '' };
@@ -230,6 +288,19 @@ export function mountBookGrid(root, opts = {}) {
     openMenu({ ...where, items, onSelect: (id, item) => dispatch(entry, id, item), label: `Options for ${entry.title ?? 'book'}` });
   };
 
+  const openAddMenu = (card, trigger) => {
+    const entry = entryOf(card);
+    openMenu({
+      trigger,
+      items: bookAddMenuItems({ shelves: getShelves() }),
+      label: `Add ${entry.title ?? 'book'}`,
+      onSelect: (id) => {
+        if (id?.startsWith('add:')) onAdd?.(entry, { status: id.slice(4) }, card);
+        else if (id?.startsWith('addshelf:')) onAdd?.(entry, { status: 'to_read', shelfId: id.slice(9) }, card);
+      },
+    });
+  };
+
   let suppressClick = false;
 
   const onClick = (e) => {
@@ -239,6 +310,20 @@ export function mountBookGrid(root, opts = {}) {
     const t = e.target;
     const menuBtn = t.closest('[data-book-menu]');
     if (menuBtn && card.contains(menuBtn)) { e.preventDefault(); e.stopPropagation(); openCardMenu(card, { trigger: menuBtn }); return; }
+    const addMenuBtn = t.closest('[data-book-add-menu]');
+    if (addMenuBtn && card.contains(addMenuBtn)) { e.preventDefault(); e.stopPropagation(); openAddMenu(card, addMenuBtn); return; }
+    const addBtn = t.closest('[data-book-add]');
+    if (addBtn && card.contains(addBtn)) { e.preventDefault(); e.stopPropagation(); onAdd?.(entryOf(card), { status: addBtn.dataset.bookAdd || 'to_read' }, card); return; }
+    const actionBtn = t.closest('[data-book-action]');
+    if (actionBtn && card.contains(actionBtn)) {
+      e.preventDefault(); e.stopPropagation();
+      const entry = entryOf(card);
+      if (actionBtn.dataset.bookAction === 'finish') onFinish?.(entry);
+      else if (actionBtn.dataset.bookAction === 'progress') onProgress?.(entry);
+      return;
+    }
+    const openBtn = t.closest('[data-book-open]');
+    if (openBtn && card.contains(openBtn)) { e.preventDefault(); e.stopPropagation(); open(entryOf(card), card); return; }
     if (t.closest('[data-book-select], .checkbox')) return;   // checkbox → change handler
     if (card.classList.contains('book-card--selectable')) {
       e.preventDefault();
@@ -305,8 +390,8 @@ export function mountBookGrid(root, opts = {}) {
     if (Math.hypot(t.clientX - pressStart.x, t.clientY - pressStart.y) > 10) cancelPress();
   };
 
-  // Roving tabindex: one tabbable card (and its own ⋯ / checkbox) per container.
-  const INNER = '[data-book-menu], [data-book-select]';
+  // Roving tabindex: one tabbable card (and its own menu button / checkbox / buttons) per container.
+  const INNER = '[data-book-menu], [data-book-select], [data-book-action], [data-book-add], [data-book-add-menu], [data-book-open]';
   const setActive = (card) => {
     const cards = [...card.parentElement.querySelectorAll(':scope > .book-card')];
     for (const c of cards) {

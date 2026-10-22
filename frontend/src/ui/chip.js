@@ -1,16 +1,30 @@
-// ChipToggle, ChipGroup and SegmentedControl (design-system §5.6).
+// ChipToggle, ChipGroup and SegmentedControl (design-system §5.6; visual-v2 §5.5).
 // Replaces shelf-chip, year-pill, feed-filter-btn, avail-filter-chip, status buttons, theme/size buttons.
 import { html, raw, safeColor } from '../utils.js';
 import { icon } from './icons.js';
 import { cx, attr, bool, delegate } from './dom.js';
+import { mountThumb, positionThumb } from './thumb.js';
 
 /**
  * One pill. `role='button'` → toggle (aria-pressed); `role='radio'` → single-select (aria-checked).
  * @param {{ label: string, active?: boolean, value?: any, color?: string, icon?: string, count?: number|string,
- *   role?: 'button'|'radio', name?: string, disabled?: boolean, size?: 'sm'|'md', cls?: string, tabindex?: number, attrs?: string }} o
+ *   role?: 'button'|'radio', name?: string, disabled?: boolean, size?: 'sm'|'md', cls?: string, tabindex?: number, attrs?: string,
+ *   variant?: 'default'|'tag'|'accolade', as?: 'button'|'span', muted?: boolean }} o
  *   color: custom (shelf) colour, sanitised with safeColor().
+ *   variant 'tag' = a 24 px genre label; 'accolade' = a 24 px gold-tinted award label with the award icon. Both are
+ *   display-only <span>s unless `as: 'button'` (e.g. the "+2" chip that opens a popover: add `muted: true` for the
+ *   quieter --text-3 look and `attrs: 'data-more-genres'` to wire it).
  */
-export function chip({ label, active = false, value, color, icon: iconName, count, role = 'button', name, disabled = false, size = 'md', cls = '', tabindex, attrs = '' } = {}) {
+export function chip({ label, active = false, value, color, icon: iconName, count, role = 'button', name, disabled = false, size = 'md', cls = '', tabindex, attrs = '', variant = 'default', as, muted = false } = {}) {
+  const display = variant === 'tag' || variant === 'accolade';
+  if (display) {
+    const tag = as === 'button' ? 'button' : 'span';
+    const klass = cx('chip', `chip--${variant}`, muted && 'chip--more', cls);
+    const inner = html`${variant === 'accolade' ? icon('award', { size: 12 }) : ''}<span>${label}</span>`;
+    return tag === 'button'
+      ? html`<button type="button" class="${klass}"${bool(disabled, 'disabled')}${attrs ? raw(' ' + attrs) : ''}>${inner}</button>`
+      : html`<span class="${klass}"${attrs ? raw(' ' + attrs) : ''}>${inner}</span>`;
+  }
   const radio = role === 'radio';
   const style = color ? raw(` style="--chip-color:${safeColor(color)}"`) : '';
   return html`<button type="button" class="${cx('chip', size === 'sm' && 'chip--sm', active && 'chip--active', cls)}"${radio ? raw(` role="radio" aria-checked="${active ? 'true' : 'false'}"`) : raw(` aria-pressed="${active ? 'true' : 'false'}"`)}${attr('data-chip-value', value)}${attr('data-chip-name', name)}${tabindex === undefined ? '' : raw(` tabindex="${tabindex}"`)}${bool(disabled, 'disabled')}${style}${attrs ? raw(' ' + attrs) : ''}>${
@@ -41,7 +55,8 @@ export function chipGroup({ name, items = [], value, values = [], multi = false,
 }
 
 /**
- * Joined radiogroup in a surface-2 track (Grid/List, Theme, Card size, Feed filter).
+ * Joined radiogroup in a surface-2 well (Grid/List, Theme, Card size, Feed filter, year selector). The selected
+ * item is a raised pill that slides between items (needs mountChipGroup or mountThumb; it paints statically without).
  * @param {{ name: string, items: Array<{ value: any, label: string, icon?: string, disabled?: boolean }>, value?: any,
  *   size?: 'sm'|'md', block?: boolean, label?: string, cls?: string }} o
  */
@@ -51,13 +66,14 @@ export function segmented({ name, items = [], value, size = 'md', block = false,
     const on = it === current && value !== undefined && String(it.value) === String(value);
     return html`<button type="button" class="segmented__item" role="radio" aria-checked="${on ? 'true' : 'false'}" tabindex="${it === current ? 0 : -1}" data-chip-value="${it.value}"${bool(it.disabled, 'disabled')}>${it.icon ? icon(it.icon, { size: 16 }) : ''}<span>${it.label}</span></button>`;
   });
-  return html`<div class="${cx('segmented', size === 'sm' && 'segmented--sm', block && 'segmented--block', cls)}" role="radiogroup"${attr('aria-label', label)} data-chip-group="${name}">${buttons}</div>`;
+  return html`<div class="${cx('segmented', size === 'sm' && 'segmented--sm', block && 'segmented--block', cls)}" role="radiogroup"${attr('aria-label', label)} data-chip-group="${name}"><span class="segmented__thumb" aria-hidden="true"></span>${buttons}</div>`;
 }
 
 /**
  * Behaviour for chipGroup() and segmented() by delegation on `root`. Updates the DOM in place, then calls
  * onChange({ name, value, values, active, el }) — `values` is the full selection (one item for single-select).
  * Keyboard: Space/Enter toggle (native button); arrows / Home / End move + select inside a radiogroup.
+ * Also activates the sliding thumb of every segmented() inside `root`.
  * @returns {() => void} cleanup
  */
 export function mountChipGroup(root, onChange) {
@@ -80,6 +96,7 @@ export function mountChipGroup(root, onChange) {
       });
     }
     if (focus) el.focus();
+    if (!multi) positionThumb(group);              // slide the segmented thumb right away
     const values = multi
       ? items.filter(i => i.getAttribute('aria-pressed') === 'true').map(i => i.dataset.chipValue)
       : [el.dataset.chipValue];
@@ -109,5 +126,6 @@ export function mountChipGroup(root, onChange) {
     select(group, next, { focus: true });
   };
   root.addEventListener('keydown', onKey);
-  return () => { offClick(); root.removeEventListener('keydown', onKey); };
+  const offThumb = mountThumb(root);
+  return () => { offClick(); offThumb(); root.removeEventListener('keydown', onKey); };
 }

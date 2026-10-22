@@ -1,4 +1,4 @@
-// Bookworm UI kit — one import for every component. Spec: docs/design-system.md §4–§5.
+// Bookworm UI kit — one import for every component. Spec: docs/design-system.md §4–§5, docs/visual-v2.md §5.
 export * from './icons.js';
 export * from './status.js';
 export * from './copy.js';
@@ -6,21 +6,31 @@ export * from './dom.js';
 export * from './overlay.js';
 export * from './button.js';
 export * from './field.js';
+export * from './thumb.js';
 export * from './chip.js';
 export * from './badge.js';
 export * from './card.js';
 export * from './sectionHeader.js';
+export * from './illustrations.js';
 export * from './emptyState.js';
+export * from './sparkline.js';
 export * from './statCard.js';
 export * from './skeleton.js';
+export * from './meta.js';
+export * from './ambient.js';
 export * from './cover.js';
 export * from './avatar.js';
 export * from './progress.js';
 export * from './stars.js';
 export * from './bookCard.js';
+export * from './bookMeta.js';
+export * from './shelfRow.js';
+export * from './heroCard.js';
+export * from './storyCard.js';
 export * from './modal.js';
 export * from './menu.js';
 export * from './tabs.js';
 export * from './toast.js';
 export * from './confirmInline.js';
 export * from './commandPalette.js';
+export * from './scrollState.js';

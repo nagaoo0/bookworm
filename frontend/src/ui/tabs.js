@@ -1,15 +1,17 @@
-// Tabs (design-system §5.19): hash-routed links or buttons, roving tabindex, automatic activation.
+// Tabs (design-system §5.19; visual-v2 §5.18): hash-routed links or buttons, roving tabindex, automatic activation.
+// Underline tabs: 44 px high, 24 px apart, a 2 px accent indicator that slides under the active tab, a hairline below.
 import { html, raw, safeUrl } from '../utils.js';
 import { icon } from './icons.js';
 import { cx, uid, attr, prefersReducedMotion } from './dom.js';
 
 /**
  * @param {{ id?: string, items: Array<{ value: string, label: string, count?: number, icon?: string, href?: string }>,
- *   value?: string, variant?: 'underline'|'pills', scroll?: boolean, label?: string, cls?: string }} o
+ *   value?: string, variant?: 'underline'|'pills', scroll?: boolean, bleed?: boolean, label?: string, cls?: string }} o
+ *   bleed: the hairline runs edge to edge of the viewport while the tabs stay on the page gutter (use inside `.page`).
  *   Items with `href` render <a role="tab"> (hash routing does the work); without, <button role="tab">.
  *   Pair each tab with tabPanel({ tabsId: id, value, … }). Pass an explicit `id` if you render panels separately.
  */
-export function tabs({ id, items = [], value, variant = 'underline', scroll = true, label, cls = '' } = {}) {
+export function tabs({ id, items = [], value, variant = 'underline', scroll = true, bleed = false, label, cls = '' } = {}) {
   const tid = id ?? uid('tabs');
   const current = items.find(i => i.value === value) ?? items[0];
   const tabEls = items.map((it) => {
@@ -20,7 +22,7 @@ export function tabs({ id, items = [], value, variant = 'underline', scroll = tr
       ? html`<a href="${safeUrl(it.href)}"${common}${selected ? raw(' aria-current="page"') : ''}>${inner}</a>`
       : html`<button type="button"${common}>${inner}</button>`;
   });
-  return html`<div class="${cx('tabs', variant === 'pills' && 'tabs--pills', scroll && 'tabs--fade', cls)}" id="${tid}" data-tabs>
+  return html`<div class="${cx('tabs', variant === 'pills' && 'tabs--pills', scroll && 'tabs--fade', bleed && 'tabs--bleed', cls)}" id="${tid}" data-tabs>
     <div class="tabs__list" role="tablist"${attr('aria-label', label)}>${tabEls}<span class="tabs__indicator" aria-hidden="true"></span></div>
   </div>`;
 }

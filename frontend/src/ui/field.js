@@ -1,4 +1,4 @@
-// Field, Select, Switch, Checkbox (design-system §5.3 – §5.5).
+// Field, Select, Switch, Checkbox (design-system §5.3 – §5.5; visual-v2 §5.3, §5.4). Inputs are wells (inset shadow + hairline ring).
 import { html, raw } from '../utils.js';
 import { icon } from './icons.js';
 import { cx, uid, attr, attrsRaw, bool, delegate } from './dom.js';
@@ -9,14 +9,16 @@ const TEXT_TYPES = new Set(['text', 'email', 'url', 'password', 'number', 'date'
  * Label + input/textarea + hint/error.
  * @param {{ name: string, label?: string, type?: string, value?: any, placeholder?: string, hint?: string, error?: string,
  *   required?: boolean, disabled?: boolean, readonly?: boolean, autocomplete?: string, inputmode?: string,
- *   maxlength?: number, rows?: number, min?: any, max?: any, step?: any, size?: 'sm'|'md', icon?: string,
- *   id?: string, attrs?: string, ariaLabel?: string }} o
+ *   maxlength?: number, rows?: number, min?: any, max?: any, step?: any, size?: 'sm'|'md'|'lg'|'xl', icon?: string,
+ *   id?: string, attrs?: string, ariaLabel?: string, labelStyle?: 'caps'|'inline' }} o
  *   type 'textarea' renders a <textarea>; 'password' gets a show/hide toggle (needs mountFields).
+ *   size: sm 32 · md 40 · lg 48 (Discover, Auth) · xl 56 (Discover hero search).
+ *   labelStyle 'inline' renders the label as sentence-case 13 px text (Settings, Log-a-read) instead of the uppercase caption.
  *   `attrs` is a TRUSTED attribute string applied to the <input>.
  */
 export function field({
   name, label, type = 'text', value = '', placeholder, hint, error, required = false, disabled = false, readonly = false,
-  autocomplete, inputmode, maxlength, rows = 3, min, max, step, size = 'md', icon: iconName, id, attrs = '', ariaLabel,
+  autocomplete, inputmode, maxlength, rows = 3, min, max, step, size = 'md', icon: iconName, id, attrs = '', ariaLabel, labelStyle = 'caps',
 } = {}) {
   const fid = id ?? uid('field');
   const hintId = `${fid}-hint`;
@@ -33,10 +35,10 @@ export function field({
     : html`<input class="field__input" type="${inputType}" value="${value}"${attr('min', min)}${attr('max', max)}${attr('step', step)}${common}>`;
 
   return html`
-    <div class="${cx('field', size === 'sm' && 'field--sm', iconName && 'field--icon', password && 'field--trailing', error && 'field--error')}">
+    <div class="${cx('field', size !== 'md' && `field--${size}`, labelStyle === 'inline' && 'field--label-inline', iconName && 'field--icon', password && 'field--trailing', error && 'field--error')}">
       ${label ? html`<label class="field__label" for="${fid}">${label}${required ? html`<span class="field__req" aria-hidden="true">*</span>` : ''}</label>` : ''}
       <div class="field__control">
-        ${iconName ? html`<span class="field__icon">${icon(iconName, { size: 20 })}</span>` : ''}
+        ${iconName ? html`<span class="field__icon">${icon(iconName, { size: size === 'xl' ? 24 : 20 })}</span>` : ''}
         ${control}
         ${password ? html`<span class="field__trailing"><button type="button" class="icon-btn icon-btn--sm" data-field-toggle="${fid}" aria-label="Show password" aria-pressed="false">${icon('eye', { size: 16 })}</button></span>` : ''}
       </div>
@@ -79,9 +81,10 @@ export function setFieldError(rootOrInput, message) {
 /**
  * Styled native <select>.
  * @param {{ name: string, label?: string, options: Array<{value:any,label:string,disabled?:boolean}|{group:string,options:Array}>,
- *   value?: any, hint?: string, error?: string, size?: 'sm'|'md', id?: string, disabled?: boolean, required?: boolean, attrs?: string, ariaLabel?: string }} o
+ *   value?: any, hint?: string, error?: string, size?: 'sm'|'md'|'lg', id?: string, disabled?: boolean, required?: boolean, attrs?: string,
+ *   ariaLabel?: string, labelStyle?: 'caps'|'inline' }} o
  */
-export function select({ name, label, options = [], value, hint, error, size = 'md', id, disabled = false, required = false, attrs = '', ariaLabel } = {}) {
+export function select({ name, label, options = [], value, hint, error, size = 'md', id, disabled = false, required = false, attrs = '', ariaLabel, labelStyle = 'caps' } = {}) {
   const fid = id ?? uid('select');
   const hintId = `${fid}-hint`;
   const errorId = `${fid}-error`;
@@ -91,11 +94,11 @@ export function select({ name, label, options = [], value, hint, error, size = '
     ? html`<optgroup label="${o.group}">${(o.options ?? []).map(opt)}</optgroup>`
     : opt(o)));
   return html`
-    <div class="${cx('field', size === 'sm' && 'field--sm', error && 'field--error')}">
+    <div class="${cx('field', size !== 'md' && `field--${size}`, labelStyle === 'inline' && 'field--label-inline', error && 'field--error')}">
       ${label ? html`<label class="field__label" for="${fid}">${label}${required ? html`<span class="field__req" aria-hidden="true">*</span>` : ''}</label>` : ''}
       <div class="field__control">
         <select class="field__input field__select"${attr('name', name)} id="${fid}"${bool(disabled, 'disabled')}${bool(required, 'required')}${error ? raw(' aria-invalid="true"') : ''}${attr('aria-describedby', describedBy)}${attr('aria-label', !label ? ariaLabel : undefined)}${attrsRaw(attrs)}>${renderOpts}</select>
-        <span class="field__select-icon">${icon('chevrons-up-down', { size: 16 })}</span>
+        <span class="field__select-icon">${icon('chevron-down', { size: 16 })}</span>
       </div>
       ${error ? html`<p class="field__error" id="${errorId}" role="alert">${error}</p>` : ''}
       ${hint ? html`<p class="field__hint" id="${hintId}"${error ? raw(' hidden') : ''}>${hint}</p>` : ''}

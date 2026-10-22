@@ -1,4 +1,4 @@
-// Modal / Sheet / Lightbox (design-system §5.17).
+// Modal / Sheet / Lightbox (design-system §5.17; visual-v2 §5.16). Panel: surface-1, shadow-3, radius 24, no border.
 // role=dialog + aria-modal, labelled, focus trap (utils.trapFocus), Escape, scroll lock, focus returns to the opener.
 // Below md every modal is a bottom sheet (CSS); drag the handle/header down > 80px to dismiss.
 import { html, raw, safeUrl, trapFocus } from '../utils.js';
@@ -15,18 +15,21 @@ const isMobileViewport = () => {
 };
 
 /**
- * @param {{ title?: string, subtitle?: string, content?: any, footer?: any, size?: 'sm'|'md'|'lg'|'full',
- *   dismissible?: boolean, onClose?: () => void, id?: string, sheet?: boolean, top?: boolean, ariaLabel?: string }} opts
+ * @param {{ title?: string, subtitle?: string, content?: any, footer?: any, size?: 'sm'|'md'|'lg'|'palette'|'full',
+ *   dismissible?: boolean, onClose?: () => void, id?: string, sheet?: boolean, top?: boolean, ariaLabel?: string,
+ *   header?: 'default'|'ambient' }} opts
+ *   header 'ambient': the header gets the `.ambient` backdrop strip (Log-a-read uses it with the book's colour):
+ *   `applyAmbient(modal.header, await ambientFor({ … }))`. size 'palette' is the 640 px command palette.
  *   content / footer: html`` or raw() output (or a DOM Node). A modal needs `title` or `ariaLabel`.
  *   Mark the element that should get initial focus with `data-autofocus`; otherwise the first control is focused.
  *   Footer buttons: primary last on desktop, first on mobile (CSS flips the order).
  *   Elements with `data-modal-close` close the modal.
- * @returns {{ el: HTMLElement, panel: HTMLElement, body: HTMLElement, close: (immediate?: boolean) => void, setBusy: (busy: boolean) => void }}
+ * @returns {{ el: HTMLElement, panel: HTMLElement, body: HTMLElement, header: HTMLElement|null, close: (immediate?: boolean) => void, setBusy: (busy: boolean) => void }}
  */
 export function openModal(opts = {}) {
   const {
     title, subtitle, content = '', footer, size = 'md', dismissible = true, onClose, id,
-    sheet = false, top = false, ariaLabel, lightbox = false,
+    sheet = false, top = false, ariaLabel, lightbox = false, header: headerKind = 'default',
   } = opts;
 
   current?.close(true);
@@ -45,9 +48,9 @@ export function openModal(opts = {}) {
     <div class="modal__panel" role="dialog" aria-modal="true"${title ? raw(` aria-labelledby="${titleId}"`) : attr('aria-label', ariaLabel ?? 'Dialog')}${subtitle ? raw(` aria-describedby="${subId}"`) : ''}>
       ${lightbox ? '' : html`<div class="modal__handle" aria-hidden="true"></div>`}
       ${hasHeader ? html`
-        <div class="modal__header">
+        <div class="${headerKind === 'ambient' ? 'modal__header modal__header--ambient ambient ambient--strip' : 'modal__header'}">
           <div class="modal__heading">
-            ${title ? html`<h2 class="h3 modal__title" id="${titleId}">${title}</h2>` : ''}
+            ${title ? html`<h2 class="h2 modal__title" id="${titleId}">${title}</h2>` : ''}
             ${subtitle ? html`<p class="modal__subtitle" id="${subId}">${subtitle}</p>` : ''}
           </div>
           ${dismissible ? iconButton({ icon: 'x', label: 'Close', size: 'sm', attrs: 'data-modal-close' }) : ''}
@@ -58,6 +61,7 @@ export function openModal(opts = {}) {
     </div>`);
   const panel = el.querySelector('.modal__panel');
   const body = el.querySelector('[data-modal-body]');
+  const headerEl = el.querySelector('.modal__header');
   if (nodeContent) body.appendChild(nodeContent);
   if (nodeFooter) el.querySelector('[data-modal-footer]').appendChild(nodeFooter);
   if (lightbox) { body.style.padding = '0'; body.style.overflow = 'visible'; }
@@ -72,7 +76,7 @@ export function openModal(opts = {}) {
   panel.addEventListener('animationend', () => { panel.style.animation = 'none'; }, { once: true });
 
   let closed = false;
-  const api = { el, panel, body, close, setBusy };
+  const api = { el, panel, body, header: headerEl, close, setBusy };
   const unregister = registerOverlay({ kind: 'modal', close });
   current = api;
 
