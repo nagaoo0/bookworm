@@ -267,7 +267,6 @@ function peopleSection(panel, { viewer, isDisposed }) {
   }
 
   async function load() {
-    lbCache.clear();
     body.setAttribute('aria-busy', 'true');
     setHTML(body, html`<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${[1, 2, 3, 4, 5, 6].map(() => skeletonCard())}</div>`);
     try {
