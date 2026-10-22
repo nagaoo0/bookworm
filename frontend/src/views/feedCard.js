@@ -141,40 +141,39 @@ export function feedCardHTML(item, { viewer = getState().user, showAddToLibrary 
   const canAdd = showAddToLibrary && viewer && viewer.username !== name && inLibrary(item) === false;
   const gate = (control) => (viewer ? control : html`<span title="Sign in to react">${control}</span>`);
 
-  const likeBtn = social ? gate(html`<button type="button" class="btn btn--sm ${liked ? 'btn--danger-ghost' : 'btn--ghost'}" data-feed-like="${sid}" data-count="${likes}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${likes > 0 ? `Like, ${plural(likes, 'like')}` : 'Like'}"${viewer ? '' : raw(' disabled aria-disabled="true"')}><span class="btn__icon">${icon('heart', { size: 16, fill: liked })}</span><span class="btn__label">${likes > 0 ? likes : ''}</span></button>`) : '';
+  const likeStyle = liked ? 'width:auto;padding:0 8px;gap:4px;color:var(--danger);background:var(--danger-soft)' : 'width:auto;padding:0 8px;gap:4px';
+  const likeBtn = social ? gate(html`<button type="button" class="icon-btn icon-btn--xs text-caption" style="${likeStyle}" data-feed-like="${sid}" data-count="${likes}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${likes > 0 ? `Like, ${plural(likes, 'like')}` : 'Like'}"${viewer ? '' : raw(' disabled aria-disabled="true"')}>${icon('heart', { size: 16, fill: liked })}<span class="btn__label tabular-nums">${likes > 0 ? likes : ''}</span></button>`) : '';
 
-  const commentBtn = social ? gate(html`<button type="button" class="btn btn--sm btn--ghost" data-feed-comments="${sid}" data-count="${comments}" aria-expanded="false" aria-controls="${threadId}" aria-label="${comments > 0 ? `Comments, ${comments}` : 'Comments'}"${viewer ? '' : raw(' disabled aria-disabled="true"')}><span class="btn__icon">${icon('message-circle', { size: 16 })}</span><span class="btn__label">${comments > 0 ? comments : ''}</span></button>`) : '';
+  const commentBtn = social ? gate(html`<button type="button" class="icon-btn icon-btn--xs text-caption" style="width:auto;padding:0 8px;gap:4px" data-feed-comments="${sid}" data-count="${comments}" aria-expanded="false" aria-controls="${threadId}" aria-label="${comments > 0 ? `Comments, ${comments}` : 'Comments'}"${viewer ? '' : raw(' disabled aria-disabled="true"')}>${icon('message-circle', { size: 16 })}<span class="btn__label tabular-nums">${comments > 0 ? comments : ''}</span></button>`) : '';
 
   const addBtn = canAdd
     ? html`<button type="button" class="btn btn--sm btn--ghost" data-feed-add data-book-id="${item.book_id}"><span class="btn__icon">${icon('plus', { size: 16 })}</span><span class="btn__label">Add to library</span></button>`
     : '';
 
   return html`
-    <article class="card feed-card" data-feed-sid="${sid}" aria-label="${name ? `@${name} ${verb} ${item.title}` : item.title}">
+    <article class="card feed-card" data-feed-sid="${sid}" aria-label="${name ? `@${name} ${verb} ${item.title}` : item.title}" style="padding:20px">
       <div class="flex items-start gap-3">
         ${name ? html`<a href="#u/${encodeURIComponent(name)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: name, avatarUrl: item.avatar_url, size: 40 })}</a>` : ''}
-        <div class="min-w-0 flex-1">
-          <p class="text-small text-text-2">
-            ${name ? html`<a href="#u/${encodeURIComponent(name)}" class="font-semibold text-text-1 hover:underline">@${name}</a> ` : ''}${verb}
-            <a href="#book/${item.book_id}" class="font-display font-semibold text-text-1 hover:text-accent-text">${item.title}</a>
-          </p>
-          ${when ? html`<time class="text-caption text-text-3" datetime="${when}" title="${formatDate(when)}">${timeAgo(when)}</time>` : ''}
-        </div>
+        <p class="min-w-0 flex-1 self-center text-small text-text-2">
+          ${name ? html`<a href="#u/${encodeURIComponent(name)}" class="font-semibold text-text-1 hover:underline">@${name}</a> ` : ''}${verb}
+          <a href="#book/${item.book_id}" class="font-display font-semibold text-text-1 hover:text-accent-text">${item.title}</a>
+        </p>
+        ${when ? html`<time class="shrink-0 text-caption text-text-3" datetime="${when}" title="${formatDate(when)}">${timeAgo(when)}</time>` : ''}
       </div>
 
-      <div class="mt-3 flex gap-3">
-        <a href="#book/${item.book_id}" class="shrink-0" tabindex="-1" aria-hidden="true">${cover({ url: item.cover_url, bookId: item.book_id, title: item.title, size: 'sm' })}</a>
-        <div class="min-w-0 flex-1 space-y-1.5">
+      <div class="mt-4 flex gap-4">
+        <a href="#book/${item.book_id}" class="shrink-0 self-start" tabindex="-1" aria-hidden="true">${cover({ url: item.cover_url, bookId: item.book_id, title: item.title, authors: item.authors, size: 'sm', tilt: true })}</a>
+        <div class="min-w-0 flex-1 space-y-2">
           ${authors ? html`<p class="text-small text-text-2 line-clamp-1">${authors}</p>` : ''}
-          ${item.rating ? stars({ value: item.rating, size: 14 }) : ''}
-          ${review ? html`<p class="text-body text-text-1 whitespace-pre-line break-words ${long ? 'line-clamp-4' : ''}" id="${reviewId}">${linkifyMentions(review)}</p>` : ''}
+          ${item.rating ? stars({ value: item.rating, size: 16 }) : ''}
+          ${review ? html`<p class="quote text-text-1 whitespace-pre-line break-words ${long ? 'line-clamp-4' : ''}" id="${reviewId}">${linkifyMentions(review)}</p>` : ''}
           ${long ? html`<button type="button" class="btn btn--sm btn--ghost -ml-3" data-feed-more="${reviewId}" aria-expanded="false" aria-controls="${reviewId}"><span class="btn__label">More</span></button>` : ''}
         </div>
       </div>
 
-      <div class="mt-3 flex flex-wrap items-center gap-1 border-t border-border-1 pt-2">
+      <div class="mt-3 flex flex-wrap items-center gap-1">
         ${likeBtn}${commentBtn}
-        ${readers > 1 ? html`<span class="text-caption text-text-3 px-1">${plural(readers, 'reader')} finished this</span>` : ''}
+        ${readers > 1 ? html`<span class="px-1 text-caption text-text-2">${plural(readers, 'reader')} finished this</span>` : ''}
         <span class="flex-1"></span>
         ${addBtn}
       </div>
@@ -197,8 +196,8 @@ function paintLike(btn, liked, count) {
   btn.setAttribute('aria-pressed', liked ? 'true' : 'false');
   btn.setAttribute('aria-label', count > 0 ? `Like, ${plural(count, 'like')}` : 'Like');
   btn.dataset.count = String(count);
-  btn.classList.toggle('btn--danger-ghost', liked);
-  btn.classList.toggle('btn--ghost', !liked);
+  btn.style.color = liked ? 'var(--danger)' : '';
+  btn.style.background = liked ? 'var(--danger-soft)' : '';
   btn.querySelector('svg')?.setAttribute('fill', liked ? 'currentColor' : 'none');
   const label = btn.querySelector('.btn__label');
   if (label) label.textContent = count > 0 ? String(count) : '';

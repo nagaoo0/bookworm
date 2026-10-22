@@ -10,11 +10,12 @@ import { html, safeUrl } from '../utils.js';
 import { openSse } from '../sse.js';
 import { openLogReadModal, dayKey } from '../components/logReadModal.js';
 import {
-  ACTION, EMPTY, ERROR, LABEL, STATUS, TOAST, avatar, badge, bookCard, button, card, chipGroup, cover,
-  delegate, emptyState, field, formatAuthors, formatDate, icon, iconButton, mountBookGrid, mountChipGroup, mountConfirmInline,
-  mountCoverZoom, mountFields, mountMenuTriggers, mountProgressSlider, mountTabs, openModal, openPopover, openSheet,
-  plural, progressBar, progressSlider, sectionHeader, segmented, setButtonLoading, setFieldError, skeleton,
-  skeletonCard, skeletonList, stars, statusBadge, statusLabel, tabs, timeAgo, toast, uid, undoToast,
+  ACTION, EMPTY, ERROR, LABEL, STATUS, TOAST, ambientFor, applyAmbient, authorsHero, avatar, badge, bookCard, bookTags,
+  button, card, chipGroup, cover, delegate, emptyState, field, formatAuthors, formatDate, icon, iconButton, mountBookGrid,
+  mountBookMeta, mountChipGroup, mountConfirmInline, mountCoverZoom, mountFields, mountMenuTriggers, mountProgressSlider,
+  mountShelfRows, mountTabs, openModal, openPopover, openSheet, plural, progressBar, progressSlider, renderDescription,
+  sectionHeader, segmented, setButtonLoading, setFieldError, shelfRow, skeleton, skeletonList, stars, statusBadge,
+  statusLabel, tabs, timeAgo, toast, uid, undoToast,
 } from '../ui/index.js';
 
 const SOURCE_LABEL = { google: 'Google', openlibrary: 'Open Library', apple: 'Apple Books' };
@@ -105,12 +106,15 @@ export function renderBook(el, params) {
     skelTimer = setTimeout(() => {
       if (stale() || el.firstChild) return;
       el.innerHTML = String(html`
-        <div class="space-y-6" aria-busy="true">
-          <div class="flex flex-col items-center md:flex-row md:items-start gap-6">
-            ${skeleton({ w: 160, h: 240 })}
-            <div class="flex-1 w-full space-y-3">${skeleton({ w: '70%', h: 28 })}${skeleton({ w: '40%', h: 16 })}${skeleton({ w: '55%', h: 16 })}${skeleton({ w: 180, h: 44 })}</div>
+        <div class="space-y-8 pt-8" aria-busy="true">
+          <div class="flex flex-col items-center md:flex-row md:items-end gap-6 md:gap-10">
+            ${skeleton({ w: 200, h: 300 })}
+            <div class="flex-1 w-full space-y-3">${skeleton({ w: '60%', h: 44 })}${skeleton({ w: '30%', h: 16 })}${skeleton({ w: '45%', h: 14 })}${skeleton({ w: 200, h: 24 })}${skeleton({ w: 220, h: 48 })}</div>
           </div>
-          ${skeletonCard()}${skeletonCard()}
+          <div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <div class="space-y-3">${skeleton({ w: '20%', h: 24 })}${skeleton({ w: '100%', h: 14 })}${skeleton({ w: '96%', h: 14 })}${skeleton({ w: '88%', h: 14 })}</div>
+            ${skeleton({ w: '100%', h: 320 })}
+          </div>
         </div>`);
     }, 150);
 
@@ -209,17 +213,25 @@ function createPage(el, data, user) {
   }
 
   // ── Skeleton of the page: slots are filled by the render* functions below ──
+  // The ambient backdrop is a page-wide wash: the wrapper bleeds past the reading column (never past the viewport)
+  // so the radial gradients fade out before they reach an edge. Content keeps the column via equal inner padding.
+  el.style.maxWidth = 'var(--reading-max)';
+  el.style.marginInline = 'auto';
   el.innerHTML = String(html`
-    <div class="space-y-6 md:space-y-8 pb-20 md:pb-0">
-      <div>${button({ label: 'Back', variant: 'ghost', size: 'sm', icon: 'arrow-left', cls: '-ml-2', attrs: 'data-action="back"' })}</div>
-      <section aria-label="Book details" data-slot="hero"></section>
-      <div class="md:hidden" data-slot="tabs"></div>
-      <div class="space-y-6 md:space-y-8">
-        <div role="tabpanel" id="${tid}-panel-reading" aria-labelledby="${tid}-tab-reading" data-panel="reading" hidden><div data-slot="reading"></div></div>
-        <div role="tabpanel" id="${tid}-panel-about" aria-labelledby="${tid}-tab-about" data-panel="about"><div data-slot="about"></div></div>
-        <div role="tabpanel" id="${tid}-panel-community" aria-labelledby="${tid}-tab-community" data-panel="community"><div data-slot="community"></div></div>
+    <div class="book-page ambient ambient--page pb-20 md:pb-0" data-page style="--bleed:min(240px,max(0px,calc((100vw - 100% - 16px) / 2)));margin-inline:calc(-1 * var(--bleed));padding-inline:var(--bleed);margin-top:-96px;padding-top:96px">
+      <div class="pt-1">${button({ label: 'Back', variant: 'ghost', size: 'sm', icon: 'arrow-left', cls: '-ml-2', attrs: 'data-action="back"' })}</div>
+      <section aria-label="Book details" class="mt-3 md:mt-6" data-slot="hero"></section>
+      <div class="md:hidden mt-6" data-slot="tabs"></div>
+      <div class="mt-6 md:mt-12 grid gap-8 md:gap-10 lg:grid-cols-1 lg:data-[aside=true]:grid-cols-[minmax(0,1fr)_var(--aside-w)]" data-layout data-aside="false">
+        <aside class="min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-[84px] lg:self-start" role="tabpanel" id="${tid}-panel-reading" aria-labelledby="${tid}-tab-reading" data-panel="reading" hidden><div data-slot="reading"></div></aside>
+        <div class="min-w-0 space-y-10 md:space-y-12 lg:col-start-1 lg:row-start-1">
+          <div role="tabpanel" id="${tid}-panel-about" aria-labelledby="${tid}-tab-about" data-panel="about"><div data-slot="about"></div></div>
+          <div role="tabpanel" id="${tid}-panel-community" aria-labelledby="${tid}-tab-community" data-panel="community"><div data-slot="community"></div></div>
+        </div>
       </div>
     </div>`);
+  const pageEl = el.querySelector('[data-page]');
+  const layoutEl = el.querySelector('[data-layout]');
   const slot = (name) => el.querySelector(`[data-slot="${name}"]`);
 
   // Repaint a slot but keep keyboard focus on the equivalent control afterwards
@@ -240,9 +252,9 @@ function createPage(el, data, user) {
   }
 
   // ── Hero ──────────────────────────────────────────────────────────────────
-  function primaryCta({ block = false } = {}) {
+  function primaryCta({ block = false, sticky: inBar = false } = {}) {
     const e = getEntry();
-    const cls = block ? 'w-full' : 'max-md:flex-1';
+    const cls = [block ? 'w-full' : 'max-md:flex-1', inBar && '!h-11'].filter(Boolean).join(' ');
     if (!user) {
       return html`<a class="btn btn--primary btn--lg ${cls}" href="${safeUrl(authHref())}"><span class="btn__label">Sign in to track</span></a>`;
     }
@@ -259,31 +271,28 @@ function createPage(el, data, user) {
     const year = String(v.published ?? '').match(/\d{4}/)?.[0];
     const rated = S.sessions.filter(s => s.rating);
     const avg = rated.length ? rated.reduce((sum, s) => sum + s.rating, 0) / rated.length : 0;
-    const chips = [
-      year && badge({ label: year, icon: 'calendar' }),
-      v.pages && badge({ label: plural(v.pages, 'page'), icon: 'file-text' }),
-      S.book.publisher && badge({ label: S.book.publisher, icon: 'book' }),
-      ...v.categories.slice(0, 8).map(c => badge({ label: c, variant: 'outline', icon: 'tag' })),
-    ].filter(Boolean);
+    const metaLine = [year, v.pages ? plural(v.pages, 'page') : '', S.book.publisher].filter(Boolean).join(' · ');
+    const tags = bookTags(v.categories, { maxGenres: 3, maxAccolades: 1 });
     return html`
-      <div class="flex flex-col items-center text-center gap-5 md:flex-row md:items-start md:text-left md:gap-8">
-        <div class="shrink-0">${cover({ url: v.cover, bookId: S.book.id, title: v.title, size: 'lg', zoomable: true })}</div>
-        <div class="min-w-0 flex-1 space-y-3">
+      <div class="flex flex-col items-center text-center gap-6 md:flex-row md:items-end md:text-left md:gap-10">
+        <div class="shrink-0">${cover({ url: v.cover, bookId: S.book.id, title: v.title, authors: v.authors, size: 'lg', zoomable: true })}</div>
+        <div class="min-w-0 flex-1 space-y-3 pb-1">
           <div>
-            <h1 class="h1 break-words">${v.title}</h1>
-            ${v.authors.length ? html`<p class="text-body text-text-2 mt-1">${formatAuthors(v.authors)}</p>` : ''}
+            <h1 class="display break-words" data-focus-target>${v.title}</h1>
+            ${v.authors.length ? html`<p class="text-body text-text-2 mt-2">${authorsHero(v.authors)}</p>` : ''}
+            ${metaLine ? html`<p class="text-small text-text-3 mt-1 tabular-nums">${metaLine}</p>` : ''}
           </div>
-          ${chips.length ? html`<div class="flex flex-wrap justify-center md:justify-start gap-2">${chips}</div>` : ''}
+          ${tags ? html`<div class="flex flex-wrap justify-center md:justify-start gap-2 max-h-[4.75rem] overflow-hidden">${tags}</div>` : ''}
           ${(avg || e) ? html`
-            <div class="flex flex-wrap items-center justify-center md:justify-start gap-x-3 gap-y-2">
-              ${avg ? html`<span class="inline-flex items-center gap-2">${stars({ value: avg, size: 18 })}<span class="text-small text-text-2 tabular-nums">${avg.toFixed(1)} · ${plural(S.sessions.length, 'read')}</span></span>` : ''}
+            <div class="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-2">
+              ${avg ? html`<span class="inline-flex items-center gap-2">${stars({ value: avg, size: 20 })}<span class="text-small text-text-2 tabular-nums">${avg.toFixed(1)} · ${plural(S.sessions.length, 'read')}</span></span>` : ''}
               ${e ? statusBadge(e.status, { size: 'md' }) : ''}
             </div>` : ''}
-          ${e?.status === 'reading' ? html`<div class="w-full max-w-sm mx-auto md:mx-0" data-hero-progress>${progressBar({ value: e.progress_pct ?? 0, showValue: true, label: 'Reading progress' })}</div>` : ''}
-          <div class="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-1" data-hero-cta>
+          ${e?.status === 'reading' ? html`<div class="w-full max-w-sm mx-auto md:mx-0" data-hero-progress>${progressBar({ value: e.progress_pct ?? 0, showValue: true, label: 'Reading progress', glow: true })}</div>` : ''}
+          <div class="flex flex-wrap items-center justify-center md:justify-start gap-3 pt-2" data-hero-cta>
             ${primaryCta()}
             ${e?.status === 'reading' ? button({ label: ACTION.finish, variant: 'secondary', size: 'lg', icon: 'check', attrs: 'data-action="finish"' }) : ''}
-            ${user ? iconButton({ icon: 'more-horizontal', label: `More actions for ${v.title}`, variant: 'solid', attrs: 'data-more aria-haspopup="menu"' }) : ''}
+            ${user ? iconButton({ icon: 'more-horizontal', label: `More actions for ${v.title}`, variant: 'solid', cls: '!h-12 !w-12', attrs: 'data-more aria-haspopup="menu"' }) : ''}
           </div>
         </div>
       </div>`;
@@ -301,7 +310,7 @@ function createPage(el, data, user) {
 
   function renderHero() {
     paint(slot('hero'), heroHTML());
-    sticky.innerHTML = String(primaryCta({ block: true }));
+    sticky.innerHTML = String(primaryCta({ block: true, sticky: true }));
     io?.disconnect();
     const target = el.querySelector('[data-hero-cta]');
     if (target && 'IntersectionObserver' in window) {
@@ -311,6 +320,10 @@ function createPage(el, data, user) {
       sticky.hidden = true;
     }
     if (mounted) document.title = `${view().title} · Bookworm`;
+    // Cover-derived backdrop: cached colour applies at once, otherwise after the hero image has loaded
+    const v = view();
+    ambientFor({ bookId: S.book.id, img: el.querySelector('[data-slot="hero"] .cover__img'), url: v.cover, seed: v.title })
+      .then((c) => { if (mounted) applyAmbient(pageEl, c); }).catch(() => {});
   }
 
   // ── Your reading ──────────────────────────────────────────────────────────
@@ -320,14 +333,14 @@ function createPage(el, data, user) {
         : '';
     const sid = Number(s.id);
     return html`
-      <li class="rounded-md border border-border-1 bg-surface-2 p-3 space-y-2" data-session-id="${sid}">
+      <li class="py-3 space-y-1.5 border-t border-border-1 first:border-t-0 first:pt-0" data-session-id="${sid}">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span class="text-small font-medium">${readDates(s)}</span>
           ${s.rating ? stars({ value: s.rating, size: 14 }) : ''}
           ${src}
         </div>
-        ${s.review ? html`<p class="text-small text-text-2 whitespace-pre-line break-words">${s.review}</p>` : ''}
-        <div class="flex flex-wrap items-center justify-end gap-1">
+        ${s.review ? html`<p class="quote text-text-2 whitespace-pre-line break-words">${s.review}</p>` : ''}
+        <div class="flex flex-wrap items-center gap-1 -ml-2">
           ${button({ label: ACTION.edit, variant: 'ghost', size: 'sm', icon: 'pencil', attrs: `data-action="edit-read" data-session-id="${sid}"` })}
           <button type="button" class="btn btn--danger-ghost btn--sm" data-confirm="Delete this read?" data-confirm-verb="Delete" data-confirm-action="session" data-id="${sid}">
             <span class="btn__icon">${icon('trash-2', { size: 16 })}</span><span class="btn__label">${ACTION.delete}</span>
@@ -341,11 +354,11 @@ function createPage(el, data, user) {
       <div class="space-y-3">
         <div class="flex items-center justify-between gap-3">
           <h3 class="h3">Reading history</h3>
-          ${button({ label: ACTION.logRead, variant: 'secondary', size: 'sm', icon: 'plus', attrs: 'data-action="log-read"' })}
+          ${button({ label: ACTION.logRead, variant: 'ghost', size: 'sm', icon: 'plus', attrs: 'data-action="log-read"' })}
         </div>
         ${S.sessions.length
-          ? html`<ul class="space-y-3">${S.sessions.map(readRowHTML)}</ul>`
-          : emptyState({ icon: EMPTY.noReads.icon, title: EMPTY.noReads.title, size: 'sm' })}
+          ? html`<ul>${S.sessions.map(readRowHTML)}</ul>`
+          : html`<p class="text-small text-text-3">${EMPTY.noReads.title}</p>`}
       </div>`;
   }
 
@@ -356,12 +369,12 @@ function createPage(el, data, user) {
     const notes = S.notes.draft ?? e.notes ?? '';
     return html`
       <section aria-labelledby="${ids.reading}">
-        ${sectionHeader({ title: 'Your reading', id: ids.reading })}
         ${card({ content: html`
           <div class="space-y-5">
+            <h2 class="h3" id="${ids.reading}">Your reading</h2>
             <div class="space-y-2">
               <p class="label">Status</p>
-              ${segmented({ name: 'status', label: 'Reading status', value: e.status, items: STATUS_KEYS.map(k => ({ value: k, label: STATUS[k].label, icon: STATUS[k].icon })) })}
+              ${segmented({ name: 'status', label: 'Reading status', block: true, value: e.status, items: STATUS_KEYS.map(k => ({ value: k, label: STATUS[k].label, icon: STATUS[k].icon })) })}
             </div>
             ${e.status === 'reading' ? html`
               <div class="space-y-2">
@@ -381,9 +394,8 @@ function createPage(el, data, user) {
               ${field({ name: 'notes', label: LABEL.privateNotes, type: 'textarea', rows: 4, maxlength: 10000, value: notes, placeholder: 'Quotes, context, anything to remember' })}
               <p class="text-caption mt-1 min-h-4" data-notes-status role="status"></p>
             </div>
-          </div>
-          <hr class="my-5 border-border-1">
-          <div data-slot="history">${historyHTML()}</div>` })}
+            <div class="border-t border-border-1 pt-5" data-slot="history">${historyHTML()}</div>
+          </div>` })}
       </section>`;
   }
 
@@ -419,7 +431,7 @@ function createPage(el, data, user) {
       const dur = a.extra?.duration_minutes ?? null;
       const remaining = (pct !== null && pct < 100 && dur) ? Math.round(dur * (1 - pct / 100)) : null;
       const cta = finished ? 'Listen again' : (pct > 0 ? `Resume (${pct}%)` : 'Open');
-      return card({ padding: 'sm', content: html`
+      return card({ padding: 'sm', tone: 'quiet', content: html`
         <div class="flex items-center gap-3">
           <span class="text-info shrink-0">${icon('headphones', { size: 24 })}</span>
           <div class="min-w-0 flex-1">
@@ -441,7 +453,7 @@ function createPage(el, data, user) {
       const url = a.server_url && a.external_id ? `${String(a.server_url).replace(/\/+$/, '')}/book/${encodeURIComponent(a.external_id)}` : '';
       const calibreId = a.extra?.calibre_id ?? a.external_id;
       const series = toSeriesName(a.extra?.series);
-      return card({ padding: 'sm', content: html`
+      return card({ padding: 'sm', tone: 'quiet', content: html`
         <div class="flex items-center gap-3">
           <span class="text-success shrink-0">${icon('book-copy', { size: 24 })}</span>
           <div class="min-w-0 flex-1">
@@ -460,8 +472,8 @@ function createPage(el, data, user) {
     if (!items.length) return '';
     return html`
       <div>
-        ${sectionHeader({ title, level: 3 })}
-        <div class="scroller">${items.map(b => bookCard(b, { variant: 'compact' }))}</div>
+        <p class="label mb-3">${title}</p>
+        ${shelfRow({ items: items.map(b => bookCard(b, { variant: 'compact' })), label: title })}
       </div>`;
   }
 
@@ -471,13 +483,13 @@ function createPage(el, data, user) {
     return html`
       <section aria-labelledby="${ids.about}">
         ${sectionHeader({ title: 'About', id: ids.about })}
-        <div class="space-y-6">
+        <div class="space-y-8">
           ${desc ? html`
             <div data-desc>
-              <p class="text-body text-text-1 whitespace-pre-line break-words line-clamp-6" data-desc-text>${desc}</p>
+              <div class="text-body text-text-1 break-words line-clamp-6 [&_p+p]:mt-3 [&_strong]:font-semibold" data-desc-text>${renderDescription(desc)}</div>
               <button type="button" class="btn btn--ghost btn--sm -ml-2 mt-1" data-action="toggle-desc" aria-expanded="false" hidden><span class="btn__label">${ACTION.showMore}</span></button>
             </div>` : html`<p class="text-small text-text-3">No description available.</p>`}
-          <div class="space-y-6" data-slot="avail"></div>
+          <div class="space-y-8" data-slot="avail"></div>
         </div>
       </section>`;
   }
@@ -492,7 +504,7 @@ function createPage(el, data, user) {
     const m = aboutModel();
     const rows = S.availability.map(availabilityRow).filter(r => r !== '');
     return html`
-      ${rows.length ? html`<div>${sectionHeader({ title: LABEL.whereToFindIt, level: 3 })}<div class="space-y-3">${rows}</div></div>` : ''}
+      ${rows.length ? html`<div><p class="label mb-3">${LABEL.whereToFindIt}</p><div class="space-y-3">${rows}</div></div>` : ''}
       ${miniList(m.series ? `Also in ${m.series}` : '', m.inSeries)}
       ${miniList(m.narrator ? `More narrated by ${m.narrator}` : '', m.narrated)}`;
   }
@@ -554,12 +566,12 @@ function createPage(el, data, user) {
 
   function commentsHTML() {
     return html`
-      ${sectionHeader({ title: 'Comments', level: 3, count: S.comments.length || undefined })}
+      <p class="label mb-3">Comments${S.comments.length ? ` · ${S.comments.length}` : ''}</p>
       <div aria-live="polite">
         ${S.load.comments === 'loading' && !S.comments.length ? html`<div role="status" aria-label="Loading comments" aria-busy="true" class="space-y-3">${skeleton({ w: '100%', h: 40 })}${skeleton({ w: '80%', h: 40 })}</div>`
           : S.load.comments === 'error' && !S.comments.length ? sectionError('comments', 'comments')
             : S.comments.length
-              ? html`<ul class="space-y-4">${S.comments.map(commentHTML)}</ul>`
+              ? html`<ul class="space-y-5">${S.comments.map(commentHTML)}</ul>`
               : html`<p class="text-small text-text-3">${user ? 'No comments yet. Be the first.' : 'No comments yet.'}</p>`}
       </div>`;
   }
@@ -578,21 +590,20 @@ function createPage(el, data, user) {
     if (!S.social.length) return '';
     return html`
       <div>
-        ${sectionHeader({ title: LABEL.friendsOnThisBook, level: 3, count: S.social.length })}
-        <ul class="space-y-3">
+        <p class="label mb-3">${LABEL.friendsOnThisBook} · ${S.social.length}</p>
+        <ul>
           ${S.social.map(u => html`
-            <li>${card({ padding: 'sm', content: html`
-              <div class="flex gap-3">
-                ${avatar({ username: u.username, size: 32 })}
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <a class="text-small font-medium text-accent-text hover:underline" href="#u/${encodeURIComponent(u.username)}">@${u.username}</a>
-                    ${statusBadge(u.status)}
-                    ${u.rating ? stars({ value: u.rating, size: 14 }) : ''}
-                  </div>
-                  ${u.review ? html`<p class="text-small text-text-2 mt-1 line-clamp-3 whitespace-pre-line break-words">${u.review}</p>` : ''}
+            <li class="flex gap-3 py-3 border-t border-border-1 first:border-t-0 first:pt-0">
+              ${avatar({ username: u.username, size: 32 })}
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <a class="text-small font-medium text-accent-text hover:underline" href="#u/${encodeURIComponent(u.username)}">@${u.username}</a>
+                  ${statusBadge(u.status)}
+                  ${u.rating ? stars({ value: u.rating, size: 14 }) : ''}
                 </div>
-              </div>` })}</li>`)}
+                ${u.review ? html`<p class="quote text-text-2 mt-1 line-clamp-3 whitespace-pre-line break-words">${u.review}</p>` : ''}
+              </div>
+            </li>`)}
         </ul>
       </div>`;
   }
@@ -612,11 +623,11 @@ function createPage(el, data, user) {
     if (!recEntries.length) return '';
     return html`
       <div>
-        ${sectionHeader({ title: LABEL.youMightAlsoLike, level: 3 })}
-        <div class="scroller">${recEntries.map(({ b, href }) => bookCard(
+        <p class="label mb-3">${LABEL.youMightAlsoLike}</p>
+        ${shelfRow({ label: LABEL.youMightAlsoLike, items: recEntries.map(({ b, href }) => bookCard(
           { title: b.title, authors: b.authors, cover_url: b.cover_url, book_id: b.id ?? null },
           { variant: 'compact', href },
-        ))}</div>
+        )) })}
       </div>`;
   }
   function renderRecs() {
@@ -629,15 +640,18 @@ function createPage(el, data, user) {
     return html`
       <section aria-labelledby="${ids.community}">
         ${sectionHeader({ title: 'Community', id: ids.community })}
-        <div class="space-y-6">
+        <div class="space-y-8">
           <div data-slot="friends">${friendsHTML()}</div>
           <div data-slot="recs">${recsHTML()}</div>
           <div>
             <div data-slot="comments">${commentsHTML()}</div>
             ${user ? html`
-              <form class="mt-4 space-y-2" data-comment-form novalidate>
-                ${field({ name: 'body', label: 'Add a comment', type: 'textarea', rows: 3, maxlength: 2000, placeholder: 'Leave a comment' })}
-                <div class="flex justify-end">${button({ label: 'Post', variant: 'primary', type: 'submit' })}</div>
+              <form class="mt-5 flex gap-3" data-comment-form novalidate>
+                ${avatar({ username: user.username, size: 32 })}
+                <div class="min-w-0 flex-1 space-y-2">
+                  ${field({ name: 'body', ariaLabel: 'Add a comment', type: 'textarea', rows: 2, maxlength: 2000, placeholder: 'Leave a comment' })}
+                  <div class="flex justify-end">${button({ label: 'Post', variant: 'ghost', size: 'sm', type: 'submit' })}</div>
+                </div>
               </form>` : html`<p class="mt-4 text-small text-text-2"><a class="text-accent-text hover:underline" href="${safeUrl(authHref())}">Sign in to comment</a></p>`}
           </div>
         </div>
@@ -668,6 +682,7 @@ function createPage(el, data, user) {
     el.querySelectorAll('[data-panel]').forEach((p) => {
       p.hidden = !panelAvailable(p.dataset.panel) || (!mq.matches && p.dataset.panel !== S.tab);
     });
+    layoutEl.dataset.aside = String(panelAvailable('reading'));
     measureDesc();
   }
   function renderTabs() {
@@ -1197,6 +1212,8 @@ function createPage(el, data, user) {
   cleanups.push(mountProgressSlider(el, commitProgress));   // before the first render: see openProgressPicker
   cleanups.push(mountCoverZoom(el, { alt: S.book.title }));
   cleanups.push(mountFields(el));
+  cleanups.push(mountBookMeta(el));
+  cleanups.push(mountShelfRows(el));
   cleanups.push(mountConfirmInline(el, { onConfirm: onConfirmed }));
   cleanups.push(mountChipGroup(el, ({ name, value, active }) => {
     if (name === 'status') changeStatus(value);

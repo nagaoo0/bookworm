@@ -5,7 +5,7 @@ import { loadLibrary } from '../../libraryStore.js';
 import {
   TOAST, badge, button, card, cover, delegate, field, openPopover, plural, setButtonLoading, toast,
 } from '../../ui/index.js';
-import { createScope, errorText } from './common.js';
+import { createScope, errorText, group, groupCard } from './common.js';
 
 const authorOf = (authors) => (Array.isArray(authors) ? authors[0] : authors) ?? '';
 
@@ -30,7 +30,7 @@ function bookCell(role, id, title, authors, coverUrl) {
 }
 
 function pairHTML(pair, index) {
-  return html`<li class="rounded-lg border border-border-1 p-3 space-y-3" data-pair="${index}">
+  return html`<li class="rounded-xl bg-surface-2 p-3 space-y-3" data-pair="${index}">
     <div class="flex flex-wrap items-center justify-between gap-2">
       ${matchBadge(pair.score)}
       <span data-pair-action>${button({ label: 'Merge', variant: 'primary', size: 'sm', icon: 'merge', attrs: `data-action="merge" data-index="${index}" aria-haspopup="dialog"` })}</span>
@@ -57,25 +57,17 @@ export function mount(el) {
   const scope = createScope();
   let pairs = [];
 
-  el.innerHTML = String(html`
-    ${card({ content: html`
-      <div class="space-y-4">
-        ${toolRow('Find duplicates', 'Spot books that were imported from more than one source, then merge them into a single entry.',
-          button({ label: 'Find duplicates', variant: 'secondary', attrs: 'data-action="find-dupes"' }))}
-        <p class="text-small text-text-2" data-dupes-msg role="status" hidden></p>
-        <ul class="space-y-3" data-dupes-list></ul>
-      </div>` })}
-
-    ${card({ content: toolRow('Fetch missing covers', 'Search Google Books and Open Library for cover art on books that have none.',
-      button({ label: 'Fetch covers', variant: 'secondary', icon: 'image', attrs: 'data-action="fetch-covers"' })) })}
-
-    ${card({ content: html`
-      <div class="space-y-4">
-        ${toolRow('Export', 'Download your whole library as a tab-separated CSV file.',
-          button({ label: 'Export library', variant: 'secondary', icon: 'download', attrs: 'data-action="export"' }))}
-      </div>` })}
-
-    ${card({ content: html`
+  el.innerHTML = String(groupCard([
+    group(html`
+      ${toolRow('Find duplicates', 'Spot books that were imported from more than one source, then merge them into a single entry.',
+        button({ label: 'Find duplicates', variant: 'secondary', attrs: 'data-action="find-dupes"' }))}
+      <p class="text-small text-text-2" data-dupes-msg role="status" hidden></p>
+      <ul class="space-y-3" data-dupes-list></ul>`),
+    group(toolRow('Fetch missing covers', 'Search Google Books and Open Library for cover art on books that have none.',
+      button({ label: 'Fetch covers', variant: 'secondary', icon: 'image', attrs: 'data-action="fetch-covers"' }))),
+    group(toolRow('Export', 'Download your whole library as a tab-separated CSV file.',
+      button({ label: 'Export library', variant: 'secondary', icon: 'download', attrs: 'data-action="export"' }))),
+    group(html`
       <form class="space-y-4" data-import-form novalidate>
         <div>
           <h3 class="h3">Import</h3>
@@ -89,7 +81,8 @@ export function mount(el) {
         ${field({ name: 'paste', label: 'Or paste the data', type: 'textarea', rows: 5, placeholder: 'Paste tab-separated rows here' })}
         <div>${button({ label: 'Import', variant: 'primary', type: 'submit', icon: 'upload', attrs: 'data-import' })}</div>
         <div data-import-result role="status" aria-live="polite"></div>
-      </form>` })}`);
+      </form>`),
+  ]));
 
   const dupesMsg = el.querySelector('[data-dupes-msg]');
   const dupesList = el.querySelector('[data-dupes-list]');

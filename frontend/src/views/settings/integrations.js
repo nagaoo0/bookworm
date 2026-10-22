@@ -9,9 +9,15 @@ import {
 import { createScope, errorText, isHttpUrl } from './common.js';
 
 const SERVICES = {
-  audiobookshelf: { label: 'Audiobookshelf', icon: 'headphones' },
-  calibre: { label: 'Calibre-Web', icon: 'book-copy' },
+  audiobookshelf: { label: 'Audiobookshelf', icon: 'headphones', tone: '--info-fg' },
+  calibre: { label: 'Calibre-Web', icon: 'book-copy', tone: '--success-fg' },
 };
+
+/** Service roundel: the service's icon on a tinted disc (40 px on cards, 32 px for the Kobo sub-row). */
+function roundel(iconName, tone, size = 40) {
+  const box = size === 40 ? 'w-10 h-10' : 'w-8 h-8';
+  return html`<span class="inline-flex items-center justify-center ${box} rounded-full shrink-0" style="${`background:color-mix(in srgb, var(${tone}) 16%, var(--surface-2));color:var(${tone});box-shadow:inset 0 0 0 1px color-mix(in srgb, var(${tone}) 28%, transparent)`}" aria-hidden="true">${icon(iconName, { size: size === 40 ? 20 : 16 })}</span>`;
+}
 
 const DEFAULT_INTERVAL = 15 * 60 * 1000;
 const INTERVALS = [
@@ -37,7 +43,7 @@ const lastSyncText = (data) => (data.last_synced_at ? `Last synced ${timeAgo(dat
 
 function actionsHTML(service, data) {
   return html`<div class="flex flex-wrap items-center gap-2">
-    ${button({ label: 'Save & sync', variant: 'primary', type: 'submit', attrs: 'data-save' })}
+    ${button({ label: 'Save & sync', variant: 'secondary', type: 'submit', attrs: 'data-save' })}
     ${data ? html`
       ${button({ label: 'Test connection', variant: 'secondary', attrs: 'data-action="test"' })}
       ${button({ label: 'Sync now', variant: 'secondary', icon: 'refresh-cw', attrs: 'data-action="sync"' })}
@@ -70,7 +76,7 @@ function calibreFields(data) {
       <div class="pt-1">${field({ name: 'opdsStartPath', label: 'OPDS catalogue path', value: data?.opdsStartPath ?? '', placeholder: '/opds/new', hint: 'Leave blank to use /opds/new.', autocomplete: 'off' })}</div>
     </details>
     <div class="space-y-2">
-      <div class="flex items-center gap-2"><span class="label">Kobo sync token (optional)</span>${data?.kobo_connected ? badge({ label: 'Connected', variant: 'success' }) : ''}</div>
+      <div class="flex items-center gap-2">${roundel('tablet', '--warning-fg', 32)}<span class="label">Kobo sync token (optional)</span>${data?.kobo_connected ? badge({ label: 'Connected', variant: 'success' }) : ''}</div>
       ${field({ name: 'koboToken', ariaLabel: 'Kobo sync token', type: 'password', placeholder: data?.kobo_connected ? 'Saved — leave blank to keep' : 'Paste the token from Calibre-Web', autocomplete: 'off', hint: 'Syncs reading progress from your Kobo through Calibre-Web. Find the token in Calibre-Web under Settings, Connect to Kobo.' })}
     </div>
     ${select({ name: 'intervalMs', label: 'Auto-sync', value: data?.intervalMs ?? DEFAULT_INTERVAL, options: intervalOptions(data?.intervalMs) })}`;
@@ -83,12 +89,14 @@ function cardHTML(service, data, health) {
     content: html`
       <form class="space-y-4" data-service="${service}" novalidate>
         <div class="flex items-center gap-3">
-          <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-surface-2 text-text-2 shrink-0" aria-hidden="true">${icon(def.icon, { size: 20 })}</span>
-          <h3 class="h3 flex-1 min-w-0">${def.label}</h3>
+          ${roundel(def.icon, def.tone)}
+          <div class="flex-1 min-w-0">
+            <h3 class="h3">${def.label}</h3>
+            ${data ? html`<p class="text-small text-text-2" data-last-sync>${lastSyncText(data)}</p>` : ''}
+          </div>
           <span data-badge>${statusBadge(data, health)}</span>
         </div>
         ${service === 'audiobookshelf' ? absFields(data) : calibreFields(data)}
-        ${data ? html`<p class="text-small text-text-2" data-last-sync>${lastSyncText(data)}</p>` : ''}
         ${actionsHTML(service, data)}
         <p class="text-small" data-msg aria-live="polite" hidden></p>
       </form>`,

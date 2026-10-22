@@ -1,37 +1,27 @@
 // Stats (#stats/overview) and Year in review (#stats/year[/yyyy], #u/:name/year[/yyyy]).
-// Spec: docs/design-system.md §8.6. Chart.js is imported lazily (separate chunk) and reads its colours
-// from the CSS tokens, so charts are redrawn on `bw:prefs` (theme / accent change).
+// Spec: docs/visual-v2.md §6.8 (+ §3.6, §3.15, §4.7, §7.1). Chart.js is imported lazily (separate chunk) and reads its
+// colours from the --chart-* tokens, so charts are redrawn on `bw:prefs` (theme / accent change).
 import { api } from '../api.js';
 import { getState } from '../store.js';
 import { html, raw, safeUrl, localDayKey } from '../utils.js';
 import { ACCENT_KEYS } from '../prefs.js';
 import {
   ACTION, EMPTY, LABEL, NAV, TOAST, plural, formatDate, formatAuthors, uid, delegate, prefersReducedMotion,
-  avatar, badge, button, card, chipGroup, cover, emptyState, icon, mountChipGroup, mountTabs,
-  progressRing, sectionHeader, skeletonCard, stars, statCard, tabPanel, tabs, toast,
+  badge, button, card, cover, emptyState, genreBreakdown, icon, mountChipGroup, mountStoryCard, mountTabs,
+  progressBar, progressRing, sectionHeader, segmented, skeletonCard, stars, statCard, storyCard, tabPanel, tabs, toast,
 } from '../ui/index.js';
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// Google Books nests broad labels like "Fiction / Science Fiction / Space Opera".
-// For those, the top-level segment is meaningless, so the second segment is used instead.
-const BROAD = new Set(['Fiction', 'Nonfiction', 'Juvenile Fiction', 'Juvenile Nonfiction', 'Young Adult Fiction', 'Young Adult Nonfiction']);
-
-function normalizeCategory(name) {
-  const parts = String(name).split(' / ');
-  return (BROAD.has(parts[0]) && parts[1]) ? parts[1] : parts[0];
-}
-
-/** [[genre, count], …] for one year, most read first. */
+/** Cleaned genre distribution for one year: [{ name, count, share, other? }] (top 7 + Other, see ui/meta.js). */
 function genresForYear(stats, year) {
-  const merged = {};
+  const lists = [];
   for (const [cat, count] of Object.entries(stats.categoriesByYear?.[year] ?? {})) {
-    const key = normalizeCategory(cat);
-    merged[key] = (merged[key] ?? 0) + count;
+    for (let i = 0; i < Math.min(Number(count) || 0, 200); i++) lists.push([cat]);
   }
-  return Object.entries(merged).sort((a, b) => b[1] - a[1]);
+  return genreBreakdown(lists);
 }
 
 /** Years that have any reading or listening data, newest first. */
@@ -80,14 +70,15 @@ function createScope() {
   return scope;
 }
 
-function yearChips(years, selected) {
+/** Year selector: a segmented control (scrolls sideways when there are many years). */
+function yearSelector(years, selected) {
   if (!years.length) return '';
-  return chipGroup({
+  return html`<div class="max-w-full overflow-x-auto">${segmented({
     name: 'year',
     label: 'Year',
     items: years.map(y => ({ value: y, label: String(y) })),
     value: selected,
-  });
+  })}</div>`;
 }
 
 function loadErrorState() {
@@ -112,18 +103,21 @@ function loadChart() {
   return chartPromise;
 }
 
-/** Chart.js draws on a canvas and cannot resolve var(), so resolve the tokens once per draw. */
+/** Chart.js draws on a canvas and cannot resolve var(), so resolve the --chart-* tokens once per draw. */
 function readTheme(root) {
   const cs = getComputedStyle(root);
   const g = (name) => cs.getPropertyValue(name).trim();
   return {
     font: cs.fontFamily,
-    accent: g('--accent'),
-    text2: g('--text-2'),
+    accent: g('--chart-1') || g('--accent'),
+    series: [1, 2, 3, 4, 5, 6, 7].map(i => g(`--chart-${i}`)),
+    grid: g('--chart-grid') || g('--border-1'),
+    text: g('--chart-text') || g('--text-2'),
+    text1: g('--text-1'),
     text3: g('--text-3'),
-    border: g('--border-1'),
     surface: g('--surface-1'),
-    series: ['--accent', '--info-fg', '--success-fg', '--danger-fg', '--text-2'].map(g),
+    border: g('--border-1'),
+    shadow: g('--shadow-3'),
   };
 }
 
@@ -134,7 +128,12 @@ function withAlpha(color, alpha) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-// ── Heatmap (SVG; colours come from CSS variables, so it needs no redraw on theme change) ──
+// ── Heatmap (our own DOM grid, 53 × 7; colours are CSS variables so it needs no redraw on theme change) ──
+
+const HEAT_STEPS = [25, 50, 75, 100];
+const heatBg = (count, max) => (count <= 0
+  ? 'var(--surface-2)'
+  : `color-mix(in srgb, var(--accent) ${HEAT_STEPS[Math.min(3, Math.ceil((count / max) * 4) - 1)]}%, var(--surface-2))`);
 
 function heatmapHTML(daily) {
   const today = new Date();
@@ -145,7 +144,7 @@ function heatmapHTML(daily) {
 
   const max = Math.max(1, ...Object.values(daily));
   const activeDays = Object.values(daily).filter(v => v > 0).length;
-  const CELL = 12, GAP = 3, LABEL_W = 32, LABEL_H = 20;
+  const CELL = 12, GAP = 3;
 
   const weeks = [];
   const cur = new Date(start);
@@ -158,33 +157,41 @@ function heatmapHTML(daily) {
     weeks.push(week);
   }
 
-  const LEVEL_OPACITY = [0, 0.3, 0.5, 0.75, 1];
-  const level = (c) => (c === 0 ? 0 : Math.min(4, Math.ceil((c / max) * 4)));
-  const cellStyle = (c) => (c === 0 ? 'fill:var(--surface-2)' : `fill:var(--accent);fill-opacity:${LEVEL_OPACITY[level(c)]}`);
-
-  const cells = weeks.map((week, wi) => week.map((day, di) => (day.future ? '' : html`<rect x="${LABEL_W + wi * (CELL + GAP)}" y="${LABEL_H + di * (CELL + GAP)}" width="${CELL}" height="${CELL}" rx="2" style="${cellStyle(day.count)}"><title>${formatDate(day.date)}: ${plural(day.count, 'book')} finished</title></rect>`)));
+  const cells = weeks.map(week => week.map((day) => {
+    if (day.future) return html`<span class="block" aria-hidden="true"></span>`;
+    const label = `${day.date.getDate()} ${MONTHS[day.date.getMonth()]} — ${plural(day.count, 'book')}`;
+    return html`<span class="block rounded-[3px]" style="${`background:${heatBg(day.count, max)}`}" title="${label}"></span>`;
+  }));
 
   let lastMonth = -1;
+  let lastAt = -9;
   const monthLabels = weeks.map((week, wi) => {
     const m = week[0].date.getMonth();
     if (m === lastMonth) return '';
     lastMonth = m;
-    return html`<text x="${LABEL_W + wi * (CELL + GAP)}" y="${LABEL_H - 6}" font-size="12" style="fill:var(--text-3)">${MONTHS[m]}</text>`;
+    if (wi - lastAt < 3) return '';
+    lastAt = wi;
+    return html`<span class="absolute top-0 text-caption text-text-3" style="${`left:${wi * (CELL + GAP)}px`}">${MONTHS[m]}</span>`;
   });
   const dayLabels = [['Mon', 1], ['Wed', 3], ['Fri', 5]].map(([label, di]) =>
-    html`<text x="0" y="${LABEL_H + di * (CELL + GAP) + CELL - 1}" font-size="12" style="fill:var(--text-3)">${label}</text>`);
+    html`<span class="absolute left-0 text-caption text-text-3 leading-none" style="${`top:${di * (CELL + GAP) + 1}px`}">${label}</span>`);
 
-  const w = LABEL_W + weeks.length * (CELL + GAP);
-  const h = LABEL_H + 7 * (CELL + GAP);
+  const gridW = weeks.length * (CELL + GAP) - GAP;
+  const gridH = 7 * (CELL + GAP) - GAP;
   return html`
-    <div class="overflow-x-auto" data-heatmap>
-      <svg class="block" width="${w}" height="${h}" role="img" aria-label="Reading activity over the last 12 months: ${plural(activeDays, 'day')} with a finished book">
-        ${monthLabels}${dayLabels}${cells}
-      </svg>
+    <div class="flex gap-2" data-heatmap-wrap>
+      <div class="relative shrink-0 w-8" style="${`margin-top:20px;height:${gridH}px`}" aria-hidden="true">${dayLabels}</div>
+      <div class="min-w-0 flex-1 overflow-x-auto max-md:[mask-image:linear-gradient(to_right,#000_calc(100%_-_28px),transparent)] max-md:pr-4" data-heatmap>
+        <div role="img" aria-label="Reading activity over the last 12 months: ${plural(activeDays, 'day')} with a finished book" style="${`width:${gridW}px`}">
+          <div class="relative h-5" aria-hidden="true">${monthLabels}</div>
+          <div class="grid" style="${`grid-template-rows:repeat(7,${CELL}px);grid-auto-flow:column;grid-auto-columns:${CELL}px;gap:${GAP}px`}">${cells}</div>
+        </div>
+      </div>
     </div>
     <div class="flex items-center gap-1.5 mt-3 justify-end" aria-hidden="true">
       <span class="text-caption text-text-3">Less</span>
-      ${LEVEL_OPACITY.map(o => html`<span class="block w-3 h-3 rounded-sm" style="${o === 0 ? 'background:var(--surface-2)' : `background:var(--accent);opacity:${o}`}"></span>`)}
+      <span class="block w-3 h-3 rounded-[3px]" style="background:var(--surface-2)"></span>
+      ${HEAT_STEPS.map(p => html`<span class="block w-3 h-3 rounded-[3px]" style="${`background:color-mix(in srgb, var(--accent) ${p}%, var(--surface-2))`}"></span>`)}
       <span class="text-caption text-text-3">More</span>
     </div>`;
 }
@@ -196,7 +203,7 @@ function goalCardHTML(goal, year) {
   const isCurrent = year === now.getFullYear();
   if (!goal?.target) {
     if (!isCurrent) return '';
-    return card({ content: html`
+    return card({ cls: 'h-full', content: html`
       <div class="flex items-center gap-4">
         <span class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface-2 text-text-3 shrink-0" aria-hidden="true">${icon('target', { size: 24 })}</span>
         <div class="min-w-0 flex-1">
@@ -216,15 +223,42 @@ function goalCardHTML(goal, year) {
   } else {
     pace = done ? 'Goal reached' : `${goal.target - read} short of the goal`;
   }
-  return card({ content: html`
+  return card({ cls: 'h-full', content: html`
     <div class="flex items-center gap-5">
       ${progressRing({ value: read, max: goal.target, size: 96, label: String(read), sublabel: `of ${goal.target}` })}
-      <div class="min-w-0 flex-1">
-        <h2 class="h3">${LABEL.goal(year)}</h2>
-        <p class="text-small text-text-2">${plural(read, 'book')} read · ${pace}${done ? html` <span aria-hidden="true">🎉</span>` : ''}</p>
-        <a class="btn btn--ghost btn--sm mt-2" href="#settings/reading"><span class="btn__label">Edit goal</span></a>
+      <div class="min-w-0 flex-1 space-y-3">
+        <div>
+          <h2 class="h3">${LABEL.goal(year)}</h2>
+          <p class="text-small text-text-2">${plural(read, 'book')} read · ${pace}${done ? html` <span aria-hidden="true">🎉</span>` : ''}</p>
+        </div>
+        ${progressBar({ value: read, max: goal.target, size: 'lg', label: `${year} goal progress`, ticks: [25, 50, 75], tone: done ? 'success' : 'accent' })}
+        <a class="btn btn--ghost btn--sm" href="#settings/reading"><span class="btn__label">Edit goal</span></a>
       </div>
     </div>` });
+}
+
+function streakCardHTML(daily, streak) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = 27; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    days.push({ d, c: daily[localDayKey(d)] ?? 0 });
+  }
+  const max = Math.max(1, ...days.map(x => x.c));
+  return card({ cls: 'h-full', content: html`
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <span class="label">Day streak</span>
+        <p class="stat mt-1.5 text-accent-text">${streak}<span class="text-small font-medium text-text-2 ml-2 align-middle">${streak === 1 ? 'day' : 'days'}</span></p>
+      </div>
+      <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-accent-soft text-lg" aria-hidden="true">🔥</span>
+    </div>
+    <div class="grid grid-cols-[repeat(28,minmax(0,1fr))] gap-[3px] mt-4" role="img" aria-label="Finished books in the last 28 days">
+      ${days.map(({ d, c }) => html`<span class="block h-5 rounded-[3px]" style="${`background:${heatBg(c, max)}`}" title="${`${d.getDate()} ${MONTHS[d.getMonth()]} — ${plural(c, 'book')}`}"></span>`)}
+    </div>
+    <p class="text-caption text-text-3 mt-2">Consecutive days with a finished book</p>` });
 }
 
 function listeningCardHTML(stats, year) {
@@ -242,49 +276,68 @@ function listeningCardHTML(stats, year) {
     </section>`;
 }
 
+function genreLegendHTML(rows) {
+  return html`<ul class="flex flex-wrap gap-1.5 mt-4" aria-label="Genres">
+    ${rows.map((g, i) => html`<li class="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-surface-2 text-caption text-text-1">
+      <span class="block w-2 h-2 rounded-full shrink-0" style="${`background:${g.other ? 'var(--text-3)' : `var(--chart-${(i % 7) + 1})`}`}" aria-hidden="true"></span>
+      <span class="truncate max-w-[10rem]">${g.name}</span><span class="text-text-3 tabular-nums">${g.count}</span>
+    </li>`)}
+  </ul>`;
+}
+
 function overviewBodyHTML({ stats, year, goal, absConnected, compact }) {
   const finished = stats.perYear?.[year] ?? 0;
+  const prevFinished = stats.perYear?.[year - 1];
   const pages = stats.pagesByYear?.[year] ?? 0;
+  const prevPages = stats.pagesByYear?.[year - 1];
   const genres = genresForYear(stats, year);
   const daily = stats.dailySessions ?? {};
   const streak = computeStreak(daily);
   const monthly = MONTHS.map((_, i) => stats.monthly?.[year]?.[i + 1] ?? 0);
+  const pageSeries = Object.keys(stats.pagesByYear ?? {}).map(Number).sort((a, b) => a - b).slice(-6).map(y => stats.pagesByYear[y]);
+
+  const finishedDelta = prevFinished !== undefined && prevFinished !== finished
+    ? { value: `${finished > prevFinished ? '+' : '−'}${Math.abs(finished - prevFinished)}`, tone: finished > prevFinished ? 'up' : 'down', label: `vs ${year - 1}` } : undefined;
+  const pagesDelta = prevPages > 0 && pages > 0 && prevPages !== pages
+    ? { value: `${pages > prevPages ? '+' : '−'}${Math.round((Math.abs(pages - prevPages) / prevPages) * 100)}%`, tone: pages > prevPages ? 'up' : 'down', label: `vs ${year - 1}` } : undefined;
 
   const goalHtml = compact ? '' : goalCardHTML(goal, year);
-  const streakHtml = streak > 0
-    ? statCard({ label: 'Day streak', value: streak, hint: 'Consecutive days with a finished book', emoji: '🔥', tone: 'accent' })
-    : '';
+  const streakHtml = streak > 0 ? streakCardHTML(daily, streak) : '';
   const monthlyId = uid('stats-monthly');
   const genresId = uid('stats-genres');
   const activityId = uid('stats-activity');
   const monthlySummary = `Books finished by month in ${year}: ${MONTHS.map((m, i) => `${m} ${monthly[i]}`).join(', ')}`;
-  const genreSummary = `Genres in ${year}: ${genres.slice(0, 10).map(([g, c]) => `${g} ${c}`).join(', ')}`;
+  const genreSummary = `Genres in ${year}: ${genres.map(g => `${g.name} ${g.count}`).join(', ')}`;
+  const genreTotal = genres.reduce((n, g) => n + g.count, 0);
 
   return html`
-    <div class="space-y-6 md:space-y-8">
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        ${statCard({ label: LABEL.finished, value: finished, hint: `${stats.totalBooks ?? 0} all time`, icon: 'check-circle-2' })}
-        ${statCard({ label: LABEL.pagesRead, value: pages > 0 ? pages.toLocaleString() : null, hint: pages > 0 ? `in ${year}` : 'Page counts not tracked', icon: 'file-text' })}
+    <div class="space-y-4 md:space-y-6">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 max-xl:[&_svg.sparkline]:hidden">
+        ${statCard({ label: LABEL.finished, value: finished, hint: `${stats.totalBooks ?? 0} all time`, icon: 'check-circle-2', delta: finishedDelta, spark: monthly.some(Boolean) ? monthly : undefined })}
+        ${statCard({ label: LABEL.pagesRead, value: pages > 0 ? pages.toLocaleString() : null, hint: pages > 0 ? `in ${year}` : 'Page counts not tracked', icon: 'file-text', delta: pagesDelta, spark: pageSeries.length > 1 ? pageSeries : undefined })}
         ${statCard({ label: LABEL.averageRating, value: stats.avgRating ? stats.avgRating.toFixed(1) : null, hint: 'across all reads', icon: 'star' })}
         ${statCard({ label: 'Reading now', value: stats.currentlyReading ?? 0, hint: compact ? undefined : 'books in progress', icon: 'book-open', href: compact ? undefined : '#library/status/reading' })}
       </div>
 
-      ${(goalHtml || streakHtml) ? html`<div class="grid gap-3 md:grid-cols-2">
-        ${goalHtml ? html`<div class="${streakHtml ? '' : 'md:col-span-2'}">${goalHtml}</div>` : ''}
-        ${streakHtml ? html`<div class="${goalHtml ? '' : 'md:col-span-2'}">${streakHtml}</div>` : ''}
+      ${(goalHtml || streakHtml) ? html`<div class="grid gap-3 md:gap-4 lg:grid-cols-12">
+        ${goalHtml ? html`<div class="${streakHtml ? 'lg:col-span-8' : 'lg:col-span-12'}">${goalHtml}</div>` : ''}
+        ${streakHtml ? html`<div class="${goalHtml ? 'lg:col-span-4' : 'lg:col-span-12'}">${streakHtml}</div>` : ''}
       </div>` : ''}
 
       ${(!compact && absConnected) ? listeningCardHTML(stats, year) : ''}
 
-      <section aria-labelledby="${monthlyId}">
-        ${sectionHeader({ title: LABEL.finishedByMonth, id: monthlyId })}
-        ${card({ content: html`<div class="relative h-56"><canvas data-chart="monthly" role="img" aria-label="${monthlySummary}"></canvas></div>` })}
-      </section>
-
-      ${genres.length ? html`<section aria-labelledby="${genresId}">
-        ${sectionHeader({ title: LABEL.genres, id: genresId })}
-        ${card({ content: html`<div class="relative h-72"><canvas data-chart="genres" role="img" aria-label="${genreSummary}"></canvas></div>` })}
-      </section>` : ''}
+      <div class="grid gap-3 md:gap-4 lg:grid-cols-12">
+        <section class="${genres.length ? 'lg:col-span-8' : 'lg:col-span-12'}" aria-labelledby="${monthlyId}">
+          ${sectionHeader({ title: LABEL.finishedByMonth, id: monthlyId })}
+          ${card({ cls: 'h-[calc(100%-3rem)]', content: html`<div class="relative h-60"><canvas data-chart="monthly" role="img" aria-label="${monthlySummary}"></canvas></div>` })}
+        </section>
+        ${genres.length ? html`<section class="lg:col-span-4" aria-labelledby="${genresId}">
+          ${sectionHeader({ title: LABEL.genres, id: genresId })}
+          ${card({ cls: 'h-[calc(100%-3rem)]', content: html`
+            <div class="relative h-44"><canvas data-chart="genres" data-total="${genreTotal}" role="img" aria-label="${genreSummary}"></canvas></div>
+            ${genreLegendHTML(genres)}` })}
+        </section>` : ''}
+      </div>
 
       ${Object.keys(daily).length ? html`<section aria-labelledby="${activityId}">
         ${sectionHeader({ title: LABEL.readingActivity, id: activityId })}
@@ -294,19 +347,19 @@ function overviewBodyHTML({ stats, year, goal, absConnected, compact }) {
 }
 
 /**
- * Renders the overview (chips + body + charts) into `container`.
+ * Renders the overview (year selector + body + charts) into `container`.
  * `goalFor(year)` → Promise<goal|null> (cached by the caller). Returns cleanup.
  */
 function mountOverview(container, { stats, goalFor, absConnected = false, compact = false, year, onYear }) {
   const scope = createScope();
   const years = yearsOf(stats);
   let selected = pickYear(year, years);
-  if (!years.includes(selected)) years.unshift(selected);   // requested / current year without data still gets a chip
+  if (!years.includes(selected)) years.unshift(selected);   // requested / current year without data still gets a segment
   years.sort((a, b) => b - a);
 
   container.innerHTML = String(html`
-    <div class="space-y-6 md:space-y-8">
-      <div data-year-chips>${yearChips(years, selected)}</div>
+    <div class="space-y-4 md:space-y-6">
+      <div class="flex justify-end" data-year-chips>${yearSelector(years, selected)}</div>
       <div data-stats-body></div>
     </div>`);
   const body = container.querySelector('[data-stats-body]');
@@ -332,26 +385,53 @@ function mountOverview(container, { stats, goalFor, absConnected = false, compac
 
     const t = readTheme(body);
     const animation = prefersReducedMotion() ? false : undefined;
-    const tick = { color: t.text2, font: { family: t.font, size: 12 } };
+    const tick = { color: t.text, font: { family: t.font, size: 12 } };
+    const tooltip = {
+      backgroundColor: t.surface, titleColor: t.text1, bodyColor: t.text, borderColor: t.border, borderWidth: 1,
+      padding: 10, cornerRadius: 10, displayColors: false, titleFont: { family: t.font, size: 12 }, bodyFont: { family: t.font, size: 12 },
+    };
 
     const monthlyCanvas = body.querySelector('[data-chart="monthly"]');
     if (monthlyCanvas) {
       const counts = MONTHS.map((_, i) => stats.monthly?.[selected]?.[i + 1] ?? 0);
+      // Months with no finished book get a 2 px baseline tick instead of an empty slot
+      const baselineTicks = {
+        id: 'baselineTicks',
+        afterDatasetsDraw(chart) {
+          const { ctx, scales: { y } } = chart;
+          ctx.save();
+          ctx.fillStyle = t.grid;
+          chart.getDatasetMeta(0).data.forEach((bar, i) => {
+            if (counts[i] === 0) ctx.fillRect(bar.x - 6, y.getPixelForValue(0) - 2, 12, 2);
+          });
+          ctx.restore();
+        },
+      };
       charts.push(new Chart(monthlyCanvas, {
         type: 'bar',
         data: {
           labels: MONTHS,
-          datasets: [{ label: String(selected), data: counts, backgroundColor: withAlpha(t.accent, 0.6), borderColor: t.accent, borderWidth: 1, borderRadius: 4 }],
+          datasets: [{
+            label: String(selected), data: counts, maxBarThickness: 18, borderRadius: { topLeft: 6, topRight: 6 }, borderSkipped: false,
+            backgroundColor: (ctx) => {
+              const area = ctx.chart.chartArea;
+              if (!area) return withAlpha(t.accent, 0.9);
+              const g = ctx.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+              g.addColorStop(0, withAlpha(t.accent, 0.9));
+              g.addColorStop(1, withAlpha(t.accent, 0.55));
+              return g;
+            },
+          }],
         },
         options: {
           responsive: true, maintainAspectRatio: false, animation,
           plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { label: (ctx) => ` ${plural(ctx.parsed.y, 'book')}` } },
+            tooltip: { ...tooltip, callbacks: { label: (ctx) => ` ${plural(ctx.parsed.y, 'book')}` } },
           },
           scales: {
-            x: { grid: { display: false }, ticks: tick },
-            y: { beginAtZero: true, grid: { color: t.border }, ticks: { ...tick, stepSize: 1, precision: 0 } },
+            x: { grid: { display: false }, border: { display: false }, ticks: { ...tick, maxRotation: 0, autoSkip: true } },
+            y: { beginAtZero: true, border: { display: false }, grid: { color: t.grid, borderDash: [4, 4], drawTicks: false }, ticks: { ...tick, stepSize: 1, precision: 0, padding: 8 } },
           },
         },
       }));
@@ -359,29 +439,35 @@ function mountOverview(container, { stats, goalFor, absConnected = false, compac
 
     const genreCanvas = body.querySelector('[data-chart="genres"]');
     if (genreCanvas) {
-      const sorted = genresForYear(stats, selected);
-      const top = sorted.slice(0, 10);
-      const other = sorted.slice(10).reduce((sum, [, n]) => sum + n, 0);
-      if (other > 0) top.push(['Other', other]);
-      const colors = top.map(([name], i) => {
-        if (name === 'Other') return t.text3;
-        // Five token colours, then the same colours thinned out (the legend names every slice)
-        const tier = Math.floor(i / t.series.length);
-        return withAlpha(t.series[i % t.series.length], [1, 0.55, 0.3][Math.min(tier, 2)]);
-      });
+      const rows = genresForYear(stats, selected);
+      const total = rows.reduce((n, g) => n + g.count, 0);
+      const colors = rows.map((g, i) => (g.other ? t.text3 : t.series[i % 7]));
+      const centre = {
+        id: 'centreTotal',
+        afterDraw(chart) {
+          const arc = chart.getDatasetMeta(0).data[0];
+          if (!arc) return;
+          const { ctx } = chart;
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = t.text1;
+          ctx.font = `700 28px ${t.font}`;
+          ctx.fillText(String(total), arc.x, arc.y - 6);
+          ctx.fillStyle = t.text;
+          ctx.font = `500 12px ${t.font}`;
+          ctx.fillText('genre tags', arc.x, arc.y + 16);
+          ctx.restore();
+        },
+      };
       charts.push(new Chart(genreCanvas, {
         type: 'doughnut',
-        data: { labels: top.map(([n]) => n), datasets: [{ data: top.map(([, n]) => n), backgroundColor: colors, borderColor: t.surface, borderWidth: 2 }] },
+        data: { labels: rows.map(g => g.name), datasets: [{ data: rows.map(g => g.count), backgroundColor: colors, borderColor: t.surface, borderWidth: 3 }] },
         options: {
-          responsive: true, maintainAspectRatio: false, animation, cutout: '60%',
-          plugins: {
-            legend: {
-              position: genreCanvas.parentElement.clientWidth < 480 ? 'bottom' : 'right',
-              labels: { color: t.text2, boxWidth: 12, font: { family: t.font, size: 12 } },
-            },
-            tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${plural(ctx.parsed, 'book')}` } },
-          },
+          responsive: true, maintainAspectRatio: false, animation, cutout: '72%',
+          plugins: { legend: { display: false }, tooltip: { ...tooltip, callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.parsed}` } } },
         },
+        plugins: [centre],
       }));
     }
   }
@@ -422,96 +508,111 @@ function topBooksOf(feed, year) {
     .slice(0, 5);
 }
 
+function firstsOf(feed, year) {
+  const inYear = (feed ?? []).filter(r => r.finished_at && new Date(r.finished_at).getFullYear() === year)
+    .sort((a, b) => new Date(a.finished_at) - new Date(b.finished_at));
+  if (!inYear.length) return [];
+  const first = inYear[0];
+  const last = inYear[inYear.length - 1];
+  const rows = [{ label: 'First finish', book: first }];
+  if (last.session_id !== first.session_id) rows.push({ label: 'Latest finish', book: last });
+  return rows;
+}
+
 function yearBodyHTML({ stats, feed, person, year, headingLevel, shareUrl, own }) {
   const finished = stats.perYear?.[year] ?? 0;
   const pages = stats.pagesByYear?.[year] ?? 0;
   const author = stats.favoriteAuthorByYear?.[year] ?? null;
-  const topGenre = genresForYear(stats, year)[0]?.[0] ?? null;
+  const topGenre = genresForYear(stats, year).find(g => !g.other)?.name ?? null;
   const audioBooks = stats.absSessionsByYear?.[year] ?? 0;
-  const audioHours = stats.absMinutesByYear?.[year] ? Math.round(stats.absMinutesByYear[year] / 60) : null;
   const monthly = MONTHS.map((_, i) => stats.monthly?.[year]?.[i + 1] ?? 0);
   const maxMonth = Math.max(0, ...monthly);
   const peak = maxMonth > 0 ? MONTHS[monthly.indexOf(maxMonth)] : null;
   const top = topBooksOf(feed, year);
+  const firsts = firstsOf(feed, year);
   const hasAny = finished > 0 || audioBooks > 0;
 
   const barsId = uid('yir-months');
   const topId = uid('yir-top');
-  const shareId = uid('yir-share');
+  const firstsId = uid('yir-firsts');
   const heading = headingLevel === 1 ? 'h1' : 'h2';
 
-  const hero = html`
-    <div class="relative overflow-hidden rounded-xl border border-border-1 bg-surface-1 p-6 md:p-8 text-center">
-      <div class="absolute inset-0 bg-accent-soft pointer-events-none" aria-hidden="true"></div>
-      <div class="relative">
-        <div class="flex justify-center mb-3">${avatar({ username: person.username, avatarUrl: person.avatarUrl, size: 64, ring: true })}</div>
-        <p class="text-small text-text-2">@${person.username}</p>
-        <p class="display text-accent-text mt-1">${year}</p>
-        ${raw(`<${heading} class="h2 mt-1">`)}${NAV.yearInReview}${raw(`</${heading}>`)}
-      </div>
-    </div>`;
-
   if (!hasAny) {
-    return html`<div class="space-y-6 md:space-y-8">${hero}${emptyState({ icon: 'calendar', title: `Nothing finished in ${year}`, body: own ? 'Finish a book to start your year in review.' : 'No finished books for this year yet.', size: 'sm' })}</div>`;
+    return html`<div class="rounded-[24px] bg-surface-2 p-5 md:p-10">${emptyState({ icon: 'calendar', title: `Nothing finished in ${year}`, body: own ? 'Finish a book to start your year in review.' : 'No finished books for this year yet.', size: 'sm' })}</div>`;
   }
 
+  const story = storyCard({
+    year, username: person.username, avatarUrl: person.avatarUrl,
+    stats: { finished, pages, avgRating: stats.avgRating },
+    topBooks: top, favouriteAuthor: author ?? undefined, topGenre: topGenre ?? undefined,
+  });
+
   return html`
-    <div class="space-y-6 md:space-y-8">
-      ${hero}
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        ${statCard({ label: LABEL.finished, value: finished, tone: 'accent' })}
-        ${statCard({ label: LABEL.pagesRead, value: pages > 0 ? pages.toLocaleString() : null, hint: pages > 0 ? undefined : 'Page counts not tracked' })}
-        ${statCard({ label: LABEL.averageRating, value: stats.avgRating ? stats.avgRating.toFixed(1) : null })}
-        ${statCard({ label: 'Finished all time', value: stats.totalBooks ?? 0 })}
-        ${author ? statCard({ label: LABEL.favouriteAuthor, value: author, size: 'sm' }) : ''}
-        ${topGenre ? statCard({ label: LABEL.topGenre, value: topGenre, size: 'sm' }) : ''}
-        ${audioBooks > 0 ? statCard({ label: LABEL.audiobooks, value: audioBooks, size: 'sm' }) : ''}
-        ${audioHours ? statCard({ label: LABEL.hoursListened, value: `${audioHours} h`, size: 'sm' }) : ''}
+    <div class="rounded-[24px] bg-surface-2 p-4 md:p-10 grid gap-8 lg:grid-cols-[400px_minmax(0,1fr)] lg:gap-12 items-start">
+      <div class="flex flex-col items-center gap-5 max-md:-mx-4 max-md:-mt-4 max-md:mb-0">
+        ${story}
+        <div class="w-full max-w-[400px] flex flex-col items-center gap-3 max-md:px-4">
+          <div class="flex flex-wrap justify-center gap-2">
+            ${button({ label: ACTION.share, variant: 'primary', icon: 'share-2', attrs: 'data-action="share"' })}
+            ${button({ label: ACTION.copyLink, variant: 'secondary', icon: 'link', attrs: 'data-action="copy-link"' })}
+          </div>
+          ${(own && getState().user && getState().user.isPublic === false)
+    ? html`<p class="text-small text-text-2 text-center">Your profile is private, so only you can open this link.</p>` : ''}
+          <p class="text-small text-text-3 break-all text-center"><a class="hover:text-accent-text hover:underline" href="${safeUrl(shareUrl)}">${shareUrl}</a></p>
+        </div>
       </div>
 
-      <section aria-labelledby="${barsId}">
-        ${sectionHeader({ title: LABEL.finishedByMonth, id: barsId, actions: peak ? badge({ label: `Peak: ${peak}`, variant: 'accent' }) : undefined })}
-        ${card({ content: html`
-          <div class="flex items-end gap-1.5 h-32" role="img" aria-label="${`Books finished by month in ${year}: ${MONTHS.map((m, i) => `${m} ${monthly[i]}`).join(', ')}`}">
-            ${monthly.map((count, i) => {
-              const pct = count ? Math.max(8, Math.round((count / maxMonth) * 100)) : 0;
-              const isPeak = count === maxMonth && count > 0;
-              return html`<div class="flex-1 h-full flex flex-col justify-end items-center gap-1.5">
-                <div class="w-full rounded-t-sm ${count ? (isPeak ? 'bg-accent' : 'bg-accent/60') : 'bg-surface-3'}" style="height:${count ? pct : 3}%" title="${MONTHS[i]}: ${plural(count, 'book')}"></div>
-                <span class="text-caption ${isPeak ? 'text-accent-text' : 'text-text-3'}" aria-hidden="true">${MONTHS[i][0]}</span>
-              </div>`;
-            })}
-          </div>` })}
-      </section>
+      <div class="min-w-0 space-y-8">
+        ${raw(`<${heading} class="h2">`)}${NAV.yearInReview} ${year}${raw(`</${heading}>`)}
 
-      ${top.length ? html`<section aria-labelledby="${topId}">
-        ${sectionHeader({ title: 'Top books', id: topId })}
-        ${card({ padding: 'sm', content: html`<ol class="divide-y divide-border-1">
-          ${top.map((b, i) => html`<li class="flex items-center gap-3 py-3 px-1">
-            <span class="w-5 text-center text-small text-text-3 tabular-nums" aria-hidden="true">${i + 1}</span>
-            ${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, size: 'xs' })}
-            <div class="min-w-0 flex-1">
-              <a class="block truncate font-medium hover:text-accent-text" href="#book/${b.book_id}">${b.title}</a>
-              <p class="truncate text-small text-text-2">${formatAuthors(b.authors)}</p>
-            </div>
-            ${b.rating ? stars({ value: b.rating, size: 14 }) : ''}
-          </li>`)}
-        </ol>` })}
-      </section>` : ''}
+        <section aria-labelledby="${barsId}">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <h3 class="h3" id="${barsId}">${LABEL.finishedByMonth}</h3>
+            ${peak ? badge({ label: `Peak: ${peak}`, variant: 'accent' }) : ''}
+          </div>
+          ${card({ content: html`
+            <div class="flex items-end gap-1.5 h-36" role="img" aria-label="${`Books finished by month in ${year}: ${MONTHS.map((m, i) => `${m} ${monthly[i]}`).join(', ')}`}">
+              ${monthly.map((count, i) => {
+    const pct = count ? Math.max(8, Math.round((count / maxMonth) * 100)) : 0;
+    const isPeak = count === maxMonth && count > 0;
+    return html`<div class="flex-1 h-full flex flex-col justify-end items-center gap-1.5">
+                  <div class="w-full max-w-[18px] rounded-t-[6px]" style="${count ? `height:${pct}%;background:linear-gradient(to bottom, var(--chart-1), color-mix(in srgb, var(--chart-1) 55%, transparent));${isPeak ? '' : 'opacity:.8'}` : 'height:2px;background:var(--chart-grid)'}" title="${MONTHS[i]}: ${plural(count, 'book')}"></div>
+                  <span class="text-caption ${isPeak ? 'text-accent-text' : 'text-text-3'}" aria-hidden="true">${MONTHS[i][0]}</span>
+                </div>`;
+  })}
+            </div>` })}
+        </section>
 
-      <section aria-labelledby="${shareId}">
-        ${card({ content: html`
-          <div class="text-center space-y-3">
-            <h2 class="h3" id="${shareId}">Share ${own ? 'your' : 'this'} reading year</h2>
-            ${(own && getState().user && getState().user.isPublic === false)
-              ? html`<p class="text-small text-text-2">Your profile is private, so only you can open this link.</p>` : ''}
-            <p class="text-small text-text-2 break-all"><a class="text-accent-text hover:underline" href="${safeUrl(shareUrl)}">${shareUrl}</a></p>
-            <div class="flex justify-center gap-2">
-              ${button({ label: ACTION.share, variant: 'primary', icon: 'share-2', attrs: 'data-action="share"' })}
-              ${button({ label: ACTION.copyLink, variant: 'secondary', icon: 'link', attrs: 'data-action="copy-link"' })}
-            </div>
-          </div>` })}
-      </section>
+        ${top.length ? html`<section aria-labelledby="${topId}">
+          <h3 class="h3 mb-3" id="${topId}">Top books</h3>
+          ${card({ padding: 'sm', content: html`<ol class="divide-y divide-border-1">
+            ${top.map((b, i) => html`<li class="flex items-center gap-3 py-3 px-1">
+              <span class="w-5 text-center text-small text-text-3 tabular-nums" aria-hidden="true">${i + 1}</span>
+              ${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, size: 'xs' })}
+              <div class="min-w-0 flex-1">
+                <a class="block truncate font-medium hover:text-accent-text" href="#book/${b.book_id}">${b.title}</a>
+                <p class="truncate text-small text-text-2">${formatAuthors(b.authors)}</p>
+              </div>
+              ${b.rating ? stars({ value: b.rating, size: 14 }) : ''}
+            </li>`)}
+          </ol>` })}
+        </section>` : ''}
+
+        ${firsts.length ? html`<section aria-labelledby="${firstsId}">
+          <h3 class="h3 mb-3" id="${firstsId}">Firsts</h3>
+          <div class="grid gap-3 sm:grid-cols-2">
+            ${firsts.map(({ label, book }) => card({ padding: 'sm', content: html`
+              <div class="flex items-center gap-3">
+                ${cover({ url: book.cover_url, bookId: book.book_id, title: book.title, size: 'xs' })}
+                <div class="min-w-0">
+                  <span class="label">${label}</span>
+                  <a class="block truncate font-medium hover:text-accent-text" href="#book/${book.book_id}">${book.title}</a>
+                  <p class="text-small text-text-2">${formatDate(book.finished_at)}</p>
+                </div>
+              </div>` }))}
+          </div>
+        </section>` : ''}
+      </div>
     </div>`;
 }
 
@@ -529,16 +630,22 @@ function mountYearReview(container, { stats, feed, person, year, basePath, headi
   const shareUrlFor = (y) => `${location.origin}${location.pathname}#u/${encodeURIComponent(person.username)}/year/${y}`;
 
   container.innerHTML = String(html`
-    <div class="space-y-6 md:space-y-8">
-      ${backHref ? html`<a class="inline-flex items-center gap-1.5 text-small text-text-2 hover:text-text-1" href="${safeUrl(backHref)}">${icon('arrow-left', { size: 16 })}Back to profile</a>` : ''}
-      <div data-year-chips>${yearChips(years, selected)}</div>
+    <div class="space-y-4 md:space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        ${backHref ? html`<a class="inline-flex items-center gap-1.5 text-small text-text-2 hover:text-text-1" href="${safeUrl(backHref)}">${icon('arrow-left', { size: 16 })}Back to profile</a>` : html`<span></span>`}
+        <div data-year-chips>${yearSelector(years, selected)}</div>
+      </div>
       <div data-yir-body></div>
     </div>`);
   const body = container.querySelector('[data-yir-body]');
 
+  let storyCleanup = null;
   const renderBody = () => {
+    storyCleanup?.();
     body.innerHTML = String(yearBodyHTML({ stats, feed, person, year: selected, headingLevel, shareUrl: shareUrlFor(selected), own }));
+    storyCleanup = mountStoryCard(body);
   };
+  scope.add(() => { storyCleanup?.(); storyCleanup = null; });
 
   scope.add(mountChipGroup(container, ({ name, value }) => {
     if (name !== 'year') return;
@@ -566,7 +673,7 @@ function mountYearReview(container, { stats, feed, person, year, basePath, headi
 // ── Exported views ───────────────────────────────────────────────────────────
 
 function pageShell(inner) {
-  return html`<div class="max-w-3xl mx-auto space-y-6 md:space-y-8">${inner}</div>`;
+  return html`<div class="max-w-[1120px] mx-auto space-y-4 md:space-y-6">${inner}</div>`;
 }
 
 /**
@@ -583,9 +690,9 @@ export function renderStats(el, { tab = 'overview', year } = {}) {
   el.innerHTML = String(pageShell(html`
     <h1 class="h1">Stats</h1>
     ${tabs({ id: tabsId, label: 'Stats sections', value: activeTab, items: [
-      { value: 'overview', label: NAV.overview, href: '#stats/overview' },
-      { value: 'year', label: NAV.yearInReview, href: '#stats/year' },
-    ] })}
+    { value: 'overview', label: NAV.overview, href: '#stats/overview' },
+    { value: 'year', label: NAV.yearInReview, href: '#stats/year' },
+  ] })}
     <div data-stats-panel>${tabPanel({ tabsId, value: activeTab, active: true, content: html`<div data-stats-content>${statsSkeleton()}</div>` })}</div>`));
   scope.add(mountTabs(el));
   const content = el.querySelector('[data-stats-content]');
@@ -691,7 +798,7 @@ export function renderYearInReview(el, { username, year } = {}) {
         scope.add(() => { el.classList.remove('accent-scope'); delete el.dataset.accent; });
       }
       const wrap = document.createElement('div');
-      wrap.className = 'max-w-3xl mx-auto';
+      wrap.className = 'max-w-[1120px] mx-auto';
       el.innerHTML = '';
       el.appendChild(wrap);
       inner = mountYearReview(wrap, {

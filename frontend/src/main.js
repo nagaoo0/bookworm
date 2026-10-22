@@ -1,5 +1,5 @@
 import './styles.css';
-import { applyPrefs, savePrefs, loadPrefs, THEMES, CARD_SIZES } from './prefs.js';
+import { applyPrefs, savePrefs, loadPrefs, THEMES, CARD_SIZES, ACCENT_KEYS, ACCENT_COLORS } from './prefs.js';
 import { getState, setState, subscribe } from './store.js';
 import { html, safeUrl } from './utils.js';
 
@@ -12,6 +12,7 @@ import {
   icon, iconButton, button, avatar, emptyState, skeletonList, setButtonLoading,
   openMenu, openPopover, openSheet, closeAllOverlays,
   openCommandPalette, mountCommandPaletteShortcuts,
+  mountThumb,
   toast, flushPendingUndos, timeAgo, NAV, ACTION, EMPTY, OFFLINE_MESSAGE, STATUS, delegate,
 } from './ui/index.js';
 
@@ -33,7 +34,7 @@ document.getElementById('app').innerHTML = String(html`
   <div class="flex min-h-screen flex-col">
     <button type="button" data-shell="skip" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[var(--z-toast)] focus:rounded-md focus:bg-surface-1 focus:px-4 focus:py-2 focus:text-small focus:text-text-1 focus:shadow-2">Skip to content</button>
     <header id="app-header" class="glass-header sticky top-0 z-[var(--z-sticky)] pt-[env(safe-area-inset-top,0px)]" hidden></header>
-    <main id="main-content" tabindex="-1" class="mx-auto w-full max-w-7xl flex-1 px-4 py-5 outline-none md:px-6 md:py-8"></main>
+    <main id="main-content" tabindex="-1" class="mx-auto w-full max-w-7xl flex-1 px-4 py-5 outline-none md:px-6 md:py-8" data-focus-target></main>
     <div id="bottom-bar-slot"></div>
     <div id="route-announcer" class="sr-only" role="status" aria-live="polite"></div>
   </div>`);
@@ -59,36 +60,43 @@ const BOTTOM_ITEMS = NAV_ITEMS.filter(i => ['home', 'library', 'community', 'sta
 function logoHtml() {
   return html`<a href="#home" class="flex shrink-0 items-center gap-2.5 rounded-md" aria-label="Bookworm home">
     <img src="/logo.png" class="h-8 w-8 rounded-full" alt="">
-    <span class="font-display text-h2 text-accent-text">Bookworm</span>
+    <span class="font-display text-h2 text-text-1">Bookworm</span>
   </a>`;
 }
 
 function appHeaderHtml(user) {
   const unread = getState().unreadCount;
-  return html`<div class="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 md:px-6">
+  return html`<div class="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 md:h-[60px] md:px-6">
     ${logoHtml()}
-    <nav aria-label="Primary" class="ml-4 hidden items-center gap-1 md:flex">
-      ${NAV_ITEMS.map(i => html`<a class="nav__link" href="${i.href}" data-nav="${i.key}">${i.label}</a>`)}
-    </nav>
+    <div class="ml-4 hidden md:block">
+      <nav aria-label="Primary" class="nav">
+        <span class="nav__thumb" aria-hidden="true"></span>
+        ${NAV_ITEMS.map(i => html`<a class="nav__link" href="${i.href}" data-nav="${i.key}">${i.label}</a>`)}
+      </nav>
+    </div>
     <div class="ml-auto flex items-center gap-1">
-      ${iconButton({ icon: 'search', label: 'Search', attrs: 'data-shell="search" title="Search (/)"' })}
+      ${iconButton({ icon: 'search', label: 'Search', size: 'header', attrs: 'data-shell="search" title="Search · /"' })}
       ${iconButton({
-        icon: 'bell', label: unread ? `Notifications, ${unread} unread` : 'Notifications', id: 'notif-btn',
+        icon: 'bell', label: unread ? `Notifications, ${unread} unread` : 'Notifications', id: 'notif-btn', size: 'header',
         badge: unread > 99 ? '99+' : unread, attrs: 'data-shell="notifications" aria-haspopup="dialog"',
       })}
       <button type="button" id="user-menu-btn" data-shell="user-menu" aria-label="Account menu for @${user.username}" aria-haspopup="menu" aria-expanded="false"
-        class="inline-flex items-center gap-1 rounded-full p-1.5 text-text-2 transition-colors duration-[var(--dur-fast)] hover:bg-surface-2 hover:text-text-1">
+        class="inline-flex items-center gap-1 rounded-full p-1 text-text-2 transition-[color,box-shadow] duration-[var(--dur-fast)] hover:text-text-1 hover:shadow-[0_0_0_2px_var(--surface-0),0_0_0_4px_var(--border-2,var(--border-1))]">
         ${avatar({ username: user.username, avatarUrl: user.avatarUrl, size: 32 })}
-        <span class="hidden md:inline-flex">${icon('chevron-down', { size: 16 })}</span>
+        <span class="hidden md:inline-flex">${icon('chevron-down', { size: 14 })}</span>
       </button>
     </div>
   </div>`;
 }
 
 function publicHeaderHtml() {
-  return html`<div class="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 md:px-6">
+  const cur = THEMES.find(t => t.value === loadPrefs().theme) ?? THEMES[0];
+  return html`<div class="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 md:h-[60px] md:px-6">
     ${logoHtml()}
-    <a class="btn btn--primary ml-auto" href="#auth" data-shell="sign-in"><span class="btn__label">${ACTION.signIn}</span></a>
+    <div class="ml-auto flex items-center gap-2">
+      ${iconButton({ icon: cur.icon, label: `Theme: ${cur.label}`, size: 'header', attrs: 'data-shell="theme" aria-haspopup="menu"' })}
+      <a class="btn btn--secondary" href="#auth" data-shell="sign-in"><span class="btn__label">${ACTION.signIn}</span></a>
+    </div>
   </div>`;
 }
 
@@ -149,25 +157,31 @@ mountCommandPaletteShortcuts({ isEnabled: () => !!getState().user, open: openPal
 
 function openAddSheet() {
   const rows = [
-    { icon: 'search', label: 'Search books', href: '#discover' },
+    { icon: 'search', label: 'Search books', palette: true },
+    { icon: 'scan-line', label: 'Scan a barcode', href: '#discover?scan=1' },
     { icon: 'pencil', label: 'Add manually', href: '#discover?manual=1' },
     { icon: 'upload', label: 'Import a library file', href: '#settings/library-tools' },
   ];
   const content = document.createElement('div');
   content.innerHTML = String(html`<ul class="flex flex-col gap-1">${rows.map(r => html`<li>
-    <a href="${safeUrl(r.href)}" class="flex h-14 items-center gap-3 rounded-md px-1 text-body font-medium text-text-1 no-underline transition-colors duration-[var(--dur-fast)] hover:bg-surface-2">
-      <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2">${icon(r.icon, { size: 24 })}</span>
+    <a href="${safeUrl(r.href ?? '#discover')}"${r.palette ? html` data-add-palette` : ''} class="flex h-14 items-center gap-3 rounded-md px-1 text-body font-medium text-text-1 no-underline transition-colors duration-[var(--dur-fast)] hover:bg-surface-2">
+      <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-1 shadow-[inset_0_1px_0_var(--highlight)]">${icon(r.icon, { size: 20 })}</span>
       <span class="min-w-0 flex-1">${r.label}</span>
       <span class="text-text-3">${icon('chevron-right', { size: 20 })}</span>
     </a></li>`)}</ul>`);
   const sheet = openSheet({ title: 'Add a book', content });
   // Same-hash links do not fire hashchange, so close explicitly
-  content.addEventListener('click', e => { if (e.target instanceof Element && e.target.closest('a')) sheet.close(); });
+  content.addEventListener('click', e => {
+    const a = e.target instanceof Element ? e.target.closest('a') : null;
+    if (!a) return;
+    sheet.close();
+    if (a.hasAttribute('data-add-palette')) { e.preventDefault(); setTimeout(openPalette, 0); }
+  });
 }
 
 function userMenuItems() {
   const me = getState().user;
-  const theme = loadPrefs().theme;
+  const { theme, accent } = loadPrefs();
   const current = THEMES.find(t => t.value === theme) ?? THEMES[0];
   return [
     { kind: 'heading', label: `@${me.username}` },
@@ -179,9 +193,37 @@ function userMenuItems() {
       kind: 'submenu', label: 'Theme', icon: current.icon,
       items: THEMES.map(t => ({ kind: 'radio', id: `theme:${t.value}`, label: t.label, icon: t.icon, checked: t.value === theme })),
     },
+    {
+      kind: 'submenu', label: 'Accent', icon: 'palette',
+      items: ACCENT_KEYS.map(k => ({ kind: 'radio', id: `accent:${k}`, label: k[0].toUpperCase() + k.slice(1), icon: 'palette', checked: k === accent })),
+    },
     { kind: 'separator' },
     { id: 'logout', label: ACTION.signOut, icon: 'log-out' },
   ];
+}
+
+function setAccent(value) {
+  if (!ACCENT_KEYS.includes(value)) return;
+  const me = getState().user;
+  const before = loadPrefs().accent;
+  savePrefs({ accent: value });
+  if (me) setState({ user: { ...me, accent: value } });
+  api.updateMe({ accent: value }).catch(() => {
+    toast("Couldn't save your accent colour — try again", { type: 'error' });
+    savePrefs({ accent: before });
+    const u = getState().user;
+    if (u) setState({ user: { ...u, accent: before } });
+  });
+}
+
+// Menu items only carry icon names: swap the accent radios' placeholder icon for a real swatch.
+function paintAccentSwatches() {
+  document.querySelectorAll('[role="menu"][aria-label="Accent"] [role="menuitemradio"]').forEach((btn) => {
+    const c = ACCENT_COLORS[btn.querySelector('.menu__label')?.textContent.trim().toLowerCase()];
+    const slot = btn.querySelector('.menu__icon');
+    if (!c || !slot) return;
+    slot.innerHTML = `<span style="display:inline-block;width:14px;height:14px;margin:1px;border-radius:50%;background:linear-gradient(180deg,${c.hover},${c.main});box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 0 1px rgba(0,0,0,.25)"></span>`;
+  });
 }
 
 function setTheme(value) {
@@ -199,10 +241,25 @@ function onUserMenuSelect(id) {
   else if (id === 'admin') location.hash = '#settings/admin';
   else if (id === 'logout') doLogout();
   else if (id.startsWith('theme:')) setTheme(id.slice(6));
+  else if (id.startsWith('accent:')) setAccent(id.slice(7));
 }
 
 function openUserMenu(trigger) {
-  openMenu({ trigger, items: userMenuItems(), onSelect: onUserMenuSelect, label: 'Account' });
+  const handle = openMenu({ trigger, items: userMenuItems(), onSelect: onUserMenuSelect, label: 'Account' });
+  if (handle) paintAccentSwatches();
+}
+
+// Logged-out visitors get a theme control only
+function openPublicThemeMenu(trigger) {
+  const theme = loadPrefs().theme;
+  openMenu({
+    trigger, label: 'Theme',
+    items: THEMES.map(t => ({ kind: 'radio', id: t.value, label: t.label, icon: t.icon, checked: t.value === theme })),
+    onSelect: (id) => {
+      savePrefs({ theme: id });
+      if (!getState().user) { chromeKey = ''; setChrome('public'); updateNav(null, false); }   // refresh the theme icon
+    },
+  });
 }
 
 // ── Notifications ──────────────────────────────────────────────────────────────
@@ -270,14 +327,14 @@ function notifRowHtml(n, me) {
   const unread = !n.read_at;
   const title = n.payload?.title || 'a book';
   const text = (NOTIF_TEXT[n.type] ?? (() => 'sent you a notification'))(title);
-  const cls = `flex items-start gap-3 border-b border-border-1 px-4 py-3 no-underline transition-colors duration-[var(--dur-fast)] last:border-b-0 hover:bg-surface-2${unread ? ' bg-accent-soft' : ''}`;
+  const cls = `relative flex min-h-[60px] items-start gap-3 border-b border-border-1 py-3 pl-6 pr-4 no-underline transition-colors duration-[var(--dur-fast)] last:border-b-0 hover:bg-surface-2${unread ? ' bg-[color-mix(in_srgb,var(--accent-soft)_55%,transparent)]' : ''}`;
   return html`<a href="${safeUrl(notifHref(n, me))}" class="${cls}" data-notif-link>
     ${avatar({ username: n.actor_username, size: 32 })}
     <span class="min-w-0 flex-1">
       <span class="block text-small text-text-1"><strong class="font-semibold">@${n.actor_username}</strong> ${text}</span>
       <span class="block text-caption text-text-3">${timeAgo(n.created_at)}</span>
     </span>
-    ${unread ? html`<span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true"></span><span class="sr-only">Unread</span>` : ''}
+    ${unread ? html`<span class="absolute left-2.5 top-[24px] h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true"></span><span class="sr-only">Unread</span>` : ''}
   </a>`;
 }
 
@@ -310,7 +367,7 @@ function openNotifications(trigger) {
     listEl.setAttribute('aria-busy', 'false');
     listEl.innerHTML = items.length
       ? String(html`${items.map(n => notifRowHtml(n, me))}`)
-      : String(emptyState({ ...EMPTY.noNotifications, size: 'sm' }));
+      : String(emptyState({ ...EMPTY.noNotifications, icon: undefined, art: 'search', size: 'sm' }));
     syncMark();
   }
 
@@ -362,7 +419,7 @@ function openNotifications(trigger) {
   const onClose = () => { clearTimeout(autoTimer); notifOpen = null; };
   notifOpen = mobile
     ? openSheet({ title: 'Notifications', content: panel, onClose })
-    : openPopover({ trigger, content: panel, width: 360, label: 'Notifications', onClose });
+    : openPopover({ trigger, content: panel, width: 380, label: 'Notifications', onClose, glass: true });
   load();
 }
 
@@ -380,6 +437,9 @@ function onShellClick(e, el) {
   } else if (action === 'user-menu') {
     e.preventDefault();
     openUserMenu(el);
+  } else if (action === 'theme') {
+    e.preventDefault();
+    openPublicThemeMenu(el);
   }
 }
 delegate(headerEl, 'click', '[data-shell]', onShellClick);
@@ -387,6 +447,7 @@ delegate(bottomSlot, 'click', '[data-shell]', onShellClick);
 delegate(headerEl, 'keydown', '[data-shell="user-menu"]', (e, el) => {
   if (e.key === 'ArrowDown') { e.preventDefault(); openUserMenu(el); }
 });
+mountThumb(headerEl);   // sliding pill behind the active nav link (follows aria-current)
 document.querySelector('[data-shell="skip"]').addEventListener('click', () => mainEl.focus());
 delegate(mainEl, 'click', '[data-shell="retry"]', () => { navigate(); });
 
@@ -654,6 +715,7 @@ function focusHeading(root) {
     const userMovedOn = late && active && active !== document.body && !root.contains(active);
     if (!viewHasFocus && !userMovedOn) {
       h1.tabIndex = -1;
+      h1.setAttribute('data-focus-target', '');   // programmatic focus shows no ring (styles.css)
       h1.focus({ preventScroll: true });
     }
     return true;

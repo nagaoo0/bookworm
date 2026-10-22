@@ -7,10 +7,10 @@ import { loadPrefs } from '../prefs.js';
 import { html, safeUrl } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
 import {
-  ACTION, EMPTY, ERROR, LABEL, NAV, PLACEHOLDER, TOAST, plural,
-  badge, bookCard, button, card, delegate, emptyState, field, iconButton, mountBookGrid, mountChipGroup,
-  openModal, sectionHeader, segmented, select, setButtonLoading, setFieldError, skeletonBookGrid,
-  statusLabel, toast, uid,
+  ACTION, EMPTY, ERROR, NAV, PLACEHOLDER, TOAST, plural,
+  applyAmbient, bookCard, button, card, delegate, emptyState, field, iconButton, mountBookGrid, mountChipGroup,
+  mountShelfRows, openModal, sectionHeader, segmented, select, setButtonLoading, setFieldError, shelfRow,
+  skeletonBookGrid, statusLabel, toast, uid,
 } from '../ui/index.js';
 
 const LANGUAGES = [
@@ -81,7 +81,10 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   let debounceTimer = null;
   let searchSeq = 0;
   let searchAbort = null;
-  const adding = new Set();     // result indexes with an add in flight
+  let shown = [];               // results after the source filter: what the grid renders and what card indexes refer to
+  let sourceFilter = '';
+  let recentSig = null;
+  const adding = new Set();     // result objects with an add in flight
 
   const formId = uid('discover-form');
   const advId = uid('discover-advanced');
@@ -94,17 +97,16 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   const startQ = (initialQ ?? '').trim() || (restored ? prev.searchQuery : '');
 
   el.innerHTML = String(html`
-    <div class="space-y-6 md:space-y-8">
-      <div class="space-y-4">
-        <h1 class="h1">${NAV.discover}</h1>
-        <form id="${formId}" class="max-w-3xl space-y-3" role="search" novalidate>
-          <div class="flex items-start gap-2">
-            <div class="flex-1 min-w-0">
-              ${field({ name: 'q', type: 'search', value: startQ, placeholder: PLACEHOLDER.searchBooks, icon: 'search', ariaLabel: 'Search books', autocomplete: 'off', id: inputId })}
-            </div>
-            ${button({ label: 'Search', variant: 'primary', type: 'submit', cls: 'shrink-0' })}
+    <div class="space-y-8 md:space-y-10">
+      <header class="discover-hero pt-2 md:pt-6 md:text-center md:[&.is-compact]:text-left" data-hero>
+        <h1 class="h1 md:!text-[44px] md:!leading-[48px]" data-focus-target>${NAV.discover}</h1>
+        <form id="${formId}" class="mt-4 md:mt-6 max-w-[760px] md:mx-auto md:[.is-compact_&]:mx-0 space-y-3 text-left" role="search" novalidate>
+          <div class="relative [&_.field__input]:!pr-4 md:[&_.field__input]:!pr-14 md:[.is-compact_&_.field__input]:!h-11 [&_.field__input]:transition-[height] [&_.field__input]:duration-200">
+            ${field({ name: 'q', type: 'search', size: 'xl', value: startQ, placeholder: PLACEHOLDER.searchBooks, icon: 'search', ariaLabel: 'Search books', autocomplete: 'off', id: inputId })}
+            <kbd class="kbd absolute right-4 top-[17px] hidden md:inline-flex pointer-events-none" aria-hidden="true">↵</kbd>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
+          ${button({ label: 'Search', variant: 'primary', size: 'lg', type: 'submit', block: true, cls: 'md:!hidden' })}
+          <div class="flex flex-wrap items-center gap-1 md:justify-center md:[.is-compact_&]:justify-start">
             ${button({
               label: 'Advanced search', variant: 'ghost', size: 'sm', iconRight: 'chevron-down',
               cls: '[&_.btn__icon]:transition-transform motion-reduce:[&_.btn__icon]:transition-none [&[aria-expanded=true]_.btn__icon]:rotate-180',
@@ -115,8 +117,9 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
           <div id="${advId}" hidden>
             ${card({
               padding: 'md',
+              tone: 'quiet',
               content: html`
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   ${field({ name: 'title', label: 'Title', size: 'sm' })}
                   ${field({ name: 'author', label: 'Author', size: 'sm' })}
                   ${field({ name: 'subject', label: 'Subject', size: 'sm', placeholder: 'e.g. science fiction' })}
@@ -127,17 +130,20 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
             })}
           </div>
         </form>
-      </div>
+        <div class="mt-4" data-recent-slot></div>
+      </header>
 
       <p id="${statusId}" class="sr-only" role="status" aria-live="polite"></p>
-      <div data-results class="[--grid-min-col:9.5rem]"></div>
-      <div data-foryou hidden></div>
+      <div data-results class="[--grid-min-col:6rem] md:[--grid-min-col:10.5rem]"></div>
+      <div data-foryou class="space-y-10" hidden></div>
     </div>`);
 
   const form = el.querySelector(`#${formId}`);
   const input = el.querySelector(`#${inputId}`);
   const advPanel = el.querySelector(`#${advId}`);
   const advToggle = el.querySelector('[data-adv-toggle]');
+  const heroEl = el.querySelector('[data-hero]');
+  const recentSlot = el.querySelector('[data-recent-slot]');
   const resultsEl = el.querySelector('[data-results]');
   const forYouEl = el.querySelector('[data-foryou]');
   const statusEl = el.querySelector(`#${statusId}`);
@@ -164,66 +170,45 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   }
 
   // ── Rendering ──────────────────────────────────────────────────────────────
-  function footerSig(owned, shelves) {
-    return owned ? 'owned' : `new:${shelves.map(s => s.id).join(',')}`;
-  }
+  const cardHTML = (b, i) => bookCard(b, {
+    searchMode: true, index: i, owned: !!ownedEntry(b),
+    href: bookHash(b, { bookId: ownedEntry(b)?.book_id }),
+  });
 
-  /** The add controls (or the "In library" state) shown under a result card. */
-  function footerHTML(i) {
-    const b = results[i];
-    const owned = ownedEntry(b);
-    const { shelves } = getState();
-    const sig = footerSig(owned, shelves);
-    if (owned) {
-      return html`<div class="mt-2 flex flex-col items-start gap-2" data-result-footer="${i}" data-sig="${sig}">
-        ${badge({ label: LABEL.inLibrary, variant: 'success', icon: 'check' })}
-        ${button({ label: ACTION.logAnotherRead, variant: 'ghost', size: 'sm', icon: 'plus', attrs: `data-log="${i}" data-footer-ctl` })}
-      </div>`;
-    }
-    return html`<div class="mt-2 flex flex-col gap-2" data-result-footer="${i}" data-sig="${sig}">
-      ${select({ name: 'status', ariaLabel: `Status for ${b.title}`, size: 'sm', value: 'to_read', options: statusOptions(), attrs: 'data-footer-ctl' })}
-      ${shelves.length ? select({ name: 'shelf', ariaLabel: `Shelf for ${b.title}`, size: 'sm', value: '', options: [{ value: '', label: 'No shelf' }, ...shelves.map(s => ({ value: s.id, label: s.name }))], attrs: 'data-footer-ctl' }) : ''}
-      ${button({ label: ACTION.addToLibrary, variant: 'secondary', size: 'sm', block: true, attrs: `data-add="${i}" data-footer-ctl` })}
-    </div>`;
-  }
-
-  // Footer controls are real form controls, so they must not add a Tab stop per card: only the active
-  // card's controls are tabbable (mirrors the roving tabindex that mountBookGrid applies to the cards).
-  function syncTabStops(active) {
-    const cards = [...resultsEl.querySelectorAll('.book-grid > .book-card')];
-    const current = active ?? cards.find(c => c.contains(document.activeElement)) ?? cards.find(c => c.tabIndex === 0) ?? cards[0];
-    for (const c of cards) c.querySelectorAll('[data-footer-ctl]').forEach((x) => { x.tabIndex = c === current ? 0 : -1; });
-  }
-
-  function recentHTML() {
+  /** Recent searches as chips under the hero search; re-rendered only when the list changed. */
+  function renderRecent() {
     const recent = loadRecent();
-    if (!recent.length) return '';
+    const sig = JSON.stringify(recent);
+    if (sig === recentSig) return;
+    recentSig = sig;
+    if (!recent.length) { recentSlot.innerHTML = ''; return; }
     const id = uid('recent');
-    return html`
-      <section aria-labelledby="${id}" data-recent-section>
-        ${sectionHeader({ title: 'Recent searches', id })}
-        <ul class="flex flex-wrap gap-2">
+    setHTML(recentSlot, html`
+      <section aria-labelledby="${id}" data-recent-section class="flex flex-wrap items-center gap-x-3 gap-y-2 md:justify-center md:[.is-compact_&]:justify-start">
+        <h2 class="label" id="${id}">Recent</h2>
+        <ul class="flex flex-wrap items-center gap-2">
           ${recent.map((q, i) => html`
-            <li class="flex items-center gap-1">
+            <li class="flex items-center">
               <button type="button" class="chip" data-recent="${i}">${q}</button>
-              ${iconButton({ icon: 'x', label: `Remove “${q}” from recent searches`, size: 'sm', attrs: `data-recent-remove="${i}"` })}
+              ${iconButton({ icon: 'x', label: `Remove “${q}” from recent searches`, size: 'xs', cls: '-ml-1', attrs: `data-recent-remove="${i}"` })}
             </li>`)}
         </ul>
-      </section>`;
+      </section>`);
   }
+
+  const SOURCE_NAME = { google: 'Google Books', openlibrary: 'Open Library', apple: 'Apple Books' };
 
   function resultsHTML() {
     const id = uid('results');
+    shown = sourceFilter ? results.filter(b => b.source === sourceFilter) : results;
+    const sources = [...new Set(results.map(b => b.source).filter(Boolean))];
+    const filter = sources.length > 1
+      ? select({ name: 'source', ariaLabel: 'Filter by source', size: 'sm', value: sourceFilter, attrs: 'data-source-filter', options: [{ value: '', label: 'All sources' }, ...sources.map(k => ({ value: k, label: SOURCE_NAME[k] ?? k }))] })
+      : '';
     return html`
       <section aria-labelledby="${id}">
-        ${sectionHeader({ title: 'Results', count: results.length, id })}
-        <div class="book-grid">
-          ${results.map((b, i) => bookCard(b, {
-            searchMode: true,
-            href: bookHash(b, { bookId: ownedEntry(b)?.book_id }),
-            footer: footerHTML(i),
-          }))}
-        </div>
+        ${sectionHeader({ title: 'Results', count: shown.length, id, actions: filter })}
+        <div class="book-grid">${shown.map(cardHTML)}</div>
       </section>`;
   }
 
@@ -234,14 +219,15 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
 
   function renderBody() {
     if (disposed) return;
+    heroEl.classList.toggle('is-compact', mode !== 'idle');
+    renderRecent();
     forYouEl.hidden = !(mode === 'idle' && recs.length);
     if (mode === 'loading') {
       setHTML(resultsEl, skeletonBookGrid(8));
       announce('Searching…');
     } else if (mode === 'results') {
       setHTML(resultsEl, resultsHTML());
-      syncTabStops();
-      announce(plural(results.length, 'result'));
+      announce(plural(shown.length, 'result'));
     } else if (mode === 'empty') {
       const e = EMPTY.noResults(queryLabel());
       setHTML(resultsEl, emptyState({ ...e, action: { label: e.action, attrs: 'data-action="manual"' } }));
@@ -255,30 +241,28 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
       }));
       announce(ERROR.searchFailed);
     } else {
-      const recent = recentHTML();
-      setHTML(resultsEl, recent || (recs.length ? '' : emptyState({
-        icon: 'search', title: 'Find your next book', body: 'Search by title, author or ISBN.',
-      })));
+      setHTML(resultsEl, recs.length ? '' : emptyState({
+        art: 'search', title: 'Find your next book', body: 'Search by title, author or ISBN.',
+      }));
       announce('');
     }
   }
 
-  /** Swap a footer in place when its library state or the shelf list changed (keeps other cards' selections). */
-  function refreshFooters() {
+  /** Swap a card in place when its "in library" state changed (keeps the other cards and the scroll position). */
+  function refreshCards() {
     if (mode !== 'results') return;
-    const { shelves } = getState();
-    resultsEl.querySelectorAll('[data-result-footer]').forEach((f) => {
-      const i = Number(f.dataset.resultFooter);
-      const b = results[i];
-      if (!b || adding.has(i)) return;
-      if (f.dataset.sig === footerSig(ownedEntry(b), shelves)) return;
-      const hadFocus = f.contains(document.activeElement);
-      const cardEl = f.closest('.book-card');
-      f.insertAdjacentHTML('afterend', String(footerHTML(i)));
-      f.remove();
-      if (hadFocus) cardEl?.focus();
+    resultsEl.querySelectorAll('.book-grid > .book-card[data-result-index]').forEach((c) => {
+      const i = Number(c.dataset.resultIndex);
+      const b = shown[i];
+      if (!b || adding.has(b)) return;
+      if (!!c.querySelector('.book-card__add--owned') === !!ownedEntry(b)) return;
+      const hadFocus = c.contains(document.activeElement);
+      const tmp = document.createElement('div');
+      tmp.innerHTML = String(cardHTML(b, i));
+      const fresh = tmp.firstElementChild;
+      c.replaceWith(fresh);
+      if (hadFocus) fresh.focus();
     });
-    syncTabStops();
   }
 
   // ── Search ─────────────────────────────────────────────────────────────────
@@ -319,12 +303,13 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
 
   async function runSearch(params) {
     lastParams = params;
+    sourceFilter = '';
     const seq = ++searchSeq;
     searchAbort?.abort();
     const ctrl = new AbortController();
     searchAbort = ctrl;
     if (mode !== 'loading') { mode = 'loading'; renderBody(); }
-    if (params.q) saveRecent(params.q);
+    if (params.q) { saveRecent(params.q); renderRecent(); }
     try {
       const data = await api.search(params, { signal: ctrl.signal });
       if (seq !== searchSeq || disposed) return; // a newer search (or leaving the view) owns the page now
@@ -374,17 +359,16 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     if (status === 'done') openLogReadModal({ id: row.book_id, title: row.title ?? title }, () => loadLibrary());
   }
 
-  async function addResult(btn) {
-    const i = Number(btn.dataset.add);
-    const b = results[i];
-    if (!b || adding.has(i)) return;
+  async function addResult(b, target, cardEl) {
+    if (!b || adding.has(b)) return;
     if (ownedEntry(b)) { toast(TOAST.alreadyInLibrary, { type: 'info' }); return; }
-    const footer = btn.closest('[data-result-footer]');
-    const status = footer.querySelector('[name="status"]')?.value || 'to_read';
-    const shelfId = Number(footer.querySelector('[name="shelf"]')?.value) || undefined;
-    adding.add(i);
-    setButtonLoading(btn, true);
-    footer.querySelectorAll('select').forEach((s) => { s.disabled = true; });
+    const status = target?.status || 'to_read';
+    const shelfId = Number(target?.shelfId) || undefined;
+    const btn = cardEl?.querySelector('[data-book-add]');
+    const toggle = cardEl?.querySelector('[data-book-add-menu]');
+    adding.add(b);
+    if (btn) setButtonLoading(btn, true);
+    if (toggle) toggle.disabled = true;
     let row;
     try {
       row = await api.addToLibrary({
@@ -394,17 +378,15 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
         isbn13: b.isbn13, isbn10: b.isbn10, shelfId, status,
       });
     } catch {
-      adding.delete(i);
+      adding.delete(b);
       toast(ERROR.add, { type: 'error' });
-      if (footer.isConnected) {
-        setButtonLoading(btn, false);
-        footer.querySelectorAll('select').forEach((s) => { s.disabled = false; });
-      }
+      if (btn?.isConnected) setButtonLoading(btn, false);
+      if (toggle?.isConnected) toggle.disabled = false;
       return;
     }
-    adding.delete(i);
-    afterAdd(row, b.title, status);       // updates the store → refreshFooters swaps this footer
-    if (!disposed) refreshFooters();
+    adding.delete(b);
+    afterAdd(row, b.title, status);       // updates the store → refreshCards swaps this card to "In library"
+    if (!disposed) refreshCards();
   }
 
   // ── Manual add (Modal) ─────────────────────────────────────────────────────
@@ -417,18 +399,23 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     const modal = openModal({
       title: 'Add a book manually',
       size: 'md',
+      header: 'ambient',
       content: html`
         <form id="${manualFormId}" class="space-y-4" novalidate>
           <p class="field__error" data-form-error role="alert" hidden></p>
-          ${field({ name: 'title', label: 'Title', required: true, placeholder: 'e.g. Dune', attrs: 'data-autofocus' })}
-          ${field({ name: 'authors', label: 'Authors', placeholder: 'e.g. Frank Herbert', hint: 'Separate several authors with commas.' })}
-          ${field({ name: 'coverUrl', label: 'Cover URL', type: 'url', placeholder: 'https://…', inputmode: 'url' })}
-          ${field({ name: 'publishedDate', label: 'Published', placeholder: 'e.g. 1965', inputmode: 'numeric' })}
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            ${field({ name: 'title', label: 'Title', labelStyle: 'inline', required: true, placeholder: 'e.g. Dune', attrs: 'data-autofocus' })}
+            ${field({ name: 'authors', label: 'Authors', labelStyle: 'inline', placeholder: 'e.g. Frank Herbert', hint: 'Separate several authors with commas.' })}
+          </div>
+          ${field({ name: 'coverUrl', label: 'Cover URL', labelStyle: 'inline', type: 'url', placeholder: 'https://…', inputmode: 'url' })}
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            ${field({ name: 'publishedDate', label: 'Published', labelStyle: 'inline', placeholder: 'e.g. 1965', inputmode: 'numeric' })}
+            ${shelves.length ? select({ name: 'shelf', label: 'Shelf', labelStyle: 'inline', value: '', options: [{ value: '', label: 'No shelf' }, ...shelves.map(s => ({ value: s.id, label: s.name }))] }) : ''}
+          </div>
           <div class="space-y-1.5">
-            <span class="label" aria-hidden="true">Status</span>
+            <span class="text-small font-medium text-text-2" aria-hidden="true">Status</span>
             ${segmented({ name: 'status', label: 'Status', items: statusOptions(), value: status, block: true })}
           </div>
-          ${shelves.length ? select({ name: 'shelf', label: 'Shelf', value: '', options: [{ value: '', label: 'No shelf' }, ...shelves.map(s => ({ value: s.id, label: s.name }))] }) : ''}
         </form>`,
       footer: html`
         ${button({ label: ACTION.cancel, variant: 'ghost', attrs: 'data-modal-close' })}
@@ -439,6 +426,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
       },
     });
 
+    if (modal.header) applyAmbient(modal.header, { h: 35, s: 0.3 });   // neutral lamp-amber: there is no cover yet
     const mForm = modal.body.querySelector(`#${manualFormId}`);
     const formError = mForm.querySelector('[data-form-error]');
     const primary = modal.el.querySelector('[data-modal-footer] .btn--primary');
@@ -492,24 +480,42 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   }
 
   // ── Recommendations ("Because you read…") ──────────────────────────────────
+  function recCard(r, { because = false } = {}) {
+    const href = bookHash(r, { bookId: r.id });
+    if (!href) return '';
+    return bookCard({ ...r, book_id: r.id ?? undefined, id: undefined, cover_url: r.cover_url ?? r.coverUrl }, {
+      variant: 'compact', readOnly: true, href,
+      footer: because && r.because?.title ? html`<p class="text-caption text-text-3 line-clamp-2 mt-1">Because you read “${r.because.title}”</p>` : '',
+    });
+  }
+
+  /** A titled ledge shelf row; the header carries the ‹ › arrows. */
+  function recRow(title, items) {
+    const sid = uid('foryou');
+    const rid = uid('rec-row');
+    return html`
+      <section aria-labelledby="${sid}">
+        ${sectionHeader({ title, id: sid, scrollControls: rid })}
+        ${shelfRow({ id: rid, ledge: true, label: title, items })}
+      </section>`;
+  }
+
   function renderRecs() {
     if (disposed) return;
     if (!recs.length) { forYouEl.innerHTML = ''; forYouEl.hidden = true; return; }
-    const id = uid('foryou');
+    // Books recommended because of the same read share a row when there are enough of them; the rest go in one row with captions.
+    const byBecause = new Map();
+    for (const r of recs) {
+      const key = r.because?.title;
+      if (!key) continue;
+      byBecause.set(key, [...(byBecause.get(key) ?? []), r]);
+    }
+    const grouped = [...byBecause].filter(([, list]) => list.length >= 3);
+    const groupedSet = new Set(grouped.flatMap(([, list]) => list));
+    const rest = recs.filter(r => !groupedSet.has(r));
     setHTML(forYouEl, html`
-      <section aria-labelledby="${id}">
-        ${sectionHeader({ title: 'Recommended for you', id })}
-        <div class="scroller">
-          ${recs.map(r => {
-            const href = bookHash(r, { bookId: r.id });
-            if (!href) return '';
-            return bookCard({ ...r, book_id: r.id ?? undefined, id: undefined, cover_url: r.cover_url ?? r.coverUrl }, {
-              variant: 'compact', readOnly: true, href,
-              footer: r.because?.title ? html`<p class="text-caption text-text-3 line-clamp-2 mt-1">Because you read “${r.because.title}”</p>` : '',
-            });
-          })}
-        </div>
-      </section>`);
+      ${grouped.map(([title, list]) => recRow(`Because you read “${title}”`, list.map(r => recCard(r))))}
+      ${rest.length ? recRow(grouped.length ? 'More for you' : 'Recommended for you', rest.map(r => recCard(r, { because: true }))) : ''}`);
     forYouEl.hidden = mode !== 'idle';
     if (mode === 'idle') renderBody();   // the empty-state placeholder gives way to the recommendations
   }
@@ -519,19 +525,27 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     const href = cardEl.querySelector('a.book-card__title')?.getAttribute('href');
     if (href) location.hash = href;
   };
-  cleanups.push(mountBookGrid(resultsEl, { onOpen: openFromCard }));
+  cleanups.push(mountBookGrid(resultsEl, {
+    entries: () => shown,
+    onOpen: openFromCard,
+    onAdd: (entry, target, cardEl) => { addResult(entry, target, cardEl); },
+  }));
   cleanups.push(mountBookGrid(forYouEl, { onOpen: openFromCard }));
+  cleanups.push(mountShelfRows(forYouEl));
 
   form.addEventListener('submit', (e) => { e.preventDefault(); searchNow(); });
   input.addEventListener('input', onInput);
   input.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowDown') return;
-    const target = resultsEl.querySelector('.book-card[tabindex="0"]') ?? resultsEl.querySelector('[data-recent]');
+    const target = resultsEl.querySelector('.book-card[tabindex="0"]') ?? recentSlot.querySelector('[data-recent]');
     if (target) { e.preventDefault(); target.focus(); }
   });
-  resultsEl.addEventListener('focusin', (e) => {
-    const c = e.target instanceof Element ? e.target.closest('.book-card') : null;
-    if (c && resultsEl.contains(c)) syncTabStops(c);
+  resultsEl.addEventListener('change', (e) => {
+    const sel = e.target instanceof Element ? e.target.closest('[data-source-filter]') : null;
+    if (!sel) return;
+    sourceFilter = sel.value;
+    renderBody();
+    resultsEl.querySelector('[data-source-filter]')?.focus();
   });
 
   cleanups.push(
@@ -543,11 +557,6 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     }),
     delegate(el, 'click', '[data-action="manual"]', () => openManual()),
     delegate(el, 'click', '[data-action="retry"]', () => (lastParams ? (cancelSearch(), runSearch(lastParams)) : searchNow())),
-    delegate(el, 'click', '[data-add]', (e, btn) => { addResult(btn); }),
-    delegate(el, 'click', '[data-log]', (e, btn) => {
-      const owned = ownedEntry(results[Number(btn.dataset.log)] ?? {});
-      if (owned) openLogReadModal({ id: owned.book_id, title: owned.title, startedAt: owned.started_reading_at }, () => loadLibrary());
-    }),
     delegate(el, 'click', '[data-recent]', (e, btn) => {
       const q = loadRecent()[Number(btn.dataset.recent)];
       if (!q) return;
@@ -560,7 +569,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
       list.splice(idx, 1);
       storeRecent(list);
       renderBody();
-      (list.length ? resultsEl.querySelector(`[data-recent="${Math.min(idx, list.length - 1)}"]`) : input)?.focus();
+      (list.length ? recentSlot.querySelector(`[data-recent="${Math.min(idx, list.length - 1)}"]`) : input)?.focus();
     }),
   );
 
@@ -571,7 +580,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     if (s.library === lastLib && s.shelves === lastShelves) return;
     lastLib = s.library;
     lastShelves = s.shelves;
-    refreshFooters();
+    refreshCards();
   }));
   if (!getState().libraryLoaded) loadLibrary();
 

@@ -2,9 +2,9 @@
 import { api, setLoggedIn } from '../../api.js';
 import { html } from '../../utils.js';
 import {
-  TOAST, button, card, field, mountConfirmInline, mountFields, setButtonLoading, setFieldError, toast,
+  TOAST, button, field, mountConfirmInline, mountFields, setButtonLoading, setFieldError, toast,
 } from '../../ui/index.js';
-import { createScope } from './common.js';
+import { createScope, group, groupCard } from './common.js';
 
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
@@ -12,25 +12,21 @@ const PASSWORD_MAX = 128;
 export function mount(el, { user }) {
   const scope = createScope();
 
+  const lbl = { labelStyle: 'inline' };
   el.innerHTML = String(html`
     <form data-password-form novalidate>
-      ${card({ content: html`
-        <div class="space-y-4">
-          <h3 class="h3">Change password</h3>
-          ${field({ name: 'currentPassword', label: 'Current password', type: 'password', autocomplete: 'current-password', required: true })}
-          ${field({ name: 'newPassword', label: 'New password', type: 'password', autocomplete: 'new-password', required: true, hint: `${PASSWORD_MIN} to ${PASSWORD_MAX} characters.` })}
-          ${field({ name: 'confirmPassword', label: 'Confirm new password', type: 'password', autocomplete: 'new-password', required: true })}
-          <div>${button({ label: 'Update password', variant: 'primary', type: 'submit', attrs: 'data-save' })}</div>
-          <p class="field__error" role="alert" data-form-error hidden></p>
-        </div>` })}
+      ${groupCard([
+        group(html`
+          ${field({ name: 'currentPassword', label: 'Current password', type: 'password', autocomplete: 'current-password', required: true, ...lbl })}
+          ${field({ name: 'newPassword', label: 'New password', type: 'password', autocomplete: 'new-password', required: true, hint: `${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`, ...lbl })}
+          ${field({ name: 'confirmPassword', label: 'Confirm new password', type: 'password', autocomplete: 'new-password', required: true, ...lbl })}`, { title: 'Change password' }),
+      ], { footer: html`${button({ label: 'Update password', variant: 'primary', type: 'submit', attrs: 'data-save' })}<p class="field__error" role="alert" data-form-error hidden></p>` })}
     </form>
 
-    ${card({ content: html`
-      <div class="space-y-3">
-        <h3 class="h3">Sessions</h3>
-        <p class="text-small text-text-2">You are signed in as @${user.username}. Signing out everywhere ends every session, including this one.</p>
-        <div>${button({ label: 'Sign out everywhere', variant: 'danger-ghost', icon: 'log-out', attrs: 'data-confirm="Sign out on every device?" data-confirm-verb="Sign out"' })}</div>
-      </div>` })}`);
+    ${groupCard([
+      group(html`<div>${button({ label: 'Sign out everywhere', variant: 'danger-ghost', icon: 'log-out', attrs: 'data-confirm="Sign out on every device?" data-confirm-verb="Sign out"' })}</div>`,
+        { title: 'Sessions', help: `You are signed in as @${user.username}. Signing out everywhere ends every session, including this one.` }),
+    ])}`);
 
   scope.add(mountFields(el));
 

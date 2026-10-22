@@ -48,24 +48,24 @@ export function renderSettings(el, { section } = {}) {
     const def = visible.find(s => s.id === current);
 
     el.innerHTML = String(html`
-      <div class="max-w-5xl mx-auto space-y-6">
+      <div class="max-w-[1120px] mx-auto space-y-6">
         <h1 class="h1${def ? ' sr-only md:not-sr-only' : ''}">Settings</h1>
-        <div class="md:grid md:grid-cols-4 md:gap-8">
-          <nav aria-label="Settings sections" class="${def ? 'hidden md:block' : ''}">
-            <ul class="rounded-lg border border-border-1 bg-surface-1 divide-y divide-border-1 md:border-0 md:bg-transparent md:divide-y-0 md:space-y-1">
+        <div class="md:grid md:grid-cols-[240px_minmax(0,1fr)] md:gap-10">
+          <nav aria-label="Settings sections" class="${def ? 'hidden md:block' : ''} md:sticky md:top-20 md:self-start">
+            <ul class="rail max-md:gap-0 max-md:rounded-xl max-md:bg-surface-1 max-md:divide-y max-md:divide-border-1 max-md:overflow-hidden max-md:shadow-[var(--shadow-card)]">
               ${visible.map(s => html`<li>
-                <a href="#settings/${s.id}" class="flex items-center gap-3 min-h-11 px-3 rounded-md text-body transition-colors duration-[var(--dur-fast)] ${s.id === current ? 'bg-accent-soft text-accent-text' : 'text-text-1 md:text-text-2 hover:bg-surface-2 hover:text-text-1'}"${s.id === current ? html` aria-current="page"` : ''}>
-                  ${icon(s.icon, { size: 20 })}
-                  <span class="flex-1">${s.label}</span>
+                <a href="#settings/${s.id}" class="rail__item max-md:!h-14 max-md:!rounded-none max-md:!px-4"${s.id === current ? html` aria-current="page"` : ''}>
+                  <span class="inline-flex items-center justify-center shrink-0 max-md:w-9 max-md:h-9 max-md:rounded-full max-md:bg-surface-2">${icon(s.icon, { size: 18 })}</span>
+                  <span class="rail__label max-md:text-body max-md:text-text-1">${s.label}</span>
                   <span class="md:hidden text-text-3">${icon('chevron-right', { size: 16 })}</span>
                 </a>
               </li>`)}
             </ul>
           </nav>
-          <div class="md:col-span-3 min-w-0 ${def ? '' : 'hidden md:block'}">
+          <div class="min-w-0 ${def ? '' : 'hidden md:block'}">
             ${def ? html`
               <a class="md:hidden inline-flex items-center gap-1.5 min-h-11 text-small text-text-2 hover:text-text-1" href="#settings">${icon('arrow-left', { size: 16 })}${NAV.settings}</a>
-              <div class="max-w-2xl space-y-4">
+              <div class="max-w-[760px] space-y-4">
                 <h2 class="h2" data-settings-title tabindex="-1">${def.label}</h2>
                 <div data-section-body class="space-y-4">${skeletonCard()}</div>
               </div>` : ''}

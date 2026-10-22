@@ -8,8 +8,8 @@ import { loadLibrary } from '../libraryStore.js';
 import { ACCENT_KEYS } from '../prefs.js';
 import {
   avatar, avatarHue, bookCard, button, cover, emptyState, field, icon, iconButton, sectionHeader,
-  skeleton, skeletonBookGrid, skeletonList, tabs, tabPanel,
-  mountBookGrid, mountTabs, openMenu, openModal, toast,
+  shelfRow, skeleton, skeletonBookGrid, skeletonList, skeletonProfileHero, skeletonShelf, tabs, tabPanel,
+  mountBookGrid, mountShelfRows, mountTabs, openMenu, openModal, toast,
   delegate, uid, plural, formatAuthors,
   ACTION, EMPTY, ERROR, LABEL, TOAST, statusLabel,
 } from '../ui/index.js';
@@ -90,10 +90,10 @@ export function renderProfile(el, { username, tab, year } = {}) {
 
 function profileSkeleton() {
   return html`
-    <div class="space-y-6" role="status" aria-label="Loading profile" aria-busy="true">
-      ${skeleton({ h: 220, cls: 'block w-full' })}
+    <div class="space-y-6" aria-busy="true">
+      ${skeletonProfileHero()}
       <div class="flex gap-6">${skeleton({ w: 80, h: 20 })}${skeleton({ w: 80, h: 20 })}${skeleton({ w: 80, h: 20 })}</div>
-      ${skeletonBookGrid(8)}
+      ${skeletonShelf(6)}
     </div>`;
 }
 
@@ -133,7 +133,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   setHTML(el, html`
     <div ${accent ? raw(`class="space-y-6 accent-scope" data-accent="${accent}"`) : raw('class="space-y-6"')} data-profile-root>
       ${heroHTML({ data, isOwn, viewer, following: initialFollowing, followers, followingCount })}
-      ${tabs({ id: tabsId, items: TABS, value: start, label: 'Profile sections' })}
+      ${tabs({ id: tabsId, items: TABS, value: start, label: 'Profile sections', bleed: true })}
       ${TABS.map(t => tabPanel({ tabsId, value: t.value, active: t.value === start }))}
     </div>`);
   const root = el.querySelector('[data-profile-root]');
@@ -150,14 +150,15 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   // ── Reading / Shelves ──
   const alsoReadOf = (b) => !isOwn && myIds.has(String(b.book_id));
 
-  function sectionHTML(key, { title, dot, books, alsoRead = true, showStatus = false, note }) {
-    sections.set(key, { books, alsoRead, showStatus });
+  function sectionHTML(key, { title, dot, books, alsoRead = true, showStatus = false, note, shelf = false }) {
+    sections.set(key, { books, alsoRead, showStatus, shelf, title });
     const bodyId = `profile-sec-${key}`;
     const isCollapsed = collapsed.has(key);
     return html`
       <section aria-labelledby="${bodyId}-title" data-section="${key}">
         ${sectionHeader({
           title, count: books.length, dot, id: `${bodyId}-title`,
+          scrollControls: shelf ? true : undefined,
           actions: iconButton({
             icon: isCollapsed ? 'chevron-down' : 'chevron-up', label: `${isCollapsed ? 'Expand' : 'Collapse'} ${title}`, size: 'sm',
             attrs: `data-collapse="${key}" aria-expanded="${isCollapsed ? 'false' : 'true'}" aria-controls="${bodyId}"`,
@@ -172,6 +173,9 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
 
   function sectionBodyHTML(key) {
     const def = sections.get(key);
+    if (def.shelf) {
+      return shelfRow({ label: def.title, items: def.books.map(b => bookCard(b, { variant: 'compact', readOnly: true, alsoRead: def.alsoRead && alsoReadOf(b) })) });
+    }
     const open = expanded.has(key);
     const shown = open ? def.books : def.books.slice(0, SECTION_CAP);
     return html`
@@ -185,12 +189,12 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
 
   function readingHTML() {
     const groups = [
-      { key: 'reading', title: LABEL.currentlyReading, books: statusBooks.reading ?? [] },
+      { key: 'reading', title: LABEL.currentlyReading, books: statusBooks.reading ?? [], shelf: true },
       { key: 'to_read', title: statusLabel('to_read'), books: statusBooks.to_read ?? [] },
       { key: 'done', title: statusLabel('done'), books: statusBooks.done ?? [] },
     ].filter(g => g.books.length);
     if (!groups.length) return nothingHere(isOwn ? 'Add books to your library and they will show up here.' : 'No books to show yet.');
-    return html`<div class="space-y-8">${groups.map(g => sectionHTML(g.key, { title: g.title, dot: g.key, books: g.books }))}</div>`;
+    return html`<div class="space-y-8">${groups.map(g => sectionHTML(g.key, { title: g.title, dot: g.key, books: g.books, shelf: g.shelf }))}</div>`;
   }
 
   function shelvesHTML() {
@@ -236,20 +240,23 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
       const slot = slots.get(key);
       let visual;
       if (slot) {
-        const cov = cover({ url: slot.cover_url, bookId: slot.book_id, title: slot.title, size: 'md' });
-        visual = html`<div class="relative"><a href="#book/${slot.book_id}" class="block" aria-label="${slot.title}">${cov}</a>${
+        const cov = cover({ url: slot.cover_url, bookId: slot.book_id, title: slot.title, size: 'md', tilt: true });
+        visual = html`<div class="cover-host relative"><a href="#book/${slot.book_id}" class="block" aria-label="${slot.title}">${cov}</a>${
           isOwn ? iconButton({ icon: 'more-horizontal', label: `Options for ${label}`, variant: 'overlay', size: 'sm', cls: 'absolute bottom-1.5 right-1.5', attrs: `data-slot-menu="${key}" aria-haspopup="menu"` }) : ''}</div>`;
       } else if (isOwn) {
         visual = html`<button type="button" class="flex aspect-2/3 w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border-2 text-text-3 transition-colors hover:border-accent-text hover:text-accent-text" data-slot-pick="${key}" aria-label="Add a book for ${label}">${icon('plus', { size: 24 })}<span class="text-caption">Add book</span></button>`;
       } else {
         visual = html`<div class="aspect-2/3 w-full rounded-md border border-dashed border-border-1 bg-surface-1" aria-hidden="true"></div>`;
       }
-      return html`<li class="min-w-0" data-slot="${key}">${visual}<p class="mt-1.5 text-center text-caption text-text-2">${label}</p></li>`;
+      return html`<li class="mx-auto w-full max-w-[160px] min-w-0" data-slot="${key}">${visual}<p class="mt-2 text-center text-caption text-text-2">${label}</p></li>`;
     };
+    const rows = [];
+    for (let i = 0; i < GRID_SLOTS.length; i += 3) rows.push(GRID_SLOTS.slice(i, i + 3));
     return html`
       <h2 class="h2 mb-1">Book grid</h2>
       ${isOwn ? html`<p class="mb-4 text-small text-text-2">Choose a book for each slot. Only books in your library can be picked.</p>` : html`<div class="mb-4"></div>`}
-      <ul class="grid grid-cols-3 gap-3 md:grid-cols-5 md:gap-4">${GRID_SLOTS.map(cell)}</ul>`;
+      <div class="card card--quiet max-w-[720px] space-y-6">${rows.map(r => html`
+        <ul class="grid grid-cols-3 gap-4 pb-4 sm:gap-8" style="border-bottom:1px solid var(--border-1);box-shadow:0 6px 8px -8px rgba(0,0,0,.35)">${r.map(cell)}</ul>`)}</div>`;
   }
 
   async function gridPanel(panel) {
@@ -366,6 +373,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
     renderPanel(value);
   }));
   cleanups.push(mountBookGrid(root, { entries: () => library }));
+  cleanups.push(mountShelfRows(root));
   cleanups.push(mountFeedCards(root));
   cleanups.push(mountFollowButtons(root, {
     onChange: (who, nowFollowing) => {
@@ -506,34 +514,62 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
 function heroHTML({ data, isOwn, viewer, following, followers, followingCount }) {
   const name = data.username;
   const banner = safeUrl(data.bannerUrl);
-  const hue = avatarHue(name);
-  const fallback = `linear-gradient(135deg, hsl(${hue}, 38%, 26%) 0%, hsl(${(hue + 50) % 360}, 32%, 13%) 100%)`;
+  const library = data.library ?? [];
+  const rated = library.map(b => Number(b.rating)).filter(r => r > 0);
+  const avg = rated.length ? (rated.reduce((a, b) => a + b, 0) / rated.length).toFixed(1) : null;
+
+  // Cover mosaic (no banner): the finished books' covers, padded with generated covers named after the user's shelves
+  const finished = library.filter(b => b.status === 'done' && b.cover_url).slice(0, 12);
+  const mosaic = [];
+  if (!banner) {
+    if (finished.length >= 6) {
+      for (let i = 0; i < Math.ceil(finished.length / 6) * 6; i++) mosaic.push(finished[i % finished.length]);
+    } else {
+      mosaic.push(...finished);
+      const names = (data.shelves ?? []).map(s => s.name).filter(Boolean);
+      if (!names.length) names.push('Reading', 'To read', 'Finished');
+      for (let i = 0; mosaic.length < 12; i++) mosaic.push({ title: names[i % names.length], generated: true });
+    }
+  }
+
+  const action = isOwn
+    ? html`<a class="btn btn--glass" href="#settings/profile"><span class="btn__icon">${icon('pencil', { size: 16 })}</span><span class="btn__label">Edit profile</span></a>`
+    : (viewer ? followButton(name, following, { size: 'md' }) : '');
+  const bio = data.bio ? html`<p class="mt-1 max-w-prose text-small line-clamp-2 whitespace-pre-line" style="opacity:.92">${data.bio}</p>` : '';
+
   return html`
-    <header class="hero overflow-hidden rounded-xl">
-      ${banner
-        ? html`<img class="absolute inset-0 h-full w-full object-cover" src="${banner}" alt="" loading="lazy" decoding="async">`
-        : html`<div class="absolute inset-0"${raw(` style="background:${fallback}"`)}></div>`}
-      <div class="hero__scrim"></div>
-      <div class="relative flex flex-col gap-4 p-5 pt-20 md:flex-row md:items-end md:justify-between md:p-8 md:pt-28">
-        <div class="flex min-w-0 items-end gap-4">
-          ${avatar({ username: name, avatarUrl: data.avatarUrl, size: 72, ring: true, cls: 'self-start md:self-end' })}
-          <div class="min-w-0">
-            <h1 class="display break-words">@${name}</h1>
-            ${data.bio ? html`<p class="mt-1 max-w-prose text-small opacity-90 line-clamp-3 whitespace-pre-line">${data.bio}</p>` : ''}
-            <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-small">
-              <span>${plural((data.library ?? []).length, 'book')}</span>
-              <button type="button" class="hover:underline" data-follow-list="followers" data-count="followers" aria-haspopup="dialog">${plural(followers, 'follower')}</button>
-              <button type="button" class="hover:underline" data-follow-list="following" data-count="following" aria-haspopup="dialog">${followingCount} following</button>
-              <a href="#u/${enc(name)}/year" class="inline-flex items-center gap-1 hover:underline">${icon('sparkles', { size: 16 })}Year in review</a>
-              <button type="button" class="inline-flex items-center gap-1 hover:underline" data-copy-link>${icon('link', { size: 16 })}${ACTION.copyLink}</button>
-            </p>
+    <div>
+      <div class="relative">
+        <header class="hero h-[240px] md:h-[300px]">
+          ${banner
+            ? html`<img class="absolute inset-0 h-full w-full object-cover" src="${banner}" alt="" loading="lazy" decoding="async">`
+            : html`<div class="cover-mosaic" aria-hidden="true"><div class="cover-mosaic__grid">${mosaic.map(b => cover({ url: b.generated ? null : b.cover_url, bookId: b.generated ? null : b.book_id, title: b.generated ? b.title : '', size: 'md' }))}</div></div>`}
+          <div class="absolute inset-0" style="background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 40%,transparent),transparent 70%);pointer-events:none"></div>
+          <div class="hero__scrim"></div>
+          <div class="relative flex h-full flex-col justify-end gap-4 p-5 pb-14 md:p-8">
+            <div class="flex items-end gap-6">
+              <span class="hidden shrink-0 md:block">${avatar({ username: name, avatarUrl: data.avatarUrl, size: 88, ring: true })}</span>
+              <div class="hidden min-w-0 flex-1 md:block">
+                <h1 class="display break-words" data-focus-target>@${name}</h1>
+                ${bio}
+              </div>
+              <div class="absolute right-4 top-4 md:static md:shrink-0">${action}</div>
+            </div>
+            <div class="flex flex-wrap gap-2 md:pl-28 md:pb-0">
+              <span class="hero-pill">${plural(library.length, 'book')}</span>
+              <button type="button" class="hero-pill" data-follow-list="followers" data-count="followers" aria-haspopup="dialog">${plural(followers, 'follower')}</button>
+              <button type="button" class="hero-pill" data-follow-list="following" data-count="following" aria-haspopup="dialog">${followingCount} following</button>
+              ${avg ? html`<span class="hero-pill">${icon('star', { size: 14, fill: true })}${avg} avg</span>` : ''}
+              <a href="#u/${enc(name)}/year" class="hero-pill">${icon('sparkles', { size: 14 })}Year in review</a>
+              <button type="button" class="hero-pill" data-copy-link>${icon('link', { size: 14 })}${ACTION.copyLink}</button>
+            </div>
           </div>
-        </div>
-        <div class="flex shrink-0 items-center gap-2">
-          ${isOwn
-            ? html`<a class="btn btn--secondary" href="#settings/profile"><span class="btn__icon">${icon('pencil', { size: 16 })}</span><span class="btn__label">Edit profile</span></a>`
-            : (viewer ? followButton(name, following, { size: 'md' }) : '')}
-        </div>
+        </header>
+        <span class="absolute -bottom-6 left-5 md:hidden">${avatar({ username: name, avatarUrl: data.avatarUrl, size: 72, ring: true })}</span>
       </div>
-    </header>`;
+      <div class="mt-10 md:hidden">
+        <h1 class="display break-words" data-focus-target>@${name}</h1>
+        ${data.bio ? html`<p class="mt-1 max-w-prose text-small text-text-2 line-clamp-3 whitespace-pre-line">${data.bio}</p>` : ''}
+      </div>
+    </div>`;
 }

@@ -7,7 +7,29 @@
 // that resolved target; the shell does the navigation. `mode` is 'login' (default) or 'register'.
 import { html } from '../utils.js';
 import { api } from '../api.js';
-import { button, setButtonLoading, field, setFieldError, mountFields, card } from '../ui/index.js';
+import { button, setButtonLoading, field, setFieldError, mountFields, card, cover, icon } from '../ui/index.js';
+
+// Public-domain titles for the stage mosaic: generated "cloth" covers only (no network), hue per title.
+const MOSAIC = [
+  ['Middlemarch', 'George Eliot'], ['Dracula', 'Bram Stoker'], ['Persuasion', 'Jane Austen'], ['Frankenstein', 'Mary Shelley'],
+  ['The Odyssey', 'Homer'], ['Moby-Dick', 'Herman Melville'], ['Jane Eyre', 'Charlotte Brontë'], ['Walden', 'Henry David Thoreau'],
+  ['Great Expectations', 'Charles Dickens'], ['Emma', 'Jane Austen'], ['Wuthering Heights', 'Emily Brontë'], ['The Iliad', 'Homer'],
+];
+
+function stageHtml() {
+  return html`<div class="relative hidden overflow-hidden lg:block lg:w-[55%]" aria-hidden="true">
+    <div class="cover-mosaic">
+      <div class="cover-mosaic__grid" style="inset:-22% -14%;gap:14px;transform:rotate(-6deg)">
+        ${MOSAIC.map(([title, author]) => cover({ title, author, size: 'md' }))}
+      </div>
+    </div>
+    <div class="absolute inset-0" style="background:linear-gradient(90deg,transparent 55%,var(--surface-0) 100%),linear-gradient(0deg,var(--surface-0) 0%,color-mix(in srgb,var(--surface-0) 55%,transparent) 38%,transparent 70%)"></div>
+    <div class="absolute bottom-12 left-12 right-12 max-w-lg">
+      <p class="font-display italic text-text-1" style="font-size:28px;line-height:36px">Every book you've read, in one place.</p>
+      <p class="mt-3 text-caption text-text-2">Self-hosted · private by default</p>
+    </div>
+  </div>`;
+}
 
 /** Resolve a `next` hash to a safe in-app target. */
 export function safeNext(next) {
@@ -92,38 +114,48 @@ export function renderAuth(el, { onSuccess, next, mode: startMode = 'login' } = 
     const isRegister = mode === 'register';
     document.title = `${isRegister ? 'Create account' : 'Sign in'} · Bookworm`;
     el.innerHTML = String(html`
-      <div class="mx-auto flex min-h-[70dvh] w-full max-w-sm flex-col justify-center py-6">
-        <div class="mb-6 flex flex-col items-center gap-3 text-center">
-          <img src="/logo.png" class="h-18 w-18 rounded-full border border-border-1" alt="">
-          <h1 class="display text-accent-text" tabindex="-1">Bookworm</h1>
-          <p class="text-small text-text-2">${isRegister ? 'Create your account' : 'Sign in to your library'}</p>
+      <div class="fixed inset-0 z-[var(--z-sticky)] flex overflow-y-auto">
+      ${stageHtml()}
+      <div class="flex min-h-full flex-1 items-center justify-center px-4 py-8 lg:px-12">
+      <div class="flex w-full max-w-[400px] flex-col">
+        <div class="mb-8 flex flex-col items-center gap-3 text-center">
+          <div class="flex items-center gap-3">
+            <img src="/logo.png" class="h-14 w-14 rounded-full" alt="">
+            <span class="font-display text-text-1" style="font-size:24px;line-height:32px">Bookworm</span>
+          </div>
+          <h1 class="display mt-4 text-text-1" style="font-size:36px;line-height:44px" tabindex="-1" data-focus-target>${isRegister ? 'Create your account' : 'Welcome back'}</h1>
+          <p class="text-small text-text-2">${isRegister ? 'Start tracking everything you read' : 'Sign in to your library'}</p>
         </div>
         ${card({ padding: 'md', content: html`
           <form class="flex flex-col gap-4" data-auth-form novalidate>
             ${field({
-              name: 'username', label: 'Username', id: 'auth-username', value: username, required: true,
+              name: 'username', label: 'Username', id: 'auth-username', value: username, required: true, size: 'lg',
               autocomplete: 'username', hint: isRegister ? '2–32 characters: letters, numbers, _ and -' : undefined,
               attrs: 'autocapitalize="none" autocorrect="off" spellcheck="false"',
             })}
             ${field({
-              name: 'password', label: 'Password', type: 'password', id: 'auth-password', required: true,
+              name: 'password', label: 'Password', type: 'password', id: 'auth-password', required: true, size: 'lg',
               autocomplete: isRegister ? 'new-password' : 'current-password',
             })}
             ${isRegister ? html`
-              ${field({ name: 'confirmPassword', label: 'Confirm password', type: 'password', id: 'auth-confirm', required: true, autocomplete: 'new-password' })}
+              ${field({ name: 'confirmPassword', label: 'Confirm password', type: 'password', id: 'auth-confirm', required: true, size: 'lg', autocomplete: 'new-password' })}
               <div id="auth-invite-slot" data-invite-slot>${inviteHtml()}</div>
               <p class="text-caption text-text-3" data-recaptcha-status role="status"></p>
             ` : html`
               <div class="-mt-2 flex justify-end">${button({ label: 'Forgot password?', variant: 'ghost', size: 'sm', attrs: 'data-auth-action="forgot"' })}</div>
               <p class="text-small text-info" data-auth-info role="status" hidden>Contact your server admin to reset your password.</p>
             `}
-            <p class="text-small text-danger" data-auth-error role="alert" hidden></p>
+            <div class="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-small text-danger" data-auth-error-wrap role="alert" hidden>
+              <span class="mt-0.5 shrink-0">${icon('alert-circle', { size: 16 })}</span><span data-auth-error></span>
+            </div>
             ${button({ label: isRegister ? 'Create account' : 'Sign in', variant: 'primary', size: 'lg', block: true, type: 'submit', id: 'auth-submit' })}
           </form>` })}
         <p class="mt-4 flex flex-wrap items-center justify-center gap-1 text-small text-text-2">
           ${isRegister ? 'Already have an account?' : "Don't have an account?"}
           ${button({ label: isRegister ? 'Sign in' : 'Create account', variant: 'ghost', size: 'sm', attrs: 'data-auth-action="toggle"' })}
         </p>
+      </div>
+      </div>
       </div>`);
 
     q('#auth-username')?.focus();
@@ -132,9 +164,10 @@ export function renderAuth(el, { onSuccess, next, mode: startMode = 'login' } = 
 
   function showError(message) {
     const p = q('[data-auth-error]');
-    if (!p) return;
+    const wrap = q('[data-auth-error-wrap]');
+    if (!p || !wrap) return;
     p.textContent = message;
-    p.hidden = !message;
+    wrap.hidden = !message;
   }
 
   async function ensureConfig() {

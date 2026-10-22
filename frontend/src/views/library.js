@@ -9,9 +9,9 @@ import { loadPrefs, savePrefs } from '../prefs.js';
 import { html, raw, safeColor } from '../utils.js';
 import {
   ACTION, EMPTY, ERROR, PLACEHOLDER, STATUS, STATUS_ORDER, TOAST,
-  badge, bookCard, button, card, checkbox, chipGroup, confirmPopover, cssEscape, cx, delegate, emptyState, field, icon,
+  badge, bookCard, button, card, checkbox, chipGroup, confirmPopover, cover, cssEscape, cx, delegate, emptyState, field, icon,
   iconButton, isStatus, mountBookGrid, mountChipGroup, mountProgressSlider, openMenu, openPopover, openSheet, plural,
-  progressSlider, sectionHeader, segmented, select, setButtonLoading, setFieldError, skeletonBookGrid, statusLabel,
+  progressSlider, sectionHeader, segmented, setButtonLoading, setFieldError, skeletonBookGrid, statusLabel,
   toast, uid, undoToast,
 } from '../ui/index.js';
 import { openLogReadModal } from '../components/logReadModal.js';
@@ -276,7 +276,7 @@ export function onboardingHTML() {
   });
   return html`
     <div class="mx-auto max-w-3xl py-6 md:py-10">
-      ${emptyState({ icon: EMPTY.libraryEmpty.icon, title: EMPTY.libraryEmpty.title, body: EMPTY.libraryEmpty.body })}
+      ${emptyState({ art: 'stack', title: EMPTY.libraryEmpty.title, body: EMPTY.libraryEmpty.body })}
       <div class="mt-4 grid gap-3 sm:grid-cols-3">
         ${tile('search', 'Add a book', 'Search by title, author or ISBN.', '#discover')}
         ${tile('upload', 'Import a library file', 'Bring in your history from a file exported from Bookworm.', '#settings/library-tools')}
@@ -307,6 +307,8 @@ const SWATCHES = [
   ['#ec4899', 'Pink'], ['#14b8a6', 'Teal'], ['#f97316', 'Orange'], ['#78716c', 'Stone'],
 ];
 
+const sortLabel = () => (SORTS.find((x) => x.value === sortKey) ?? SORTS[0]).label;
+
 // Kept across visits to the page: sort order and which status sections are collapsed
 let sortKey = 'added';
 const collapsedSections = {};
@@ -324,11 +326,6 @@ const toNode = (htmlString) => {
   t.innerHTML = htmlString;
   return t.content.firstElementChild;
 };
-
-const linkClass = (active) => cx(
-  'flex min-h-9 items-center gap-2 rounded-md px-3 text-small transition-colors duration-[var(--dur-fast)]',
-  active ? 'bg-accent-soft font-medium text-accent-text' : 'text-text-2 hover:bg-surface-2 hover:text-text-1',
-);
 
 function hashFor(S) {
   if (S.shelfId != null) return `#library/shelf/${S.shelfId}`;
@@ -370,9 +367,9 @@ function railHTML(S) {
   const statusRows = statusItems.map((it) => {
     const active = S.shelfId == null && S.status === it.key;
     const countKey = `status:${it.key ?? 'all'}`;
-    return html`<li><a href="${it.key ? `#library/status/${it.key}` : '#library'}" class="${linkClass(active)}" data-view="${it.key ? `status:${it.key}` : 'all'}" data-focus-key="${countKey}"${active ? raw(' aria-current="page"') : ''}>${
-      it.key ? raw(`<span class="h-2 w-2 shrink-0 rounded-full" aria-hidden="true" style="background:${STATUS[it.key].color}"></span>`) : ''
-    }<span class="min-w-0 flex-1 truncate">${it.label}</span><span class="text-caption tabular-nums text-text-3" data-count="${countKey}">${counts[countKey]}</span></a></li>`;
+    return html`<li><a href="${it.key ? `#library/status/${it.key}` : '#library'}" class="rail__item" data-view="${it.key ? `status:${it.key}` : 'all'}" data-focus-key="${countKey}"${active ? raw(' aria-current="page"') : ''}>${
+      it.key ? raw(`<span class="rail__dot" aria-hidden="true" style="--rail-dot:${STATUS[it.key].color}"></span>`) : ''
+    }<span class="rail__label">${it.label}</span><span class="rail__count" data-count="${countKey}">${counts[countKey]}</span></a></li>`;
   });
 
   const shelfRows = shelves.map((s) => {
@@ -381,38 +378,38 @@ function railHTML(S) {
       return html`<li data-shelf-row="${id}" class="py-1">${shelfForm(S, 'rename', { id, name: s.name })}</li>`;
     }
     const active = S.shelfId === id;
-    return html`<li class="flex items-center gap-0.5 rounded-md" data-shelf-row="${id}">
-      <span class="flex h-9 w-5 shrink-0 cursor-grab items-center justify-center text-text-3" data-shelf-grip draggable="true" aria-hidden="true">${icon('grip-vertical', { size: 16 })}</span>
-      <a href="#library/shelf/${id}" class="${linkClass(active)} min-w-0 flex-1" data-view="shelf:${id}" data-focus-key="shelf:${id}" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"${active ? raw(' aria-current="page"') : ''}>
-        <span class="h-2 w-2 shrink-0 rounded-full" aria-hidden="true" style="background:${safeColor(s.color)}"></span>
-        <span class="min-w-0 flex-1 truncate">${s.name}</span>
-        <span class="text-caption tabular-nums text-text-3" data-count="shelf:${id}">${counts[`shelf:${id}`] ?? 0}</span>
+    return html`<li class="group relative flex items-center gap-0.5 rounded-md" data-shelf-row="${id}">
+      <span class="absolute -left-4 flex h-9 w-4 shrink-0 cursor-grab items-center justify-center text-text-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100" data-shelf-grip draggable="true" aria-hidden="true">${icon('grip-vertical', { size: 16 })}</span>
+      <a href="#library/shelf/${id}" class="rail__item min-w-0 flex-1" data-view="shelf:${id}" data-focus-key="shelf:${id}" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"${active ? raw(' aria-current="page"') : ''}>
+        <span class="rail__dot" aria-hidden="true" style="--rail-dot:${safeColor(s.color)}"></span>
+        <span class="rail__label">${s.name}</span>
+        <span class="rail__count" data-count="shelf:${id}">${counts[`shelf:${id}`] ?? 0}</span>
       </a>
-      ${iconButton({ icon: 'more-horizontal', label: `Options for shelf ${s.name}`, size: 'sm', attrs: `data-shelf-menu="${id}" aria-haspopup="menu"` })}
+      ${iconButton({ icon: 'more-horizontal', label: `Options for shelf ${s.name}`, size: 'sm', cls: 'opacity-60 hover:opacity-100 focus-visible:opacity-100', attrs: `data-shelf-menu="${id}" aria-haspopup="menu"` })}
     </li>`;
   });
 
   const sourceRows = SOURCES
     .filter((src) => library.some((b) => (b.availability ?? []).some((a) => a.service === src.key)))
-    .map((src) => html`<li class="px-3 py-0.5">${checkbox({ label: src.label, checked: S.sources.has(src.key), attrs: `data-source="${src.key}"` })}</li>`);
+    .map((src) => html`<li class="px-2.5 py-0.5">${checkbox({ label: src.label, checked: S.sources.has(src.key), attrs: `data-source="${src.key}"` })}</li>`);
 
   return html`
     <div class="space-y-6">
       <section aria-label="Status">
-        <h2 class="label mb-2 px-3">Status</h2>
-        <nav aria-label="Library status"><ul class="space-y-0.5">${statusRows}</ul></nav>
+        <h2 class="label mb-2 px-2.5">Status</h2>
+        <nav aria-label="Library status"><ul class="rail">${statusRows}</ul></nav>
       </section>
       <section aria-label="Shelves">
-        <div class="mb-2 flex items-center justify-between pl-3">
+        <div class="mb-2 flex items-center justify-between pl-2.5">
           <h2 class="label">Shelves</h2>
           ${button({ label: ACTION.newShelf, icon: 'plus', variant: 'ghost', size: 'sm', attrs: 'data-action="new-shelf" data-focus-key="new-shelf"' })}
         </div>
         ${S.rail.creating ? html`<div class="mb-2">${shelfForm(S, 'create')}</div>` : ''}
-        ${shelves.length ? html`<ul class="space-y-0.5" data-shelf-list>${shelfRows}</ul>` : (S.rail.creating ? '' : html`<p class="px-3 text-small text-text-3">No shelves yet.</p>`)}
+        ${shelves.length ? html`<ul class="rail" data-shelf-list>${shelfRows}</ul>` : (S.rail.creating ? '' : html`<p class="px-2.5 text-small text-text-3">No shelves yet.</p>`)}
       </section>
       ${sourceRows.length ? html`
         <section aria-label="Sources">
-          <h2 class="label mb-2 px-3">Sources</h2>
+          <h2 class="label mb-2 px-2.5">Sources</h2>
           <ul>${sourceRows}</ul>
         </section>` : ''}
     </div>`;
@@ -482,6 +479,7 @@ export function renderLibrary(el, params = {}) {
   let disposed = false;
 
   const q = (sel) => el.querySelector(sel);
+  const wide = () => { try { return matchMedia('(min-width: 768px)').matches; } catch { return true; } };
   const announce = (text) => { const live = q('[data-region="live"]'); if (live) live.textContent = text; };
 
   // ── data selection ──
@@ -543,8 +541,6 @@ export function renderLibrary(el, params = {}) {
     }
     const sel = q('[data-region="select-btn"]');
     if (sel) {
-      sel.classList.toggle('btn--primary', S.selectMode);
-      sel.classList.toggle('btn--secondary', !S.selectMode);
       sel.setAttribute('aria-pressed', String(S.selectMode));
       const inner = String(html`<span class="btn__icon">${icon(S.selectMode ? 'x' : 'check-square', { size: 16 })}</span><span class="btn__label">${S.selectMode ? ACTION.cancel : 'Select'}</span>`);
       if (sel._h !== inner) { sel.innerHTML = inner; sel._h = inner; }
@@ -577,9 +573,12 @@ export function renderLibrary(el, params = {}) {
   }
 
   // ── content: sections, grids, incremental rendering ──
-  function cardString(entry) {
+  // Desktop "Reading" group = row cards (cover, progress, Update / Finish); everything else follows the layout toggle
+  const rowGroup = (key) => key === 'reading' && S.layout === 'grid' && wide();
+
+  function cardString(entry, key) {
     return String(bookCard(entry, {
-      variant: S.layout,
+      variant: rowGroup(key) ? 'row' : S.layout,
       showStatus: S.shelfId != null,
       selectable: S.selectMode,
       selected: S.selectMode && S.selected.has(String(entry.id)),
@@ -593,12 +592,12 @@ export function renderLibrary(el, params = {}) {
 
   function emptyContentHTML() {
     if (S.q.trim() || S.sources.size) {
-      return emptyState({ icon: EMPTY.noMatch.icon, title: EMPTY.noMatch.title, body: EMPTY.noMatch.body, size: 'sm', action: { label: ACTION.clearFilter, variant: 'secondary', attrs: 'data-action="clear-filter"' } });
+      return emptyState({ art: 'search', title: EMPTY.noMatch.title, body: EMPTY.noMatch.body, action: { label: ACTION.clearFilter, variant: 'secondary', attrs: 'data-action="clear-filter"' } });
     }
-    if (S.shelfId != null) return emptyState({ icon: EMPTY.shelfEmpty.icon, title: EMPTY.shelfEmpty.title, body: EMPTY.shelfEmpty.body, size: 'sm' });
+    if (S.shelfId != null) return emptyState({ art: 'stack', title: EMPTY.shelfEmpty.title, body: EMPTY.shelfEmpty.body });
     const byStatus = EMPTY.statusEmpty[S.status];
-    if (byStatus) return emptyState({ icon: byStatus.icon, title: byStatus.title, body: byStatus.body, size: 'sm' });
-    return emptyState({ icon: EMPTY.noMatch.icon, title: EMPTY.noMatch.title, body: EMPTY.noMatch.body, size: 'sm' });
+    if (byStatus) return emptyState({ art: S.status === 'reading' ? 'open-book' : 'stack', title: byStatus.title, body: byStatus.body });
+    return emptyState({ art: 'search', title: EMPTY.noMatch.title, body: EMPTY.noMatch.body });
   }
 
   function sectionHTML(g, rec) {
@@ -613,19 +612,24 @@ export function renderLibrary(el, params = {}) {
     const headingId = uid('library-section');
     const collapsed = grouped && !!collapsedSections[g.key];
     rec.collapsed = collapsed;
-    return html`<section aria-labelledby="${headingId}" data-group="${g.key}" class="mb-8">
+    return html`<section aria-labelledby="${headingId}" data-group="${g.key}" class="mb-10">
       ${sectionHeader({
         title, count: g.entries.length, dot, id: headingId,
-        actions: grouped ? iconButton({ icon: collapsed ? 'chevron-down' : 'chevron-up', label: `${collapsed ? 'Expand' : 'Collapse'} ${title}`, size: 'sm', attrs: `data-collapse="${g.key}" aria-expanded="${!collapsed}"` }) : undefined,
+        actions: grouped ? iconButton({ icon: collapsed ? 'chevron-down' : 'chevron-up', label: `${collapsed ? 'Expand' : 'Collapse'} ${title}`, size: 'sm', cls: '!bg-transparent !text-text-2 hover:!bg-surface-2', attrs: `data-collapse="${g.key}" aria-expanded="${!collapsed}"` }) : undefined,
       })}
       <div data-slot></div>
     </section>`;
   }
 
+  // Collapsed groups keep a one-line teaser of mini covers
+  function teaserHTML(entries) {
+    return String(html`<div class="flex items-center gap-1.5 pt-1" data-teaser aria-hidden="true">${entries.slice(0, 5).map((b) => html`<span class="w-9 shrink-0">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, author: authorsOf(b)[0], size: 'xs' })}</span>`)}${entries.length > 5 ? html`<span class="ml-1 text-small tabular-nums text-text-3">+${entries.length - 5}</span>` : ''}</div>`);
+  }
+
   function mountGrid(rec) {
     rec.slot.innerHTML = '';
     const grid = document.createElement('div');
-    grid.className = cx(S.layout === 'list' ? 'flex flex-col gap-1' : 'book-grid', S.animate && 'stagger');
+    grid.className = cx(S.layout === 'list' ? 'flex flex-col' : (rowGroup(rec.key) ? 'grid gap-4 lg:grid-cols-2' : 'book-grid'), S.animate && 'stagger');
     rec.slot.appendChild(grid);
     rec.gridEl = grid;
     rec.html = new Map();
@@ -637,7 +641,7 @@ export function renderLibrary(el, params = {}) {
 
   function appendChunk(rec, to) {
     const slice = rec.entries.slice(rec.rendered, to);
-    const parts = slice.map((e) => { const s = cardString(e); rec.html.set(String(e.id), s); return s; });
+    const parts = slice.map((e) => { const s = cardString(e, rec.key); rec.html.set(String(e.id), s); return s; });
     rec.gridEl.insertAdjacentHTML('beforeend', parts.join(''));
     rec.rendered = to;
   }
@@ -681,6 +685,7 @@ export function renderLibrary(el, params = {}) {
       rec.slot = section.querySelector('[data-slot]');
       S.secs.set(rec.key, rec);
       if (!rec.collapsed) mountGrid(rec);
+      else rec.slot.innerHTML = teaserHTML(rec.entries);
     });
     S.animate = false;
   }
@@ -711,14 +716,15 @@ export function renderLibrary(el, params = {}) {
     rec.entries = g.entries;
     const count = rec.section.querySelector('.section-header__title-row .badge');
     if (count) count.textContent = String(g.entries.length);
-    if (rec.collapsed || !rec.gridEl) return;
+    if (rec.collapsed) { rec.slot.innerHTML = teaserHTML(g.entries); return; }
+    if (!rec.gridEl) return;
     const n = Math.min(Math.max(rec.rendered, GRID_CHUNK), g.entries.length);
     const want = g.entries.slice(0, n);
     const cards = [...rec.gridEl.children];
     const same = cards.length === want.length && want.every((e, i) => sameId(e.id, cards[i].dataset.libId));
     if (same) {
       want.forEach((e, i) => {
-        const s = cardString(e);
+        const s = cardString(e, rec.key);
         if (rec.html.get(String(e.id)) !== s) replaceCard(rec, cards[i], e, s);
       });
     } else {
@@ -752,7 +758,7 @@ export function renderLibrary(el, params = {}) {
       rec.io = null;
       rec.sentinel = null;
       rec.gridEl = null;
-      rec.slot.innerHTML = '';
+      rec.slot.innerHTML = teaserHTML(rec.entries);
     } else {
       mountGrid(rec);
     }
@@ -769,32 +775,30 @@ export function renderLibrary(el, params = {}) {
 
   function pageHTML() {
     return html`
-      <div class="mx-auto w-full max-w-7xl lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8">
+      <div class="mx-auto w-full max-w-[var(--page-max)] lg:grid lg:grid-cols-[var(--rail-w)_minmax(0,1fr)] lg:gap-10">
         <aside class="hidden lg:block" aria-label="Library filters">
-          <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pb-4" data-rail></div>
+          <div class="sticky top-[76px] max-h-[calc(100vh-6rem)] overflow-y-auto pb-4 pl-4" data-rail></div>
         </aside>
-        <div class="min-w-0 space-y-4 md:space-y-5">
-          <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+        <div class="min-w-0 space-y-5 md:space-y-6">
+          <div class="flex items-end justify-between gap-x-4 gap-y-2">
             <div>
-              <h1 class="h1">Library</h1>
-              <p class="text-small text-text-2" data-region="count"></p>
+              <h1 class="h1" data-focus-target>Library</h1>
+              <p class="text-small text-text-3" data-region="count"></p>
             </div>
-            <button type="button" class="btn btn--secondary btn--sm lg:hidden" data-action="filters" aria-haspopup="dialog"><span class="btn__icon">${icon('filter', { size: 16 })}</span><span class="btn__label">Filters</span><span data-filter-badge></span></button>
+            <div class="lg:hidden"><button type="button" class="btn btn--secondary btn--sm" data-action="filters" aria-haspopup="dialog"><span class="btn__icon">${icon('filter', { size: 16 })}</span><span class="btn__label">Filters</span><span data-filter-badge></span></button></div>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="min-w-full flex-1 sm:min-w-[14rem]">
+          <div class="flex flex-wrap items-center gap-2 md:flex-nowrap">
+            <div class="min-w-full flex-1 md:min-w-0">
               ${field({ name: 'q', type: 'search', value: S.q, placeholder: PLACEHOLDER.filterBooks, icon: 'search', id: 'library-search', ariaLabel: 'Filter by title or author', autocomplete: 'off' })}
             </div>
-            <div class="w-44 shrink-0">
-              ${select({ name: 'sort', ariaLabel: 'Sort by', value: sortKey, options: SORTS })}
-            </div>
+            ${button({ label: `Sort: ${sortLabel()}`, iconRight: 'chevron-down', cls: 'shrink-0', attrs: 'data-action="sort" data-region="sort-btn" aria-haspopup="menu"' })}
             ${segmented({ name: 'view', label: 'Layout', items: LAYOUTS, value: S.layout })}
-            <button type="button" class="btn btn--secondary" data-action="select-mode" data-region="select-btn" aria-pressed="false"></button>
+            <button type="button" class="btn btn--secondary shrink-0" data-action="select-mode" data-region="select-btn" aria-pressed="false"></button>
           </div>
           <div class="lg:hidden" data-region="chips"></div>
           <div class="min-h-[40vh]" data-region="content"></div>
         </div>
-        <div id="bulk-bar" role="toolbar" aria-label="Bulk actions" class="fixed bottom-6 left-1/2 z-[var(--z-sticky)] hidden max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-lg border border-border-2 bg-surface-1 px-4 py-3 shadow-3">
+        <div id="bulk-bar" role="toolbar" aria-label="Bulk actions" class="glass fixed bottom-6 left-1/2 z-[var(--z-sticky)] hidden h-14 max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-5 shadow-3">
           <span class="mr-1 text-small font-medium tabular-nums" data-bulk-count aria-live="polite"></span>
           ${button({ label: 'Set status', iconRight: 'chevron-down', size: 'sm', attrs: 'data-action="bulk-status" aria-haspopup="menu"' })}
           ${button({ label: 'Add to shelf', iconRight: 'chevron-down', size: 'sm', attrs: 'data-action="bulk-shelf" aria-haspopup="menu"' })}
@@ -805,14 +809,30 @@ export function renderLibrary(el, params = {}) {
       </div>`;
   }
 
+  function loadingHTML() {
+    const bar = (w) => html`<span class="skeleton skeleton--text" style="width:${w}"></span>`;
+    return html`<div class="mx-auto w-full max-w-[var(--page-max)] lg:grid lg:grid-cols-[var(--rail-w)_minmax(0,1fr)] lg:gap-10" role="status" aria-label="Loading library">
+      <aside class="hidden space-y-3 pl-4 lg:block" aria-hidden="true">${bar('30%')}${bar('100%')}${bar('100%')}${bar('100%')}${bar('100%')}</aside>
+      <div class="min-w-0 space-y-5 md:space-y-6">
+        <div><h1 class="h1" data-focus-target>Library</h1></div>
+        <div class="flex items-center gap-2" aria-hidden="true">
+          <span class="skeleton min-w-0 flex-1" style="height:40px;border-radius:var(--radius-md)"></span>
+          <span class="skeleton hidden md:block" style="width:120px;height:40px;border-radius:var(--radius-md)"></span>
+          <span class="skeleton hidden md:block" style="width:96px;height:40px;border-radius:var(--radius-full)"></span>
+        </div>
+        ${skeletonBookGrid(14)}
+      </div>
+    </div>`;
+  }
+
   function buildPage() {
     teardownPage();
     if (S.mode === 'loading') {
-      el.innerHTML = String(html`<div class="mx-auto w-full max-w-7xl space-y-4"><h1 class="h1">Library</h1>${skeletonBookGrid(12)}</div>`);
+      el.innerHTML = String(loadingHTML());
     } else if (S.mode === 'error') {
-      el.innerHTML = String(html`<div class="mx-auto w-full max-w-7xl"><h1 class="h1">Library</h1>${emptyState({ icon: EMPTY.loadError.icon, title: EMPTY.loadError.title, body: EMPTY.loadError.body, action: { label: ACTION.tryAgain, variant: 'primary', attrs: 'data-action="retry"' } })}</div>`);
+      el.innerHTML = String(html`<div class="mx-auto w-full max-w-[var(--page-max)]"><h1 class="h1" data-focus-target>Library</h1>${emptyState({ art: 'open-book', title: EMPTY.loadError.title, body: EMPTY.loadError.body, action: { label: ACTION.tryAgain, variant: 'primary', attrs: 'data-action="retry"' } })}</div>`);
     } else if (S.mode === 'empty') {
-      el.innerHTML = String(html`<div class="mx-auto w-full max-w-7xl"><h1 class="h1">Library</h1>${onboardingHTML()}</div>`);
+      el.innerHTML = String(html`<div class="mx-auto w-full max-w-[var(--page-max)]"><h1 class="h1" data-focus-target>Library</h1>${onboardingHTML()}</div>`);
     } else {
       validateView();
       el.innerHTML = String(pageHTML());
@@ -1259,6 +1279,7 @@ export function renderLibrary(el, params = {}) {
     switch (t.dataset.action) {
       case 'filters': openFilters(); break;
       case 'select-mode': setSelectMode(!S.selectMode); break;
+      case 'sort': openSortMenu(t); break;
       case 'clear-filter': clearFilter(); break;
       case 'retry': loadLibrary(); break;
       case 'bulk-status': openBulkStatusMenu(t); break;
@@ -1279,10 +1300,28 @@ export function renderLibrary(el, params = {}) {
     }, 150);
   }));
 
-  offs.push(delegate(el, 'change', 'select[name="sort"]', (e, sel) => {
-    sortKey = SORTS.some((s) => s.value === sel.value) ? sel.value : 'added';
-    buildContent();
-  }));
+  function openSortMenu(trigger) {
+    openMenu({
+      trigger,
+      placement: 'bottom-start',
+      label: 'Sort by',
+      items: SORTS.map((x) => ({ id: x.value, label: x.label, kind: 'radio', checked: x.value === sortKey })),
+      onSelect: (id) => {
+        sortKey = SORTS.some((x) => x.value === id) ? id : 'added';
+        const label = trigger.querySelector('.btn__label');
+        if (label) label.textContent = `Sort: ${sortLabel()}`;
+        buildContent();
+      },
+    });
+  }
+
+  // Row cards (Reading) only exist from 768 px up
+  try {
+    const mq = matchMedia('(min-width: 768px)');
+    const onChange = () => { if (!disposed && S.mode === 'ready') buildContent(); };
+    mq.addEventListener('change', onChange);
+    offs.push(() => mq.removeEventListener('change', onChange));
+  } catch { /* no matchMedia */ }
 
   const onKey = (e) => {
     if (e.key !== 'Escape' || !S.selectMode || e.defaultPrevented) return;

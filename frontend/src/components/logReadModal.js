@@ -1,7 +1,7 @@
 // Log-a-read modal (design-system §5.17, §9). The one entry point for creating and editing a read.
 //
 //   openLogReadModal(book, onSaved)
-//     book    { id, title, startedAt?, session? }
+//     book    { id, title, startedAt?, session?, coverUrl? }   (coverUrl: optional; the library entry's cover is used otherwise)
 //             startedAt  library entry's started_reading_at; prefills "Started" (new reads only)
 //             session    an existing reading_sessions row -> edit mode (PATCH) instead of create (POST)
 //     onSaved called with the saved session row after the modal has closed
@@ -15,7 +15,7 @@ import { upsertLibraryEntry } from '../libraryStore.js';
 import { html, localDayKey } from '../utils.js';
 import {
   openModal, button, setButtonLoading, field, setFieldError, mountFields, starInput, mountStarInput,
-  toast, uid, ACTION, TOAST, ERROR,
+  ambientFor, applyAmbient, peekAmbient, toast, uid, ACTION, TOAST, ERROR,
 } from '../ui/index.js';
 
 /**
@@ -40,14 +40,14 @@ export function openLogReadModal(book, onSaved) {
   const content = html`
     <form id="${formId}" class="space-y-4" novalidate>
       <div class="grid grid-cols-2 gap-3">
-        ${field({ name: 'startedAt', label: 'Started', type: 'date', value: editing ? dayKey(session.started_at) : dayKey(book.startedAt) })}
-        ${field({ name: 'finishedAt', label: 'Finished', type: 'date', value: editing ? dayKey(session.finished_at) : today })}
+        ${field({ name: 'startedAt', label: 'Started', labelStyle: 'inline', type: 'date', value: editing ? dayKey(session.started_at) : dayKey(book.startedAt) })}
+        ${field({ name: 'finishedAt', label: 'Finished', labelStyle: 'inline', type: 'date', value: editing ? dayKey(session.finished_at) : today })}
       </div>
       <div class="space-y-1.5">
-        <p class="label">Rating</p>
+        <p class="text-small font-medium text-text-2">Rating</p>
         ${starInput({ name: 'rating', value: editing ? (session.rating ?? 0) : 0, size: 28 })}
       </div>
-      ${field({ name: 'review', label: 'Review (optional)', type: 'textarea', rows: 4, maxlength: 5000, value: editing ? (session.review ?? '') : '', placeholder: 'Your thoughts' })}
+      ${field({ name: 'review', label: 'Review (optional)', labelStyle: 'inline', type: 'textarea', rows: 4, maxlength: 5000, value: editing ? (session.review ?? '') : '', placeholder: 'Your thoughts' })}
       <p class="field__error" role="alert" data-form-error hidden></p>
     </form>`;
 
@@ -58,11 +58,24 @@ export function openLogReadModal(book, onSaved) {
   const modal = openModal({
     title: editing ? 'Edit read' : ACTION.logRead,
     subtitle: book?.title ?? '',
+    header: 'ambient',
     content,
     footer,
     onClose: () => offs.forEach(off => off()),
   });
   offs.push(mountFields(modal.body), mountStarInput(modal.body));
+
+  // Header strip tinted with the book's colour: instant when the Book page already extracted it, otherwise from the cover
+  if (modal.header) {
+    const entry = (getState().library ?? []).find(b => String(b.book_id) === String(book?.id));
+    const hit = peekAmbient(book?.id);
+    if (hit) applyAmbient(modal.header, hit);
+    else {
+      ambientFor({ bookId: book?.id, url: book?.coverUrl ?? entry?.cover_url, seed: book?.title })
+        .then((v) => { if (modal.el.isConnected) applyAmbient(modal.header, v); })
+        .catch(() => {});
+    }
+  }
 
   const form = modal.body.querySelector('form');
   const saveBtn = modal.el.querySelector('[data-save]');

@@ -2,9 +2,9 @@
 import { api } from '../../api.js';
 import { html, safeUrl } from '../../utils.js';
 import {
-  ACTION, TOAST, avatar, button, card, delegate, field, mountFields, setButtonLoading, setFieldError, switchRow, toast,
+  ACTION, TOAST, avatar, button, delegate, field, mountFields, setButtonLoading, setFieldError, switchRow, toast,
 } from '../../ui/index.js';
-import { createScope, errorText, isHttpUrl, patchUser } from './common.js';
+import { createScope, errorText, group, groupCard, isHttpUrl, patchUser } from './common.js';
 
 const BIO_MAX = 300;
 const URL_ERROR = 'Enter a link that starts with http:// or https://';
@@ -13,38 +13,36 @@ export function mount(el, { user }) {
   const scope = createScope();
   const profileUrl = `${location.origin}${location.pathname}#u/${encodeURIComponent(user.username)}`;
 
+  const lbl = { labelStyle: 'inline' };
   el.innerHTML = String(html`
     <form data-profile-form novalidate>
-      ${card({ content: html`
-        <div class="space-y-5">
+      ${groupCard([
+        group(html`
           <div class="flex items-center gap-4">
             <span data-avatar-preview>${avatar({ username: user.username, avatarUrl: user.avatarUrl, size: 72 })}</span>
             <div class="min-w-0">
               <p class="h3 truncate">@${user.username}</p>
               <p class="text-small text-text-2">Shown on your profile, in the feed and in comments.</p>
             </div>
-          </div>
-          ${field({ name: 'avatarUrl', label: 'Avatar URL', type: 'url', value: user.avatarUrl ?? '', placeholder: 'https://example.com/photo.jpg', autocomplete: 'off', inputmode: 'url' })}
-          ${field({ name: 'bannerUrl', label: 'Banner URL', type: 'url', value: user.bannerUrl ?? '', placeholder: 'https://example.com/banner.jpg', hint: 'A wide image shown behind your name.', autocomplete: 'off', inputmode: 'url' })}
+          </div>`),
+        group(html`
+          ${field({ name: 'avatarUrl', label: 'Avatar URL', type: 'url', value: user.avatarUrl ?? '', placeholder: 'https://example.com/photo.jpg', autocomplete: 'off', inputmode: 'url', ...lbl })}
+          ${field({ name: 'bannerUrl', label: 'Banner URL', type: 'url', value: user.bannerUrl ?? '', placeholder: 'https://example.com/banner.jpg', hint: 'A wide image shown behind your name.', autocomplete: 'off', inputmode: 'url', ...lbl })}
           <div data-banner-preview class="${isHttpUrl(user.bannerUrl) ? '' : 'hidden'}">
             <img class="w-full h-24 object-cover rounded-md border border-border-1" alt="" data-banner-img src="${isHttpUrl(user.bannerUrl) ? safeUrl(user.bannerUrl) : ''}">
-          </div>
-          ${field({ name: 'bio', label: 'Bio', type: 'textarea', rows: 3, maxlength: BIO_MAX, value: user.bio ?? '', placeholder: 'A few words about you', hint: 'Shown on your public profile.' })}
-          <div>${button({ label: ACTION.saveChanges, variant: 'primary', type: 'submit', attrs: 'data-save' })}</div>
-          <p class="field__error" role="alert" data-form-error hidden></p>
-        </div>` })}
+          </div>`),
+        group(field({ name: 'bio', label: 'Bio', type: 'textarea', rows: 3, maxlength: BIO_MAX, value: user.bio ?? '', placeholder: 'A few words about you', hint: 'Shown on your public profile.', ...lbl })),
+      ], { footer: html`${button({ label: ACTION.saveChanges, variant: 'primary', type: 'submit', attrs: 'data-save' })}<p class="field__error" role="alert" data-form-error hidden></p>` })}
     </form>
 
-    ${card({ content: html`
-      <div class="space-y-4">
-        <div data-visibility>${visibilityRow(user.isPublic !== false)}</div>
-        <div class="rounded-md bg-surface-2 p-3 space-y-2">
-          <p class="label">Profile link</p>
-          <p class="text-small break-all"><a class="text-accent-text hover:underline" href="${profileUrl}">${profileUrl}</a></p>
-          <p class="text-small text-text-2" data-private-note ${user.isPublic === false ? '' : 'hidden'}>Your profile is private, so only you can open this link.</p>
-          ${button({ label: ACTION.copyLink, variant: 'secondary', size: 'sm', icon: 'link', attrs: 'data-action="copy-link"' })}
-        </div>
-      </div>` })}`);
+    ${groupCard([
+      group(html`<div data-visibility>${visibilityRow(user.isPublic !== false)}</div>`),
+      group(html`
+        <p class="label">Profile link</p>
+        <p class="text-small break-all"><a class="text-accent-text hover:underline" href="${profileUrl}">${profileUrl}</a></p>
+        <p class="text-small text-text-2" data-private-note ${user.isPublic === false ? '' : 'hidden'}>Your profile is private, so only you can open this link.</p>
+        <div>${button({ label: ACTION.copyLink, variant: 'secondary', size: 'sm', icon: 'link', attrs: 'data-action="copy-link"' })}</div>`),
+    ])}`);
 
   scope.add(mountFields(el));
 

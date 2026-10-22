@@ -10,23 +10,22 @@ import { openSse } from '../sse.js';
 import { html } from '../utils.js';
 import {
   ACTION, EMPTY, LABEL,
-  bookCard, bookMenuItems, button, card, cover, cssEscape, delegate, emptyState, icon, iconButton, mountBookGrid,
-  mountMenuTriggers, mountProgressSlider, openCommandPalette, plural, progressBar, progressRing, progressSlider,
-  formatAuthors, sectionHeader, skeletonCard, skeletonList, timeAgo, uid,
+  bookCard, bookMenuItems, button, card, cover, cssEscape, delegate, emptyState, heroCard, icon, mountBookGrid,
+  mountAmbient, mountHeroCard, mountShelfRows, openCommandPalette, openMenu, plural, progressBar, progressRing, sectionHeader,
+  shelfRow, skeletonCard, skeletonFeed, skeletonHero, skeletonShelf, sparkline, uid,
 } from '../ui/index.js';
 import { feedCardHTML, mountFeedCards } from './feedCard.js';
 import {
-  bookActionHandlers, commitProgress, dispatchBookMenu, findLibraryEntry, finishBook, flashSaved, onboardingHTML,
-  savedCaption, setSliderValue,
+  bookActionHandlers, commitProgress, dispatchBookMenu, findLibraryEntry, finishBook, onboardingHTML, setSliderValue,
 } from './library.js';
 
 // The shared loader lives in libraryStore.js; other modules may still import it from here during the transition.
 export { loadLibrary };
 
 const RECENTLY_ADDED_KEY = 'recentlyAddedDismissedAt';
-const MAX_READING = 3;
+const MAX_ALSO = 3;
 const UP_NEXT = 8;
-const FEED_MAX = 5;
+const FEED_MAX = 3;
 
 const ts = (v) => { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; };
 const authorsOf = (b) => (Array.isArray(b.authors) ? b.authors : (b.authors ? [b.authors] : []));
@@ -41,44 +40,26 @@ function dayOfYear(d = new Date()) {
   return Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
 }
 
-function readingRowHTML(b) {
-  const pct = Math.round(Number(b.progress_pct) || 0);
-  const authors = formatAuthors(authorsOf(b));
-  const started = b.started_reading_at ? `started ${timeAgo(b.started_reading_at)}` : '';
-  const meta = [authors, started].filter(Boolean).join(' · ');
-  return html`
-    <article class="card flex gap-3 sm:gap-4" data-lib-id="${b.id}" data-book-id="${b.book_id}" aria-label="${b.title}${authors ? ` by ${authors}` : ''}">
-      <a href="#book/${b.book_id}" class="block w-16 shrink-0 sm:w-24" tabindex="-1" aria-hidden="true">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title })}</a>
-      <div class="flex min-w-0 flex-1 flex-col gap-3">
-        <div class="flex items-start gap-2">
-          <div class="min-w-0 flex-1">
-            <h3 class="font-display text-card line-clamp-2"><a href="#book/${b.book_id}" class="hover:text-accent-text">${b.title}</a></h3>
-            ${meta ? html`<p class="truncate text-small text-text-2">${meta}</p>` : ''}
-          </div>
-          ${iconButton({ icon: 'more-horizontal', label: `More options for ${b.title}`, size: 'sm', attrs: 'data-row-menu aria-haspopup="menu"' })}
-        </div>
-        ${progressSlider({ value: pct, label: `Progress for ${b.title}` })}
-        <div class="flex items-center justify-between gap-2">
-          ${savedCaption()}
-          ${button({ label: ACTION.finish, icon: 'check', size: 'sm', attrs: 'data-action="finish"' })}
-        </div>
-      </div>
-    </article>`;
-}
+const today = () => new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
-// Everything about a row except its progress: a progress-only change must not rebuild the row (the slider may be mid-drag)
-const rowSignature = (b) => [b.id, b.title, b.cover_url, b.started_reading_at, authorsOf(b).join(',')].join(':');
+// Everything about the hero except the hero's own progress: a progress-only change must not rebuild the card (the slider may be mid-drag)
+const heroSignature = (hero, others, total) => [
+  hero && [hero.id, hero.title, hero.cover_url, hero.started_reading_at, authorsOf(hero).join(',')].join(':'),
+  ...others.map((b) => [b.id, b.title, b.cover_url, Math.round(Number(b.progress_pct) || 0)].join(':')),
+  total,
+].join('~');
 
 export function renderHome(el) {
   const year = new Date().getFullYear();
   const user = getState().user;
   const ids = {
-    reading: uid('home-reading'), goal: uid('home-goal'), listening: uid('home-listening'),
+    goal: uid('home-goal'), listening: uid('home-listening'),
     upnext: uid('home-upnext'), following: uid('home-following'), recent: uid('home-recent'),
   };
   const H = {
     disposed: false,
     goal: { state: 'loading', data: null },
+    spark: [],
     feed: { state: 'loading', items: [] },
     np: null,
     recent: [],
@@ -89,30 +70,34 @@ export function renderHome(el) {
   };
   const offs = [];
   let closeSse = null;
+  let heroCleanup = null;
 
   const q = (name) => el.querySelector(`[data-region="${name}"]`);
 
   el.innerHTML = String(html`
-    <div class="mx-auto w-full max-w-7xl space-y-6 md:space-y-8">
+    <div class="mx-auto w-full max-w-[var(--page-max)] space-y-8 md:space-y-10">
       <header class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div class="min-w-0">
-          <h1 class="h1">${greeting(user)}</h1>
+          <p class="eyebrow">${today()}</p>
+          <h1 class="h1 mt-1" data-focus-target>${greeting(user)}</h1>
           <p class="text-small text-text-2" data-region="summary"></p>
         </div>
-        ${button({ label: 'Add a book', icon: 'plus', variant: 'primary', attrs: 'data-action="add-book"' })}
+        <div class="hidden md:block">${button({ label: 'Add a book', icon: 'plus', variant: 'secondary', attrs: 'data-action="add-book" data-region="add-btn"' })}</div>
       </header>
       <div data-region="gate"></div>
-      <div class="space-y-6 md:space-y-8" data-region="dash" hidden>
-        <div class="grid gap-6 md:gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-          <section aria-labelledby="${ids.reading}" data-region="reading"></section>
-          <div class="space-y-6 md:space-y-8">
-            <section aria-labelledby="${ids.goal}" data-region="goal"></section>
+      <div class="space-y-8 md:space-y-10" data-region="dash" hidden>
+        <div class="grid gap-6 lg:grid-cols-12 lg:items-stretch lg:gap-8">
+          <section class="min-w-0 lg:col-span-8" aria-label="Continue reading" data-region="reading"></section>
+          <div class="flex min-w-0 flex-col gap-6 lg:col-span-4">
+            <section class="lg:flex-1 [&>.card]:h-full" aria-labelledby="${ids.goal}" data-region="goal"></section>
             <section aria-labelledby="${ids.listening}" data-region="listening" hidden></section>
           </div>
         </div>
         <section aria-labelledby="${ids.upnext}" data-region="upnext"></section>
-        <section aria-labelledby="${ids.following}" data-region="following"></section>
-        <section aria-labelledby="${ids.recent}" data-region="recent" hidden></section>
+        <div class="grid gap-8 lg:grid-cols-12 lg:items-start">
+          <section class="min-w-0 lg:col-span-8" aria-labelledby="${ids.following}" data-region="following"></section>
+          <section class="min-w-0 lg:col-span-4" aria-labelledby="${ids.recent}" data-region="recent" hidden></section>
+        </div>
       </div>
     </div>`);
 
@@ -143,9 +128,9 @@ export function renderHome(el) {
     if (gate._mode === mode) return mode === 'dash';
     gate._mode = mode;
     if (mode === 'loading') {
-      gate.innerHTML = String(html`<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"><div class="space-y-3">${skeletonCard()}${skeletonCard()}</div>${skeletonCard()}</div>`);
+      gate.innerHTML = String(html`<div class="space-y-8 md:space-y-10"><div class="grid gap-6 lg:grid-cols-12 lg:gap-8"><div class="lg:col-span-8">${skeletonHero()}</div><div class="lg:col-span-4">${skeletonCard()}</div></div>${skeletonShelf(7)}</div>`);
     } else if (mode === 'error') {
-      gate.innerHTML = String(emptyState({ icon: EMPTY.loadError.icon, title: EMPTY.loadError.title, body: EMPTY.loadError.body, action: { label: ACTION.tryAgain, variant: 'primary', attrs: 'data-action="retry-library"' } }));
+      gate.innerHTML = String(emptyState({ art: 'open-book', title: EMPTY.loadError.title, body: EMPTY.loadError.body, action: { label: ACTION.tryAgain, variant: 'primary', attrs: 'data-action="retry-library"' } }));
     } else if (mode === 'empty') {
       gate.innerHTML = String(onboardingHTML());
     } else {
@@ -157,24 +142,31 @@ export function renderHome(el) {
   function paintReading() {
     const region = q('reading');
     const items = readingEntries();
-    const shown = items.slice(0, MAX_READING);
-    const sig = `${shown.map(rowSignature).join('~')}|${items.length}`;
+    const hero = items[0] ?? null;
+    const others = items.slice(1, 1 + MAX_ALSO);
+    const sig = heroSignature(hero, others, items.length);
+    // The single primary button of the page: "Update progress" in the hero, else "Add a book"
+    const addBtn = q('add-btn');
+    addBtn.classList.toggle('btn--primary', !hero);
+    addBtn.classList.toggle('btn--secondary', !!hero);
     if (sig === H.readingSig) {
-      // Same rows: only mirror progress that changed elsewhere, and never touch a slider being dragged
-      for (const b of shown) {
-        const input = region.querySelector(`[data-lib-id="${cssEscape(b.id)}"] .slider__input`);
-        const pct = Math.round(Number(b.progress_pct) || 0);
+      // Same cards: only mirror progress that changed elsewhere, and never touch a slider being dragged
+      if (hero) {
+        const input = region.querySelector('[data-hero-card] .slider__input');
+        const pct = Math.round(Number(hero.progress_pct) || 0);
         if (input && input !== document.activeElement && Number(input.value) !== pct) setSliderValue(input, pct);
       }
       return;
     }
     H.readingSig = sig;
-    region.innerHTML = String(html`
-      ${sectionHeader({ title: LABEL.currentlyReading, count: items.length || undefined, href: items.length ? '#library/status/reading' : undefined, id: ids.reading })}
-      ${items.length ? html`
-        <div class="space-y-3">${shown.map(readingRowHTML)}</div>
-        ${items.length > MAX_READING ? html`<a class="mt-3 inline-flex items-center gap-1 text-small text-accent-text hover:underline" href="#library/status/reading">and ${items.length - MAX_READING} more${icon('arrow-right', { size: 16 })}</a>` : ''}`
-        : emptyState({ icon: EMPTY.nothingInProgress.icon, title: EMPTY.nothingInProgress.title, body: EMPTY.nothingInProgress.body, size: 'sm', action: { label: ACTION.browseLibrary, href: '#library/status/to_read', variant: 'secondary' } })}`);
+    if (!hero) {
+      region.innerHTML = String(card({ content: emptyState({ art: 'open-book', title: EMPTY.nothingInProgress.title, body: EMPTY.nothingInProgress.body, size: 'sm', action: { label: ACTION.browseLibrary, href: '#library/status/to_read', variant: 'secondary' } }) }));
+      return;
+    }
+    const more = items.length - 1 - MAX_ALSO;
+    region.innerHTML = String(html`${heroCard({ entry: hero, others })}${more > 0 ? html`<a class="mt-3 inline-flex items-center gap-1 text-small font-medium text-accent-text hover:underline" href="#library/status/reading">and ${more} more${icon('arrow-right', { size: 16 })}</a>` : ''}`);
+    heroCleanup?.();
+    heroCleanup = mountAmbient(region);
   }
 
   function paintUpNext() {
@@ -185,10 +177,10 @@ export function renderHome(el) {
     if (sig === H.upNextSig) return;
     H.upNextSig = sig;
     region.innerHTML = String(html`
-      ${sectionHeader({ title: LABEL.upNext, href: queue.length ? '#library/status/to_read' : undefined, id: ids.upnext })}
+      ${sectionHeader({ title: LABEL.upNext, href: queue.length ? '#library/status/to_read' : undefined, id: ids.upnext, scrollControls: picks.length ? true : undefined })}
       ${picks.length
-        ? html`<div class="scroller">${picks.map((b) => bookCard(b, { variant: 'compact' }))}</div>`
-        : emptyState({ icon: EMPTY.toReadEmpty.icon, title: EMPTY.toReadEmpty.title, size: 'sm', action: { label: ACTION.discoverBooks, href: '#discover', variant: 'secondary' } })}`);
+        ? shelfRow({ ledge: true, label: LABEL.upNext, items: picks.map((b) => bookCard(b, { variant: 'compact' })) })
+        : emptyState({ art: 'stack', title: EMPTY.toReadEmpty.title, size: 'sm', action: { label: ACTION.discoverBooks, href: '#discover', variant: 'secondary' } })}`);
   }
 
   function paintLibraryDriven() {
@@ -203,15 +195,15 @@ export function renderHome(el) {
   function paintGoal() {
     const region = q('goal');
     const g = H.goal;
-    const head = sectionHeader({ title: LABEL.yourGoal(year), id: ids.goal });
-    if (g.state === 'loading') { region.innerHTML = String(html`${head}${skeletonCard()}`); return; }
+    const label = html`<span class="sr-only" id="${ids.goal}">${LABEL.yourGoal(year)}</span>`;
+    if (g.state === 'loading') { region.innerHTML = String(html`${label}${skeletonCard()}`); return; }
     if (g.state === 'error') {
-      region.innerHTML = String(html`${head}${card({ content: html`<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-small text-text-2">Couldn't load your goal.</p>${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-goal"' })}</div>` })}`);
+      region.innerHTML = String(html`${label}${card({ content: html`<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-small text-text-2">Couldn't load your goal.</p>${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-goal"' })}</div>` })}`);
       return;
     }
     const { target, booksRead } = g.data ?? {};
     if (!target) {
-      region.innerHTML = String(html`${head}${card({ content: html`
+      region.innerHTML = String(html`${label}${card({ tone: 'quiet', content: html`
         <div class="flex items-center gap-3">
           <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-accent-text" aria-hidden="true">${icon('target', { size: 20 })}</span>
           <p class="min-w-0 flex-1 text-small font-medium text-text-1">Set a reading goal for ${year}</p>
@@ -222,15 +214,18 @@ export function renderHome(el) {
     const diff = booksRead - Math.round(target * dayOfYear() / 365);
     const reached = booksRead >= target;
     const pace = reached ? 'Goal reached' : (diff > 0 ? `${diff} ahead of pace` : (diff < 0 ? `${-diff} behind pace` : 'Right on pace'));
-    region.innerHTML = String(html`${head}${card({ content: html`
-      <div class="flex items-center gap-4">
-        ${progressRing({ value: booksRead, max: target, size: H.wide ? 140 : 96, label: String(booksRead), sublabel: `of ${target}` })}
-        <div class="min-w-0 space-y-1">
+    const paceTone = reached || diff > 0 ? 'text-success-fg' : 'text-text-2';
+    region.innerHTML = String(html`${card({ cls: 'flex flex-col', content: html`
+      <p class="eyebrow" id="${ids.goal}">${LABEL.yourGoal(year)}</p>
+      <div class="mt-4 flex items-center gap-5">
+        ${progressRing({ value: booksRead, max: target, size: H.wide ? 128 : 96, stroke: H.wide ? 10 : 8, label: String(booksRead), sublabel: `of ${target}` })}
+        <div class="min-w-0 flex-1">
           <p class="text-body font-medium text-text-1">${plural(booksRead, 'book')} finished</p>
-          <p class="text-small text-text-2">${pace}</p>
-          <a class="btn btn--ghost btn--sm -ml-3" href="#settings/reading"><span class="btn__label">Edit goal</span></a>
+          <p class="text-small ${paceTone}">${pace}</p>
         </div>
-      </div>` })}`);
+      </div>
+      ${H.spark.length ? html`<div class="mb-5 mt-6"><div class="text-accent-text">${sparkline({ values: H.spark, width: 320, height: H.wide ? 64 : 40, cls: 'h-auto w-full' })}</div><p class="mt-1 text-caption text-text-3">Books finished per month</p></div>` : ''}
+      <div class="mt-auto border-t border-border-1 pt-3 ${H.spark.length ? '' : 'mt-4'}"><a class="btn btn--ghost btn--sm -ml-3" href="#settings/reading"><span class="btn__label">Edit goal</span></a></div>` })}`);
   }
 
   async function loadGoal() {
@@ -246,6 +241,15 @@ export function renderHome(el) {
     }
     paintGoal();
     paintSummary();
+    // Monthly finishes for the sparkline: decorative, so a failure just leaves it out
+    try {
+      const stats = await api.getStats();
+      if (H.disposed) return;
+      const byMonth = stats?.monthly?.[year] ?? {};
+      const last = Math.max(8, new Date().getMonth() + 1);
+      H.spark = Array.from({ length: last }, (_, i) => Number(byMonth[i + 1]) || 0);
+      if (H.goal.state === 'ok') paintGoal();
+    } catch { /* no sparkline */ }
   }
 
   // ── now listening (Audiobookshelf) ─────────────────────────────────────────
@@ -253,11 +257,11 @@ export function renderHome(el) {
     const pct = np.progressPercent ?? 0;
     const imgUrl = np.coverPath && np.serverUrl ? `${np.serverUrl}/api/items/${np.absItemId}/cover` : null;
     return html`
-      ${sectionHeader({ title: 'Now listening', id: ids.listening })}
-      <div class="card flex items-center gap-3" data-np-item="${np.absItemId}">
-        ${cover({ url: imgUrl, title: np.title ?? '', size: 'xs' })}
+      <div class="card flex items-center gap-4" data-np-item="${np.absItemId}">
+        ${cover({ url: imgUrl, title: np.title ?? '', size: 'sm' })}
         <div class="min-w-0 flex-1 space-y-1.5">
-          <p class="truncate text-small font-semibold text-text-1" data-np-title>${np.title ?? 'Unknown'}</p>
+          <p class="eyebrow" id="${ids.listening}">Now listening</p>
+          <p class="truncate text-body font-medium text-text-1" data-np-title>${np.title ?? 'Unknown'}</p>
           ${progressBar({ value: pct, size: 'sm', tone: 'info', label: 'Listening progress' })}
           <p class="text-caption text-text-3" data-np-pct>${pct}% complete</p>
         </div>
@@ -317,10 +321,10 @@ export function renderHome(el) {
     const f = H.feed;
     const head = sectionHeader({ title: 'From people you follow', href: '#community/feed', id: ids.following });
     let body;
-    if (f.state === 'loading') body = skeletonList(3);
+    if (f.state === 'loading') body = skeletonFeed(3);
     else if (f.state === 'error') body = html`<div class="flex flex-wrap items-center gap-2 text-small text-text-2">Couldn't load activity.${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-feed"' })}</div>`;
-    else if (!f.items.length) body = emptyState({ icon: EMPTY.noFollowing.icon, title: EMPTY.noFollowing.title, size: 'sm', action: { label: ACTION.findPeople, href: '#community/people', variant: 'secondary' } });
-    else body = html`<div class="space-y-3">${f.items.map((item) => feedCardHTML(item, { viewer: getState().user }))}</div>`;
+    else if (!f.items.length) body = emptyState({ art: 'readers', title: EMPTY.noFollowing.title, size: 'sm', action: { label: ACTION.findPeople, href: '#community/people', variant: 'secondary' } });
+    else body = html`<div class="${q('recent').hidden ? 'grid gap-3 lg:grid-cols-2' : 'space-y-3'}">${f.items.map((item) => feedCardHTML(item, { viewer: getState().user }))}</div>`;
     region.innerHTML = String(html`${head}${body}`);
   }
 
@@ -344,17 +348,22 @@ export function renderHome(el) {
     const region = q('recent');
     let dismissedAt = null;
     try { dismissedAt = localStorage.getItem(RECENTLY_ADDED_KEY); } catch { /* storage unavailable */ }
-    const unseen = dismissedAt ? H.recent.filter((b) => new Date(b.added_at) > new Date(dismissedAt)) : H.recent;
+    const unseen = (dismissedAt ? H.recent.filter((b) => new Date(b.added_at) > new Date(dismissedAt)) : H.recent).slice(0, 6);
+    const wasHidden = region.hidden;
     region.hidden = !unseen.length;
+    // Without the right column the feed spans the full width as two columns
+    q('following').classList.toggle('lg:col-span-8', !!unseen.length);
+    q('following').classList.toggle('lg:col-span-12', !unseen.length);
+    if (wasHidden !== region.hidden && H.feed.state === 'ok') paintFollowing();
     if (!unseen.length) { region.innerHTML = ''; return; }
     const badgeFor = (service) => (service === 'audiobookshelf'
-      ? html`<span class="badge badge--info absolute bottom-1 right-1" role="img" aria-label="In Audiobookshelf" title="In Audiobookshelf">${icon('headphones', { size: 12 })}</span>`
-      : html`<span class="badge badge--success absolute bottom-1 right-1" role="img" aria-label="In Calibre" title="In Calibre">${icon('book-copy', { size: 12 })}</span>`);
+      ? html`<span class="badge badge--info badge--roundel absolute bottom-1 right-1" role="img" aria-label="In Audiobookshelf" title="In Audiobookshelf">${icon('headphones', { size: 12 })}</span>`
+      : html`<span class="badge badge--success badge--roundel absolute bottom-1 right-1" role="img" aria-label="In Calibre" title="In Calibre">${icon('book-copy', { size: 12 })}</span>`);
     region.innerHTML = String(html`
       ${sectionHeader({ title: 'Recently added in your apps', id: ids.recent, actions: button({ label: 'Dismiss', icon: 'x', variant: 'ghost', size: 'sm', attrs: 'data-action="dismiss-recent"' }) })}
-      <div class="scroller">${unseen.map((b) => html`
-        <a href="#book/${b.book_id}" class="group flex w-20 flex-col gap-1.5">
-          <div class="relative">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title })}${badgeFor(b.service)}</div>
+      <div class="grid grid-cols-4 gap-x-3 gap-y-4 sm:grid-cols-6 lg:grid-cols-3">${unseen.map((b) => html`
+        <a href="#book/${b.book_id}" class="group flex min-w-0 flex-col gap-1.5">
+          <div class="relative">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, author: authorsOf(b)[0] })}${badgeFor(b.service)}</div>
           <span class="line-clamp-2 text-caption text-text-2 group-hover:text-text-1">${b.title}</span>
         </a>`)}</div>`);
   }
@@ -371,35 +380,47 @@ export function renderHome(el) {
 
   // ── behaviour (delegated once on `el`) ─────────────────────────────────────
   const handlers = bookActionHandlers({
-    getAnchor: (entry) => el.querySelector(`[data-lib-id="${cssEscape(entry.id)}"] [data-row-menu]`),
+    getAnchor: (entry) => {
+      const card = el.querySelector(`[data-lib-id="${cssEscape(entry.id)}"]`);
+      return card?.querySelector('[data-hero-action="update"], [data-hero-action="also-update"], [data-hero-action="menu"]') ?? null;
+    },
   });
-  const rowEntry = (node) => {
-    const row = node.closest('[data-lib-id]');
-    return row ? findLibraryEntry(row.dataset.libId) : null;
-  };
 
   offs.push(mountBookGrid(el, handlers));
+  offs.push(mountShelfRows(el));
 
-  offs.push(mountMenuTriggers(el, {
-    selector: '[data-row-menu]',
-    getItems: (trigger) => { const entry = rowEntry(trigger); return entry ? bookMenuItems(entry, { shelves: getState().shelves ?? [] }) : []; },
-    onSelect: (id, item, trigger) => { const entry = rowEntry(trigger); if (entry) dispatchBookMenu(handlers, entry, id, item); },
-  }));
-
-  offs.push(mountProgressSlider(el, async (value, input) => {
-    const row = input.closest('[data-lib-id]');
-    const entry = row && findLibraryEntry(row.dataset.libId);
-    if (!entry) return;
-    const before = Math.round(Number(entry.progress_pct) || 0);
-    const ok = await commitProgress(entry, value);
-    if (H.disposed || !row.isConnected) return;
-    if (ok) flashSaved(row); else setSliderValue(input, before);
+  offs.push(mountHeroCard(q('reading'), {
+    entries: () => getState().library ?? [],
+    onProgress: async (entry, value) => {
+      const before = Math.round(Number(findLibraryEntry(entry.id)?.progress_pct ?? entry.progress_pct) || 0);
+      const ok = await commitProgress(entry, value);
+      if (H.disposed) return ok;
+      if (!ok) {
+        const input = q('reading').querySelector('[data-hero-card] .slider__input');
+        if (input) setSliderValue(input, before);
+      }
+      return ok;
+    },
+    onUpdate: () => {
+      const input = q('reading').querySelector('[data-hero-card] .slider__input');
+      input?.scrollIntoView({ block: 'nearest' });
+      input?.focus();
+    },
+    onFinish: (entry) => finishBook(entry),
+    onMenu: (entry, trigger) => {
+      openMenu({
+        trigger,
+        items: bookMenuItems(entry, { shelves: getState().shelves ?? [] }),
+        label: `Options for ${entry.title ?? 'book'}`,
+        onSelect: (id, item) => dispatchBookMenu(handlers, entry, id, item),
+      });
+    },
+    onAlsoUpdate: (entry) => handlers.onProgress(entry),
   }));
 
   offs.push(delegate(el, 'click', '[data-action]', (e, t) => {
     switch (t.dataset.action) {
       case 'add-book': openCommandPalette({ onAdded: (row) => upsertLibraryEntry(row) }); break;
-      case 'finish': { const entry = rowEntry(t); if (entry) finishBook(entry); break; }
       case 'retry-library': loadLibrary(); break;
       case 'retry-goal': loadGoal(); break;
       case 'retry-feed': loadFeed(); break;
@@ -443,6 +464,7 @@ export function renderHome(el) {
     H.disposed = true;
     unsubscribe();
     closeSse?.();
+    heroCleanup?.();
     offs.forEach((off) => off());
   };
 }

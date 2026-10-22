@@ -4,8 +4,8 @@ import { html, localDayKey } from '../utils.js';
 import { api } from '../api.js';
 import { getState } from '../store.js';
 import {
-  avatar, badge, button, cover, emptyState, field, icon, iconButton, progressBar, sectionHeader, segmented,
-  skeletonCard, skeletonList, spinner, statusBadge, tabs, tabPanel,
+  avatar, avatarStack, badge, button, cover, emptyState, field, icon, iconButton, progressBar, sectionHeader, segmented,
+  skeletonCard, skeletonFeed, skeletonList, spinner, statusBadge, tabs, tabPanel,
   setButtonLoading, setFieldError,
   mountChipGroup, mountConfirmInline, mountFields, mountTabs, confirmPopover, openMenu, openModal, toast,
   delegate, uid, plural, formatDate, formatAuthors,
@@ -48,9 +48,11 @@ export function renderCommunity(el, { tab } = {}) {
   const cleanups = [];
 
   setHTML(el, html`
-    <div class="space-y-5">
-      <h1 class="h1">Community</h1>
-      ${tabs({ id: tabsId, items, value: current, label: 'Community sections' })}
+    <div class="space-y-6">
+      <div>
+        <h1 class="h1" data-focus-target>Community</h1>
+        ${tabs({ id: tabsId, items, value: current, label: 'Community sections', bleed: true, cls: 'mt-4' })}
+      </div>
       ${items.map(t => tabPanel({ tabsId, value: t.value, active: t.value === current }))}
     </div>`);
 
@@ -88,16 +90,96 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
   let started = false;
 
   setHTML(panel, html`
-    <div class="space-y-4">
-      ${viewer ? segmented({ name: 'feed-filter', label: 'Feed filter', value: filter, items: [{ value: 'all', label: 'Everyone' }, { value: 'following', label: 'Following' }] }) : ''}
-      <div data-feed-body aria-live="polite"></div>
+    <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8">
+      <div class="min-w-0 space-y-4">
+        ${viewer ? segmented({ name: 'feed-filter', label: 'Feed filter', value: filter, items: [{ value: 'all', label: 'Everyone' }, { value: 'following', label: 'Following' }] }) : ''}
+        <div class="lg:hidden" data-rail-mobile></div>
+        <div data-feed-body aria-live="polite"></div>
+      </div>
+      <aside class="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:self-start" data-rail aria-label="Readers, challenge and groups"></aside>
     </div>`);
   const body = panel.querySelector('[data-feed-body]');
+  const rail = panel.querySelector('[data-rail]');
+  const railMobile = panel.querySelector('[data-rail-mobile]');
+
+  const readerRow = (u) => html`
+    <li class="flex items-center gap-3">
+      <a href="#u/${enc(u.username)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 40 })}</a>
+      <div class="min-w-0 flex-1">
+        <a href="#u/${enc(u.username)}" class="block truncate text-small font-semibold text-text-1 hover:text-accent-text">@${u.username}</a>
+        <p class="text-caption text-text-2">${plural(u.book_count ?? 0, 'book')}</p>
+      </div>
+      ${viewer && viewer.username !== u.username ? followButton(u.username, !!u.you_follow) : ''}
+    </li>`;
+
+  async function loadRail() {
+    const [uRes, cRes, gRes] = await Promise.allSettled([
+      api.getUsers(), viewer ? api.getChallenges() : [], viewer ? api.getGroups() : [],
+    ]);
+    if (isDisposed()) return;
+    const users = (uRes.status === 'fulfilled' ? uRes.value : [])
+      .filter(u => !viewer || (u.username !== viewer.username && !u.you_follow)).slice(0, 4);
+    const today = localDayKey();
+    const challenge = (cRes.status === 'fulfilled' ? cRes.value : []).find(c => dayOf(c.end_date) >= today);
+    const groups = gRes.status === 'fulfilled' ? gRes.value : [];
+
+    const cards = [];
+    if (users.length) {
+      cards.push(html`
+        <section class="card card--sm" aria-labelledby="rail-readers">
+          <h2 class="h3 mb-3" id="rail-readers">Readers to follow</h2>
+          <ul class="space-y-3">${users.map(readerRow)}</ul>
+        </section>`);
+    }
+    if (viewer && challenge) {
+      const goal = Number(challenge.goal) || 0;
+      const pct = goal > 0 ? Math.min(100, Math.round(((challenge.progress ?? 0) / goal) * 100)) : 0;
+      cards.push(html`
+        <section class="card card--sm" aria-labelledby="rail-challenge">
+          <p class="label mb-1">Active challenge</p>
+          <h2 class="h3 break-words" id="rail-challenge">${challenge.title}</h2>
+          <p class="mt-0.5 text-caption text-text-2">Until ${formatDate(dayDate(challenge.end_date))} · ${challenge.participant_count} joined</p>
+          ${goal > 0 && challenge.joined ? html`<div class="mt-3">${progressBar({ value: pct, tone: pct >= 100 ? 'success' : 'accent', label: `Your progress in ${challenge.title}` })}<p class="mt-1 text-caption tabular-nums text-text-2">${challenge.progress ?? 0} of ${goal} done</p></div>` : ''}
+          <div class="mt-3">${button({ label: challenge.joined ? 'View' : ACTION.join, variant: challenge.joined ? 'secondary' : 'primary', size: 'sm', attrs: 'data-action="goto-challenges"' })}</div>
+        </section>`);
+    }
+    if (viewer) {
+      cards.push(html`
+        <section class="card card--sm" aria-labelledby="rail-groups">
+          <h2 class="h3 mb-3" id="rail-groups">Your groups</h2>
+          ${groups.length
+            ? html`<ul class="space-y-1">${groups.slice(0, 4).map(g => html`
+                <li><button type="button" class="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-2" data-action="goto-groups">
+                  <span class="min-w-0 truncate text-small font-medium text-text-1">${g.name}</span>
+                  <span class="shrink-0 text-caption text-text-2">${plural(g.member_count ?? 0, 'member')}</span>
+                </button></li>`)}</ul>`
+            : html`<p class="text-small text-text-2">Read together: start a group or join one with a code.</p><div class="mt-3">${button({ label: 'Open groups', variant: 'secondary', size: 'sm', attrs: 'data-action="goto-groups"' })}</div>`}
+        </section>`);
+    }
+    setHTML(rail, html`${cards}`);
+    if (users.length) {
+      setHTML(railMobile, html`
+        <section aria-labelledby="rail-readers-m">
+          <h2 class="label mb-2" id="rail-readers-m">Readers to follow</h2>
+          <ul class="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">${users.map(u => html`
+            <li class="card card--sm w-[260px] shrink-0 snap-start">
+              <div class="flex items-center gap-3">
+                <a href="#u/${enc(u.username)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 40 })}</a>
+                <div class="min-w-0 flex-1">
+                  <a href="#u/${enc(u.username)}" class="block truncate text-small font-semibold text-text-1">@${u.username}</a>
+                  <p class="text-caption text-text-2">${plural(u.book_count ?? 0, 'book')}</p>
+                </div>
+                ${viewer ? followButton(u.username, !!u.you_follow) : ''}
+              </div>
+            </li>`)}</ul>
+        </section>`);
+    }
+  }
 
   async function load(first) {
     const mine = ++req;   // out-of-order guard: only the latest request may render
     body.setAttribute('aria-busy', 'true');
-    setHTML(body, html`<div class="space-y-4">${skeletonCard()}${skeletonCard()}${skeletonCard()}</div>`);
+    setHTML(body, skeletonFeed(3));
     try {
       const feed = await api.getFeed(filter === 'following' ? 'following' : undefined);
       if (isDisposed() || mine !== req) return;
@@ -116,6 +198,9 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
 
   const cleanups = [
     mountFeedCards(panel),
+    mountFollowButtons(panel),
+    delegate(panel, 'click', '[data-action="goto-challenges"]', () => goToTab('challenges')),
+    delegate(panel, 'click', '[data-action="goto-groups"]', () => goToTab('groups')),
     mountChipGroup(panel, ({ name, value }) => {
       if (name !== 'feed-filter') return;
       filter = value;
@@ -127,7 +212,7 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
   ];
 
   return {
-    activate() { if (!started) { started = true; load(true); } },
+    activate() { if (!started) { started = true; load(true); loadRail(); } },
     dispose() { req++; cleanups.forEach(fn => fn()); },
   };
 }
@@ -146,15 +231,24 @@ function peopleSection(panel, { viewer, isDisposed }) {
     </div>`);
   const body = panel.querySelector('[data-people-body]');
 
+  let recent = new Map();   // username → up to 3 recently finished books (from the public feed)
+
+  const miniCovers = (name) => {
+    const books = recent.get(name) ?? [];
+    return html`<span class="flex min-h-[54px] items-end" aria-hidden="true">${books.map((b, i) => html`<span class="${i ? '-ml-2' : ''}" style="z-index:${3 - i};position:relative">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, authors: b.authors, size: 'xs' })}</span>`)}</span>`;
+  };
+
   const row = (u) => html`
-    <li class="card card--sm">
+    <li class="card card--interactive flex flex-col gap-4">
       <div class="flex items-center gap-3">
-        <a href="#u/${enc(u.username)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 40 })}</a>
+        <a href="#u/${enc(u.username)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 56 })}</a>
         <div class="min-w-0 flex-1">
-          <a href="#u/${enc(u.username)}" class="block truncate font-semibold text-text-1 hover:text-accent-text">@${u.username}</a>
-          <p class="text-small text-text-2">${plural(u.book_count ?? 0, 'book')}</p>
+          <a href="#u/${enc(u.username)}" class="h3 block truncate hover:text-accent-text">@${u.username}</a>
+          <p class="text-caption text-text-2">${plural(u.book_count ?? 0, 'book')}${u.follows_you ? html` · ${LABEL.followsYou}` : ''}</p>
         </div>
-        ${u.follows_you ? badge({ label: LABEL.followsYou }) : ''}
+      </div>
+      <div class="mt-auto flex items-end justify-between gap-3">
+        ${miniCovers(u.username)}
         ${viewer && viewer.username !== u.username ? followButton(u.username, !!u.you_follow) : ''}
       </div>
     </li>`;
@@ -166,16 +260,23 @@ function peopleSection(panel, { viewer, isDisposed }) {
       setHTML(body, emptyState({ ...EMPTY.noPeople, title: q ? EMPTY.noPeople.title : 'No readers yet', size: 'sm' }));
       return;
     }
-    setHTML(body, html`<ul class="space-y-2">${list.map(row)}</ul>`);
+    setHTML(body, html`<ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${list.map(row)}</ul>`);
   }
 
   async function load() {
     body.setAttribute('aria-busy', 'true');
-    setHTML(body, skeletonList(6));
+    setHTML(body, html`<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${[1, 2, 3, 4, 5, 6].map(() => skeletonCard())}</div>`);
     try {
-      const data = await api.getUsers();
+      const [data, feed] = await Promise.all([api.getUsers(), api.getFeed().catch(() => [])]);
       if (isDisposed()) return;
       users = data;
+      recent = new Map();
+      for (const it of feed) {
+        if (!it.finished_at || !it.username) continue;
+        const list = recent.get(it.username) ?? [];
+        if (list.length < 3 && !list.some(b => b.book_id === it.book_id)) list.push(it);
+        recent.set(it.username, list);
+      }
       render();
     } catch {
       if (isDisposed()) return;
@@ -248,6 +349,24 @@ function challengesSection(panel, { isDisposed }) {
   const body = panel.querySelector('[data-ch-body]');
 
   const isPast = (c) => dayOf(c.end_date) < localDayKey();
+  const lbCache = new Map();   // challenge id → Promise<{ leaderboard, total }> (also feeds the avatar stacks)
+  const fetchLb = (id) => {
+    const key = String(id);
+    if (!lbCache.has(key)) lbCache.set(key, api.getChallengeLeaderboard(id).catch((err) => { lbCache.delete(key); throw err; }));
+    return lbCache.get(key);
+  };
+  const stackHTML = (c, leaderboard) => (leaderboard?.length
+    ? avatarStack({ users: leaderboard, max: 5, size: 28 })
+    : '');
+  function hydrateStacks(list = challenges) {
+    for (const c of list) {
+      fetchLb(c.id).then(({ leaderboard }) => {
+        if (isDisposed()) return;
+        const slot = body.querySelector(`[data-ch-stack="${Number(c.id)}"]`);
+        if (slot) setHTML(slot, stackHTML(c, leaderboard));
+      }).catch(() => {});
+    }
+  }
   const byId = (id) => challenges.find(c => String(c.id) === String(id));
 
   const bookRow = (c, b) => html`
@@ -268,21 +387,26 @@ function challengesSection(panel, { isDisposed }) {
     const books = c.books ?? [];
     const cid = Number(c.id);
     return html`
-      <article class="card" data-challenge-id="${cid}" aria-labelledby="ch-title-${cid}">
+      <article class="card flex flex-col" data-challenge-id="${cid}" aria-labelledby="ch-title-${cid}">
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">
             <h3 class="h3 break-words" id="ch-title-${cid}">${c.title}</h3>
-            ${c.description ? html`<p class="mt-0.5 text-small text-text-2 whitespace-pre-line break-words">${c.description}</p>` : ''}
-            <p class="mt-1.5 text-caption text-text-3">${formatDate(dayDate(c.start_date))} – ${formatDate(dayDate(c.end_date))} · by @${c.created_by} · ${c.participant_count} joined</p>
+            <p class="mt-0.5 text-caption text-text-2">${formatDate(dayDate(c.start_date))} – ${formatDate(dayDate(c.end_date))} · by @${c.created_by}</p>
           </div>
-          <div class="flex shrink-0 items-center gap-1">
-            ${past
-              ? (c.joined ? badge({ label: 'Joined', variant: 'neutral' }) : '')
-              : (c.joined
-                ? button({ label: ACTION.leave, variant: 'secondary', size: 'sm', attrs: `data-confirm="Leave this challenge?" data-confirm-verb="Leave" data-cmty data-ch-leave="${cid}"` })
-                : button({ label: ACTION.join, variant: 'primary', size: 'sm', attrs: `data-ch-join="${cid}"` }))}
-            ${c.is_creator ? iconButton({ icon: 'more-horizontal', label: `Options for ${c.title}`, size: 'sm', attrs: `data-ch-menu="${cid}" aria-haspopup="menu"` }) : ''}
+          ${c.is_creator ? iconButton({ icon: 'more-horizontal', label: `Options for ${c.title}`, size: 'sm', attrs: `data-ch-menu="${cid}" aria-haspopup="menu"` }) : ''}
+        </div>
+        ${c.description ? html`<p class="mt-2 text-small text-text-2 whitespace-pre-line break-words line-clamp-3">${c.description}</p>` : ''}
+
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-2">
+            <span data-ch-stack="${cid}"></span>
+            <span class="text-small text-text-2">${c.participant_count} joined</span>
           </div>
+          ${past
+            ? (c.joined ? badge({ label: 'Joined', variant: 'neutral' }) : '')
+            : (c.joined
+              ? button({ label: ACTION.leave, variant: 'secondary', size: 'sm', attrs: `data-confirm="Leave this challenge?" data-confirm-verb="Leave" data-cmty data-ch-leave="${cid}"` })
+              : button({ label: ACTION.join, variant: 'primary', size: 'sm', attrs: `data-ch-join="${cid}"` }))}
         </div>
 
         ${goal > 0 && c.joined ? html`
@@ -318,19 +442,20 @@ function challengesSection(panel, { isDisposed }) {
     const section = (title, list, id) => html`
       <section aria-labelledby="${id}" class="space-y-3">
         ${sectionHeader({ title, count: list.length, id })}
-        <div class="space-y-4">${list.map(cardHTML)}</div>
+        <div class="grid items-start gap-4 md:grid-cols-2">${list.map(cardHTML)}</div>
       </section>`;
     setHTML(body, html`
       <div class="space-y-6">
-        <div class="flex justify-end">${button({ label: ACTION.createChallenge, icon: 'plus', variant: 'primary', size: 'sm', attrs: 'data-action="ch-create"' })}</div>
+        <div class="flex justify-end">${button({ label: ACTION.createChallenge, icon: 'plus', variant: 'secondary', size: 'sm', attrs: 'data-action="ch-create"' })}</div>
         ${active.length ? section('Active', active, 'ch-active') : ''}
         ${past.length ? section('Past', past, 'ch-past') : ''}
       </div>`);
+    hydrateStacks();
   }
 
   async function load() {
     body.setAttribute('aria-busy', 'true');
-    setHTML(body, html`<div class="space-y-4">${skeletonCard()}${skeletonCard()}</div>`);
+    setHTML(body, html`<div class="grid gap-4 md:grid-cols-2">${skeletonCard()}${skeletonCard()}</div>`);
     try {
       const data = await api.getChallenges();
       if (isDisposed()) return;
@@ -358,6 +483,8 @@ function challengesSection(panel, { isDisposed }) {
     const node = body.querySelector(`[data-challenge-id="${Number(c.id)}"]`);
     if (!node) { render(); return; }
     node.outerHTML = String(cardHTML(c));
+    lbCache.delete(String(c.id));
+    hydrateStacks([c]);
     if (focusSel) body.querySelector(`[data-challenge-id="${Number(c.id)}"] ${focusSel}`)?.focus();
   }
 
@@ -598,13 +725,14 @@ function challengesSection(panel, { isDisposed }) {
       if (!open || region.dataset.loaded === 'true') return;
       setHTML(region, html`<div class="flex justify-center py-3">${spinner({ label: 'Loading leaderboard' })}</div>`);
       try {
-        const { leaderboard, total } = await api.getChallengeLeaderboard(id);
+        const { leaderboard, total } = await fetchLb(id);
         if (isDisposed()) return;
         region.dataset.loaded = 'true';
         setHTML(region, leaderboard.length
-          ? html`<ol class="space-y-1.5">${leaderboard.map((u, i) => html`
-              <li class="flex items-center gap-3 text-small">
+          ? html`<ol>${leaderboard.map((u, i) => html`
+              <li class="flex h-9 items-center gap-3 text-small">
                 <span class="w-5 text-right tabular-nums text-text-3">${i + 1}</span>
+                ${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 24 })}
                 <a href="#u/${enc(u.username)}" class="min-w-0 flex-1 truncate text-text-1 hover:text-accent-text">@${u.username}</a>
                 <span class="tabular-nums font-semibold ${total > 0 && u.books_read === total ? 'text-success' : 'text-text-2'}">${u.books_read}${total ? `/${total}` : ''}</span>
               </li>`)}</ol>`
@@ -631,29 +759,39 @@ function groupsSection(panel, { viewer, isDisposed }) {
   const body = panel.querySelector('[data-gr-body]');
   const byId = (id) => groups.find(g => String(g.id) === String(id));
 
-  const toolbar = html`
+  const toolbar = () => html`
     <div class="flex flex-wrap justify-end gap-2">
       ${button({ label: 'Join with code', icon: 'ticket', variant: 'secondary', size: 'sm', attrs: 'data-action="gr-join"' })}
-      ${button({ label: 'Create group', icon: 'plus', variant: 'primary', size: 'sm', attrs: 'data-action="gr-create"' })}
+      ${button({ label: 'Create group', icon: 'plus', variant: groups.length ? 'secondary' : 'primary', size: 'sm', attrs: 'data-action="gr-create"' })}
     </div>`;
+
+  // The API lists no member profiles for groups, so the stack shows the founder plus a "+N" roundel for everyone else.
+  const memberStack = (g) => {
+    const others = Math.max(0, (g.member_count ?? 0) - 1);
+    return html`<span class="avatar-stack">${avatar({ username: g.created_by, size: 28 })}${others > 0
+      ? html`<span class="avatar" style="--avatar-size:28px;--avatar-hue:30;background:var(--surface-3);color:var(--text-2);text-shadow:none;font-family:var(--font-ui)" aria-hidden="true">+${others}</span>` : ''}</span>`;
+  };
 
   const cardHTML = (g) => {
     const gid = Number(g.id);
     return html`
-      <article class="card" data-group-id="${gid}" aria-labelledby="gr-title-${gid}">
+      <article class="card flex flex-col" data-group-id="${gid}" aria-labelledby="gr-title-${gid}">
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">
             <h3 class="h3 break-words" id="gr-title-${gid}">${g.name}</h3>
-            ${g.description ? html`<p class="mt-0.5 text-small text-text-2 whitespace-pre-line break-words">${g.description}</p>` : ''}
-            <p class="mt-1.5 text-caption text-text-3">${plural(g.member_count ?? 0, 'member')} · by @${g.created_by}</p>
-            ${g.role === 'admin' ? html`
-              <p class="mt-2 flex items-center gap-1 text-small text-text-2">Invite code
-                <code class="rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-text-1">${g.invite_code}</code>
-                <button type="button" class="icon-btn icon-btn--sm" aria-label="Copy invite code for ${g.name}" data-gr-copy="${g.invite_code}">${icon('copy', { size: 16 })}</button>
-              </p>` : ''}
+            ${g.description ? html`<p class="mt-1 text-small text-text-2 whitespace-pre-line break-words line-clamp-3">${g.description}</p>` : ''}
           </div>
-          ${button({ label: ACTION.leave, variant: 'secondary', size: 'sm', attrs: `data-confirm="Leave this group?" data-confirm-verb="Leave" data-cmty data-gr-leave="${gid}"` })}
+          ${button({ label: ACTION.leave, variant: 'ghost', size: 'sm', attrs: `data-confirm="Leave this group?" data-confirm-verb="Leave" data-cmty data-gr-leave="${gid}"` })}
         </div>
+        <div class="mt-3 flex items-center gap-2">
+          ${memberStack(g)}
+          <span class="text-small text-text-2">${plural(g.member_count ?? 0, 'member')} · by @${g.created_by}</span>
+        </div>
+        ${g.role === 'admin' ? html`
+          <p class="mt-3 flex items-center gap-2 text-small text-text-2">Invite code
+            <kbd class="kbd">${g.invite_code}</kbd>
+            <button type="button" class="icon-btn icon-btn--xs" aria-label="Copy invite code for ${g.name}" data-gr-copy="${g.invite_code}">${icon('copy', { size: 16 })}</button>
+          </p>` : ''}
         <div class="mt-3 border-t border-border-1 pt-2">
           <button type="button" class="btn btn--sm btn--ghost" data-gr-feed="${gid}" aria-expanded="false" aria-controls="gr-feed-${gid}"><span class="btn__label">Group feed</span><span class="btn__icon">${icon('chevron-down', { size: 16 })}</span></button>
           <div id="gr-feed-${gid}" class="mt-3 space-y-3" hidden></div>
@@ -664,16 +802,16 @@ function groupsSection(panel, { viewer, isDisposed }) {
   function render() {
     setHTML(body, html`
       <div class="space-y-4">
-        ${toolbar}
+        ${toolbar()}
         ${groups.length
-          ? html`<div class="space-y-4">${groups.map(cardHTML)}</div>`
+          ? html`<div class="grid items-start gap-4 md:grid-cols-2">${groups.map(cardHTML)}</div>`
           : emptyState(EMPTY.noGroups)}
       </div>`);
   }
 
   async function load() {
     body.setAttribute('aria-busy', 'true');
-    setHTML(body, html`<div class="space-y-4">${skeletonCard()}${skeletonCard()}</div>`);
+    setHTML(body, html`<div class="grid gap-4 md:grid-cols-2">${skeletonCard()}${skeletonCard()}</div>`);
     try {
       const data = await api.getGroups();
       if (isDisposed()) return;

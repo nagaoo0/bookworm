@@ -3,10 +3,10 @@
 import { api } from '../../api.js';
 import { html } from '../../utils.js';
 import {
-  EMPTY, TOAST, badge, button, card, delegate, emptyState, field, formatDate, iconButton, mountConfirmInline,
+  EMPTY, TOAST, badge, button, delegate, emptyState, field, formatDate, iconButton, mountConfirmInline,
   mountFields, openModal, plural, setFieldError, skeletonCard, statCard, switchRow, timeAgo, toast,
 } from '../../ui/index.js';
-import { createScope, errorText } from './common.js';
+import { createScope, errorText, group, groupCard } from './common.js';
 
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
@@ -28,17 +28,17 @@ function invitesHTML(invites) {
   if (!invites.length) return html`<p class="text-small text-text-2">No invite codes yet.</p>`;
   return html`<div class="overflow-x-auto"><table class="w-full text-small text-left">
     <thead><tr class="text-text-2">
-      <th scope="col" class="py-2 pr-3 label">Code</th>
-      <th scope="col" class="py-2 pr-3 label">Created</th>
-      <th scope="col" class="py-2 pr-3 label">Used by</th>
-      <th scope="col" class="py-2 label"><span class="sr-only">Actions</span></th>
+      <th scope="col" class="h-11 pr-3 label">Code</th>
+      <th scope="col" class="h-11 pr-3 label">Created</th>
+      <th scope="col" class="h-11 pr-3 label">Used by</th>
+      <th scope="col" class="h-11 label"><span class="sr-only">Actions</span></th>
     </tr></thead>
-    <tbody class="divide-y divide-border-1">
+    <tbody class="divide-y divide-border-1 border-t border-border-1">
       ${invites.map(i => html`<tr data-invite-code="${i.code}">
-        <td class="py-2 pr-3"><code class="font-mono ${i.used_at ? 'text-text-3 line-through' : 'text-text-1'}">${i.code}</code></td>
-        <td class="py-2 pr-3 text-text-2 whitespace-nowrap">${i.created_at ? formatDate(i.created_at) : '—'}</td>
-        <td class="py-2 pr-3 text-text-2">${i.used_at ? `@${i.used_by_username ?? 'unknown'}` : '—'}</td>
-        <td class="py-2 text-right whitespace-nowrap">${i.used_at ? '' : html`
+        <td class="h-11 pr-3"><code class="font-mono ${i.used_at ? 'text-text-3 line-through' : 'text-text-1'}">${i.code}</code></td>
+        <td class="h-11 pr-3 text-text-2 whitespace-nowrap">${i.created_at ? formatDate(i.created_at) : '—'}</td>
+        <td class="h-11 pr-3 text-text-2">${i.used_at ? `@${i.used_by_username ?? 'unknown'}` : '—'}</td>
+        <td class="h-11 text-right whitespace-nowrap">${i.used_at ? '' : html`
           ${iconButton({ icon: 'copy', label: `Copy invite code ${i.code}`, size: 'sm', attrs: 'data-action="copy-invite"' })}
           ${button({ label: 'Revoke', variant: 'danger-ghost', size: 'sm', attrs: 'data-confirm="Revoke this invite?" data-confirm-verb="Revoke" data-kind="invite"' })}`}</td>
       </tr>`)}
@@ -75,22 +75,19 @@ export function mount(el, { user: me }) {
     el.innerHTML = String(html`
       <div data-admin-stats>${statsHTML(users)}</div>
 
-      ${card({ content: html`
-        <div class="space-y-4">
+      ${groupCard([
+        group(html`
           <div class="flex flex-wrap items-center justify-between gap-3">
             <h3 class="h3">Invite codes</h3>
             ${button({ label: 'Create invite', variant: 'primary', size: 'sm', icon: 'plus', attrs: 'data-action="create-invite"' })}
           </div>
-          <div data-invites>${invitesHTML(invites)}</div>
-        </div>` })}
-
-      ${card({ content: html`
-        <div class="space-y-4">
+          <div data-invites>${invitesHTML(invites)}</div>`),
+        group(html`
           <div class="flex items-center gap-2"><h3 class="h3">Users</h3>${badge({ label: users.length })}</div>
           ${field({ name: 'filter', type: 'search', ariaLabel: 'Filter users', placeholder: 'Filter by username', icon: 'search', autocomplete: 'off' })}
           <ul class="divide-y divide-border-1" data-users aria-label="Users">${users.map(u => userRow(u, me.id))}</ul>
-          <p class="text-small text-text-2" data-no-match hidden>No users match</p>
-        </div>` })}`);
+          <p class="text-small text-text-2" data-no-match hidden>No users match</p>`),
+      ])}`);
   }
 
   async function load() {
