@@ -45,7 +45,7 @@ export async function bootApp({ env = {}, preMigrateSql = null } = {}) {
   // Audiobookshelf's live event stream: a do-nothing socket instead of a real websocket
   const sockets = [];
   mock.module('socket.io-client', {
-    exports: {
+    namedExports: {
       io: (url, opts) => {
         const sock = {
           url, opts, handlers: {},
