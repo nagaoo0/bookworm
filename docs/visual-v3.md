@@ -73,7 +73,7 @@ Accents: `orange` (new default), `blue`, `teal`, `rose`. `amber` is removed and 
 
 Blue and rose fills are darker than the iOS system colours so white button text passes 4.5:1. `--accent-text` must also pass on the 16 % tint (active nav item) and on sepia; the contrast script checks both. Accent use: primary button, active nav item (tint background + accent text), progress fills, the goal ring, links ("See all", "Edit goal"), the notification badge only if it is not `--danger`. Links use the accent, not iOS blue (the light mock's blue links are replaced).
 
-Contrast tuning (Task 4): sepia `--text-3` `#76695a` to `#6c6050` (4.2:1 on the sepia sidebar); blue accent text `#0062cc` to `#005bbd` and rose `#c41e45` to `#b81b40` (below 4.5:1 on the 16 % tint over sepia). Orange and teal fills are under 3:1 on white, so on light and sepia a progress fill or goal ring that must reach 3:1 uses `--accent-text`; the script enforces that row.
+Contrast tuning (Task 4): sepia `--text-3` `#76695a` to `#6c6050` (4.2:1 on the sepia sidebar); blue accent text `#0062cc` to `#005bbd` and rose `#c41e45` to `#b81b40` (below 4.5:1 on the 16 % tint over sepia). Progress fills and rings use `--accent`; in light and sepia the fill is below 3:1 for orange and teal, so every bar and ring must show its value as text beside it.
 
 Stars do not follow the accent: `--gold` is `#f5a623` in dark and `#b26a00` in light and sepia (3:1 on white for 13 px stars; this also fixes review finding F101). Empty stars are `--surface-2` with a 1 px `--border-1` outline.
 
