@@ -32,7 +32,8 @@ function goToTargets() {
 
 const norm = (s) => String(s ?? '').toLowerCase();
 
-function shortcutHint() {
+/** The palette shortcut as shown in hints: '⌘K' on Apple devices, 'Ctrl K' elsewhere. */
+export function shortcutHint() {
   try { return /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K'; } catch { return 'Ctrl K'; }
 }
 

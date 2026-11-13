@@ -13,10 +13,11 @@ import { renderAuth } from './views/auth.js';
 import {
   icon, iconButton, button, avatar, emptyState, skeletonList, setButtonLoading,
   openMenu, openPopover, openSheet, closeAllOverlays,
-  openCommandPalette, mountCommandPaletteShortcuts,
-  mountThumb,
+  openCommandPalette, mountCommandPaletteShortcuts, shortcutHint,
   toast, flushPendingUndos, timeAgo, NAV, ACTION, EMPTY, OFFLINE_MESSAGE, STATUS, delegate,
 } from './ui/index.js';
+import { NAV_ITEMS, mountSidebar } from './shell/sidebar.js';
+import { setTitleBarHandler } from './shell/titleBar.js';
 
 // ── Views ──────────────────────────────────────────────────────────────────────
 // Every view lives in src/views and is looked up by path at runtime, so a view that
@@ -32,17 +33,20 @@ async function loadView(file, exportName) {
 }
 
 // ── Shell markup ───────────────────────────────────────────────────────────────
+// <html data-chrome> says which chrome is on screen ('app' | 'public' | 'none'); styles.css lays the shell out from it.
+// Signed in: the sidebar from 768 px (a 72 px rail below 1024 px), the top bar and tab bar below 768 px. On desktop the
+// header is only the search field and notifications at the top right of the content, beside the view's title bar.
 document.getElementById('app').innerHTML = String(html`
-  <div class="flex min-h-screen flex-col">
-    <button type="button" data-shell="skip" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[var(--z-toast)] focus:rounded-md focus:bg-surface-1 focus:px-4 focus:py-2 focus:text-small focus:text-text-1 focus:shadow-3">Skip to content</button>
-    <header id="app-header" class="glass-header sticky top-0 z-[var(--z-sticky)] pt-[env(safe-area-inset-top,0px)]" hidden></header>
-    <main id="main-content" tabindex="-1" class="w-full flex-1 py-5 outline-none md:py-8" data-focus-target></main>
-    <div id="bottom-bar-slot"></div>
-    <div id="route-announcer" class="sr-only" role="status" aria-live="polite"></div>
-  </div>`);
+  <button type="button" data-shell="skip" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[var(--z-toast)] focus:rounded-md focus:bg-surface-1 focus:px-4 focus:py-2 focus:text-small focus:text-text-1 focus:shadow-3">Skip to content</button>
+  <aside id="app-sidebar" aria-label="Sidebar" hidden></aside>
+  <header id="app-header" class="topbar" hidden></header>
+  <main id="main-content" tabindex="-1" class="app-main outline-none" data-focus-target></main>
+  <div id="bottom-bar-slot"></div>
+  <div id="route-announcer" class="sr-only" role="status" aria-live="polite"></div>`);
 
 const mainEl = document.getElementById('main-content');
 const headerEl = document.getElementById('app-header');
+const sidebarEl = document.getElementById('app-sidebar');
 const bottomSlot = document.getElementById('bottom-bar-slot');
 const announcerEl = document.getElementById('route-announcer');
 
@@ -50,42 +54,32 @@ const isMobile = () => {
   try { return matchMedia('(max-width: 767px)').matches; } catch { return false; }
 };
 
-const NAV_ITEMS = [
-  { key: 'home',      label: NAV.home,      href: '#home',            icon: 'home' },
-  { key: 'library',   label: NAV.library,   href: '#library',         icon: 'library' },
-  { key: 'discover',  label: NAV.discover,  href: '#discover',        icon: 'compass' },
-  { key: 'community', label: NAV.community, href: '#community/feed',  icon: 'users' },
-  { key: 'stats',     label: NAV.stats,     href: '#stats',           icon: 'bar-chart-3' },
-];
-const BOTTOM_ITEMS = NAV_ITEMS.filter(i => ['home', 'library', 'community', 'stats'].includes(i.key));
+const TAB_ITEMS = NAV_ITEMS.filter(i => ['home', 'library', 'community', 'stats'].includes(i.key));
 
 function logoHtml() {
-  return html`<a href="#home" class="flex shrink-0 items-center gap-2.5 rounded-md" aria-label="Bookworm home">
-    <img src="/logo.png" class="h-8 w-8 rounded-full" alt="">
-    <span class="font-display text-h2 text-text-1">Bookworm</span>
+  return html`<a href="#home" class="topbar__brand" aria-label="Bookworm home">
+    <img src="/logo.png" class="topbar__logo" alt="">
+    <span class="topbar__wordmark">Bookworm</span>
   </a>`;
 }
 
+// phone: wordmark, search, notifications, avatar. desktop: the search field and notifications only, at the right
+// edge of the current view's column (headerWidth follows the route's width class).
+let headerWidth = 'page';
 function appHeaderHtml(user) {
   const unread = getState().unreadCount;
-  return html`<div class="page flex h-14 items-center gap-2 md:h-[60px]">
+  return html`<div class="topbar__inner ${headerWidth}" data-header-inner>
     ${logoHtml()}
-    <div class="ml-4 hidden md:block">
-      <nav aria-label="Primary" class="nav">
-        <span class="nav__thumb" aria-hidden="true"></span>
-        ${NAV_ITEMS.map(i => html`<a class="nav__link" href="${i.href}" data-nav="${i.key}">${i.label}</a>`)}
-      </nav>
-    </div>
-    <div class="ml-auto flex items-center gap-1">
-      ${iconButton({ icon: 'search', label: 'Search', size: 'header', attrs: 'data-shell="search" title="Search · /"' })}
+    <div class="topbar__tools">
+      <button type="button" class="shell-search" data-shell="search" aria-label="Search" aria-keyshortcuts="/ Control+K Meta+K" title="Search · /">
+        ${icon('search', { size: 20 })}<span class="shell-search__text" aria-hidden="true">Search books, authors</span><kbd class="kbd shell-search__kbd" aria-hidden="true">${shortcutHint()}</kbd>
+      </button>
       ${iconButton({
-        icon: 'bell', label: unread ? `Notifications, ${unread} unread` : 'Notifications', id: 'notif-btn', size: 'header',
+        icon: 'bell', label: unread ? `Notifications, ${unread} unread` : 'Notifications', id: 'notif-btn', cls: 'shell-bell',
         badge: unread > 99 ? '99+' : unread, attrs: 'data-shell="notifications" aria-haspopup="dialog"',
       })}
-      <button type="button" id="user-menu-btn" data-shell="user-menu" aria-label="Account menu for @${user.username}" aria-haspopup="menu" aria-expanded="false"
-        class="inline-flex items-center gap-1 rounded-full p-1 text-text-2 transition-[color,box-shadow] duration-[var(--dur-fast)] hover:text-text-1 hover:shadow-[0_0_0_2px_var(--surface-0),0_0_0_4px_var(--border-2,var(--border-1))]">
+      <button type="button" id="user-menu-btn" class="topbar__account" data-shell="user-menu" aria-label="Account menu for @${user.username}" aria-haspopup="menu" aria-expanded="false">
         ${avatar({ username: user.username, avatarUrl: user.avatarUrl, size: 32 })}
-        <span class="hidden md:inline-flex">${icon('chevron-down', { size: 14 })}</span>
       </button>
     </div>
   </div>`;
@@ -93,27 +87,37 @@ function appHeaderHtml(user) {
 
 function publicHeaderHtml() {
   const cur = THEMES.find(t => t.value === loadPrefs().theme) ?? THEMES[0];
-  return html`<div class="page flex h-14 items-center gap-2 md:h-[60px]">
+  return html`<div class="topbar__inner page">
     ${logoHtml()}
-    <div class="ml-auto flex items-center gap-2">
-      ${iconButton({ icon: cur.icon, label: `Theme: ${cur.label}`, size: 'header', attrs: 'data-shell="theme" aria-haspopup="menu"' })}
-      <a class="btn btn--secondary" href="#auth" data-shell="sign-in"><span class="btn__label">${ACTION.signIn}</span></a>
+    <div class="topbar__tools">
+      ${iconButton({ icon: cur.icon, label: `Theme: ${cur.label}`, attrs: 'data-shell="theme" aria-haspopup="menu"' })}
+      <a class="btn btn--secondary btn--sm" href="#auth" data-shell="sign-in"><span class="btn__label">${ACTION.signIn}</span></a>
     </div>
   </div>`;
 }
 
+// the phone tab bar: Home, Library, the accent +, Community, Stats
 function bottomBarHtml() {
-  const link = (i) => html`<a class="bottom-bar__item" href="${i.href}" data-nav="${i.key}">${icon(i.icon, { size: 24 })}<span class="bottom-bar__label">${i.label}</span></a>`;
-  const [home, library, community, stats] = BOTTOM_ITEMS;
-  return html`<nav class="bottom-bar" aria-label="Primary">
+  const link = (i) => html`<a class="tabbar__item" href="${i.href}" data-nav="${i.key}">${icon(i.icon, { size: 24 })}<span class="tabbar__label">${i.label}</span></a>`;
+  const [home, library, community, stats] = TAB_ITEMS;
+  return html`<nav class="tabbar" aria-label="Primary">
     ${link(home)}${link(library)}
-    <button type="button" class="bottom-bar__add" data-shell="add-book" aria-label="Add a book" aria-haspopup="dialog">${icon('plus', { size: 24 })}</button>
+    <span class="tabbar__add-slot"><button type="button" class="tabbar__add" data-shell="add-book" aria-label="Add a book" aria-haspopup="dialog">${icon('plus', { size: 26 })}</button></span>
     ${link(community)}${link(stats)}
   </nav>`;
 }
 
 // Which chrome is on screen: 'none' (auth screen) | 'public' | 'app:<identity>'
 let chromeKey = '';
+let sidebarCleanup = null;
+let navState = { key: null, ownProfile: false };
+
+function unmountSidebar() {
+  sidebarCleanup?.();
+  sidebarCleanup = null;
+  sidebarEl.hidden = true;
+}
+
 function setChrome(mode) {
   const user = getState().user;
   if (mode === 'app' && user) {
@@ -121,13 +125,18 @@ function setChrome(mode) {
     if (chromeKey !== key) {
       headerEl.innerHTML = String(appHeaderHtml(user));
       bottomSlot.innerHTML = String(bottomBarHtml());
+      sidebarCleanup?.();
+      sidebarCleanup = mountSidebar(sidebarEl);
       chromeKey = key;
+      updateNav(navState.key, navState.ownProfile);
     }
     headerEl.hidden = false;
+    sidebarEl.hidden = false;
   } else if (mode === 'public') {
     if (chromeKey !== 'public') {
       headerEl.innerHTML = String(publicHeaderHtml());
       bottomSlot.replaceChildren();
+      unmountSidebar();
       chromeKey = 'public';
     }
     headerEl.hidden = false;
@@ -135,22 +144,27 @@ function setChrome(mode) {
     headerEl.hidden = true;
     headerEl.replaceChildren();
     bottomSlot.replaceChildren();
+    unmountSidebar();
     chromeKey = 'none';
   }
+  document.documentElement.dataset.chrome = chromeKey.startsWith('app:') ? 'app' : chromeKey;
 }
 
 function updateNav(navKey, ownProfile) {
+  navState = { key: navKey, ownProfile };
   for (const root of [headerEl, bottomSlot]) {
     root.querySelectorAll('[data-nav]').forEach(a => {
       if (a.dataset.nav === navKey) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     });
   }
-  headerEl.querySelector('#user-menu-btn .avatar')?.classList.toggle('avatar--ring', !!ownProfile);
+  for (const root of [headerEl, sidebarEl]) {
+    root.querySelector('[data-shell="user-menu"] .avatar')?.classList.toggle('avatar--ring', !!ownProfile);
+  }
   headerEl.querySelector('[data-shell="sign-in"]')?.setAttribute('href', `#auth?next=${encodeURIComponent(location.hash || '#home')}`);
 }
 
-// Re-render the header when the signed-in user's identity changes (e.g. new avatar saved in Settings)
+// Re-render the chrome when the signed-in user's identity changes (e.g. new avatar saved in Settings)
 subscribe(s => { if (s.user && chromeKey.startsWith('app:')) setChrome('app'); });
 
 // ── Palette, quick-add sheet, account menu ─────────────────────────────────────
@@ -246,7 +260,8 @@ function onUserMenuSelect(id) {
 }
 
 function openUserMenu(trigger) {
-  const handle = openMenu({ trigger, items: userMenuItems(), onSelect: onUserMenuSelect, label: 'Account' });
+  const placement = sidebarEl.contains(trigger) ? 'top-start' : 'bottom-end';   // the sidebar's account row sits at the bottom
+  const handle = openMenu({ trigger, items: userMenuItems(), onSelect: onUserMenuSelect, label: 'Account', placement });
   if (handle) paintAccentSwatches();
 }
 
@@ -424,7 +439,7 @@ function openNotifications(trigger) {
   load();
 }
 
-// ── Header / bottom bar behaviour (delegated, bound once) ─────────────────────
+// ── Header / sidebar / tab bar behaviour (delegated, bound once) ─────────────
 headerEl.addEventListener('pointerdown', (e) => {
   if (e.target instanceof Element && e.target.closest('[data-shell="notifications"]')) bellWasOpen = !!notifOpen;
 });
@@ -443,12 +458,13 @@ function onShellClick(e, el) {
     openPublicThemeMenu(el);
   }
 }
-delegate(headerEl, 'click', '[data-shell]', onShellClick);
-delegate(bottomSlot, 'click', '[data-shell]', onShellClick);
-delegate(headerEl, 'keydown', '[data-shell="user-menu"]', (e, el) => {
-  if (e.key === 'ArrowDown') { e.preventDefault(); openUserMenu(el); }
-});
-mountThumb(headerEl);   // sliding pill behind the active nav link (follows aria-current)
+for (const root of [headerEl, sidebarEl, bottomSlot]) delegate(root, 'click', '[data-shell]', onShellClick);
+for (const root of [headerEl, sidebarEl]) {
+  delegate(root, 'keydown', '[data-shell="user-menu"]', (e, el) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); openUserMenu(el); }
+  });
+}
+setTitleBarHandler(onShellClick);
 document.querySelector('[data-shell="skip"]').addEventListener('click', () => mainEl.focus());
 delegate(mainEl, 'click', '[data-shell="retry"]', () => { navigate(); });
 
@@ -704,11 +720,16 @@ function announce(text) {
   requestAnimationFrame(() => { announcerEl.textContent = text; });
 }
 
+const dialogOpen = () => !!(document.querySelector('[aria-modal="true"]') || document.activeElement?.closest?.('[aria-modal="true"]'));
+
 // Move focus to the new view's h1 so screen-reader users land on the new page. A view that
 // puts focus somewhere itself (a search box, ...) is left alone; a late h1 is waited for.
+// A dialog the view opened while rendering (#discover/manual) keeps focus (F046).
 function focusHeading(root) {
   stopHeadingWatch();
+  if (dialogOpen()) return;
   const apply = (late) => {
+    if (dialogOpen()) return true;
     // a view may carry one h1 per breakpoint (the other is display:none): focus the one that is rendered
     const all = [...root.querySelectorAll('h1')];
     const h1 = all.find((h) => h.getClientRects().length) ?? all[0];
@@ -768,6 +789,8 @@ async function navigate() {
   runCleanup();
   setState({ route: route.id, routeParams: params });
   setChrome(user ? 'app' : 'public');
+  headerWidth = WIDTH_CLASS[route.width] ?? 'page';
+  if (user) headerEl.querySelector('[data-header-inner]')?.setAttribute('class', `topbar__inner ${headerWidth}`);
   const ownProfile = route.id === 'profile' && !!user && String(params.username).toLowerCase() === user.username.toLowerCase();
   updateNav(route.nav, ownProfile);
 

@@ -69,7 +69,7 @@ const off = mountBookGrid(container, { onStatus, onRemove });   // one delegated
 | `bookCard.js` | `bookCard` (`variant` grid/list/compact/row, `size`, `owned`, `index`) `bookMenuItems` `bookAddMenuItems` `mountBookGrid` (`onAdd`) |
 | `shelfRow.js` `heroCard.js` `storyCard.js` | `shelfRow` (`ledge` ignored) `mountShelfRows` · `heroCard` `mountHeroCard` · `storyCard` `mountStoryCard` |
 | `modal.js` `menu.js` `tabs.js` | `openModal` (`size: 'palette'`; `header: 'ambient'` ignored) `openSheet` `openLightbox` · `openMenu` `openPopover` (`glass` ignored on both) `mountMenuTriggers` · `tabs` (`bleed`) `tabPanel` `mountTabs` |
-| `toast.js` `confirmInline.js` `commandPalette.js` `scrollState.js` | `toast` `undoToast` (Ctrl/Cmd+Z) · `mountConfirmInline` `confirmPopover` · `openCommandPalette` (announces result counts) `mountCommandPaletteShortcuts` · `mountScrollState` (auto-installed: `html.is-scrolled`) |
+| `toast.js` `confirmInline.js` `commandPalette.js` `scrollState.js` | `toast` `undoToast` (Ctrl/Cmd+Z) · `mountConfirmInline` `confirmPopover` · `openCommandPalette` (announces result counts) `mountCommandPaletteShortcuts` `shortcutHint` · `mountScrollState` (auto-installed: `html.is-scrolled`) |
 
 `index.js` re-exports everything.
 
@@ -80,5 +80,6 @@ type: `.h1` `.h2` `.h3` `.title` `.label` `.eyebrow` `.stat` `.stat-sm` `.tabula
 `.card` `.grouped` (grouped cards; not `.group`, Tailwind's group-hover marker) · `.row` `.row--thumb` `.row__lead` `.row__main` `.row__title` `.row__sub` `.row__trail` `.row__chev` (list rows) ·
 `.tint-top` (the dark tinted header: dark theme only, from the element's `--ambient-h/-s`; add it only when there is a current book) ·
 `.ambient` `.ambient--page` (cover hue via `applyAmbient`; `.ambient--page` paints the dark tinted header behind the Book page) ·
-`.avatar-stack` · `.rail` `.rail__item` (Library / Settings navigation rows) · `.nav` `.nav__link` `.nav__thumb` (header pills) ·
+`.avatar-stack` · `.rail` `.rail__item` (Library / Settings navigation rows) ·
+`.title-bar` (shell/titleBar.js, the large-title row) ·
 `.hero-pill` (profile hero stat pills) · `.btn-split` `.btn-split__toggle` · `.card--quiet` `.card--ambient` · `.delta` `.delta--up` `.delta--down`.

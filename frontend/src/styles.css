@@ -247,8 +247,12 @@ html {
   --z-toast: 60;
 
   /* layout */
-  --header-h: 60px;
-  --bottom-bar-h: 64px;
+  --header-h: 56px;        /* phone top bar */
+  --bottom-bar-h: 64px;    /* phone tab bar */
+  --sidebar-w: 0px;        /* 260 px sidebar / 72 px rail, set below when signed in */
+  --shell-top: 44px;       /* desktop: space above the title row */
+  --shell-row: 44px;       /* desktop: the title row (search field, notifications, h1) */
+  --utility-w: 0px;        /* desktop: width of the search + notifications cluster */
   --page-max: 1320px;      /* wide pages */
   --reading-max: 1120px;   /* book, community, stats, settings */
   --aside-w: 340px;        /* right rail on reading pages (>= lg) */
@@ -524,13 +528,13 @@ html[data-theme="light"] .tint-top, html[data-theme="sepia"] .tint-top { backgro
 
 /* ── 6. Cover-derived ambient colour (ui/ambient.js) ──────────────────────────
    JS writes --ambient-h / --ambient-s; the only thing painted from them is the dark tinted header (spec 4.6).
-   `.ambient--page` (Book) paints it behind the page top, full viewport width, once the hue is known.          */
+   `.ambient--page` (Book) paints it behind the page top, across the content area, once the hue is known.          */
 .ambient { position: relative; isolation: isolate; }
 .ambient--page::before {
   content: '';
   position: absolute;
   z-index: -1;
-  inset: -1px calc(50% - 50vw) auto;
+  inset: -1px calc(50% - 50vw + var(--sidebar-w) / 2) auto;   /* the content area's width: the window minus the sidebar */
   height: 420px;
   pointer-events: none;
   background: linear-gradient(var(--tint-top), transparent);
@@ -841,7 +845,7 @@ button.chip--tag { cursor: pointer; }
   background: var(--surface-2);
   border-radius: var(--radius-full);
 }
-.segmented__thumb, .nav__thumb {
+.segmented__thumb {
   display: none;
   position: absolute;
   top: 2px;
@@ -855,8 +859,8 @@ button.chip--tag { cursor: pointer; }
   pointer-events: none;
   transition: transform var(--dur-base) var(--ease-out), width var(--dur-base) var(--ease-out), opacity var(--dur-fast);
 }
-.segmented[data-ready] .segmented__thumb, .nav[data-ready] .nav__thumb { display: block; }
-.segmented__thumb[data-hidden], .nav__thumb[data-hidden] { opacity: 0; }
+.segmented[data-ready] .segmented__thumb { display: block; }
+.segmented__thumb[data-hidden] { opacity: 0; }
 .segmented__item {
   position: relative;
   z-index: 1;
@@ -1634,11 +1638,6 @@ a.row:hover, button.row:hover { background: color-mix(in srgb, var(--text-1) 4%,
   max-width: calc(100vw - 2rem);
 }
 .toast-live { display: contents; }
-/* < md: the bottom bar is visible, so toasts and the bulk bar sit above it */
-@media (max-width: 767px) {
-  #toast-container { bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + .75rem); }
-  #bulk-bar        { bottom: calc(var(--bottom-bar-h) + 1.5rem); }
-}
 .toast-item {
   display: flex;
   align-items: center;
@@ -1728,102 +1727,252 @@ a.row:hover, button.row:hover { background: color-mix(in srgb, var(--text-1) 4%,
 @media (hover: none) { .cmdk__footer { display: none; } }
 @media (max-width: 767px) { .cmdk__footer { display: none; } }
 
-/* ── Shell: header, nav pills, bottom bar (Task 7 replaces these with the sidebar and tab bar) ── */
-/* the header is clear at the top of the page (a tinted header runs under it) and opaque once the page scrolls */
-.glass-header {
+/* ── Shell (main.js, shell/*.js): sidebar, icon rail, top bar, tab bar, title bar ─────────────
+   <html data-chrome="app"> when signed in. >= 1024 px: 260 px sidebar; 768-1023 px: 72 px icon rail; < 768 px: top bar
+   and tab bar. Signed out ("public"): the top bar at every width. Layout that must beat Tailwind utilities (main
+   padding, toasts, bulk bar, the title bar's pull-up) is unlayered, at the end of this file. */
+
+/* sidebar */
+#app-sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-sticky);
+  width: var(--sidebar-w);
+  background: var(--surface-side);
+  border-right: 1px solid var(--border-1);
+}
+@media (max-width: 767px) { #app-sidebar { display: none; } }
+.sidebar { display: flex; flex-direction: column; height: 100%; padding: calc(20px + env(safe-area-inset-top, 0px)) 12px 12px; }
+.sidebar__brand { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 10px; margin-bottom: 16px; border-radius: var(--radius-md); color: var(--text-1); text-decoration: none; }
+.sidebar__logo { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; }
+.sidebar__wordmark { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.02em; }
+.sidebar__nav { display: flex; flex-direction: column; gap: 2px; }
+.side-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  color: var(--text-1);
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.side-link > svg { color: var(--text-2); stroke-width: 1.5; }
+.side-link:hover { background: var(--surface-2); }
+/* active: the 16 % tint laid on surface-1 (the pair docs/contrast.mjs checks), not on the darker sidebar surface */
+.side-link[aria-current="page"], .side-link[aria-current="page"]:hover { background: color-mix(in srgb, var(--accent) 16%, var(--surface-1)); color: var(--accent-text); }
+.side-link[aria-current="page"] > svg { color: inherit; }
+/* the shelf list scrolls on its own; the account row stays at the bottom */
+.sidebar__shelves { display: flex; flex-direction: column; flex: 1; min-height: 0; margin-top: 24px; }
+.sidebar__caption { margin: 0; padding: 0 10px 6px; }
+.sidebar__shelf-list { flex: 1; min-height: 0; margin: 0 -4px; padding: 0 4px 8px; list-style: none; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.side-shelf {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  color: var(--text-1);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.side-shelf:hover { background: var(--surface-2); }
+.side-shelf[aria-current="page"] { background: color-mix(in srgb, var(--accent) 16%, var(--surface-1)); color: var(--accent-text); }
+.side-shelf__icon { display: inline-flex; align-items: center; justify-content: center; width: 22px; flex-shrink: 0; color: var(--text-2); }
+.side-shelf[aria-current="page"] .side-shelf__icon { color: inherit; }
+.side-shelf__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--shelf-dot, var(--text-3)); }
+.side-shelf__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-shelf__count { flex-shrink: 0; color: var(--text-2); font-weight: 400; font-variant-numeric: tabular-nums; }
+.side-shelf[aria-current="page"] .side-shelf__count { color: inherit; }
+.sidebar__account { padding-top: 8px; border-top: 1px solid var(--separator); }
+.side-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 52px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-1);
+  font: 600 15px/20px var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.side-account:hover, .side-account[aria-expanded="true"] { background: var(--surface-2); }
+.side-account__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-account__chev { display: inline-flex; color: var(--text-3); }
+
+/* 768-1023 px: the icon rail. Labels become tooltips (still the links' names), shelves move into Library. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .sidebar { align-items: center; padding-inline: 12px; }
+  .sidebar__brand { padding: 0; width: 44px; justify-content: center; }
+  .sidebar__wordmark, .sidebar__shelves, .side-account__name, .side-account__chev { display: none; }
+  .sidebar__nav { flex: 1; }
+  .side-link { width: 44px; padding: 0; justify-content: center; }
+  .side-link__label {
+    position: absolute;
+    left: calc(100% + 14px);
+    top: 50%;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: var(--surface-ink);
+    color: var(--text-on-ink);
+    box-shadow: var(--shadow-3);
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-4px, -50%);
+    transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  }
+  .side-link:hover .side-link__label, .side-link:focus-visible .side-link__label { opacity: 1; transform: translate(0, -50%); }
+  .sidebar__account { padding-top: 8px; }
+  .side-account { width: 44px; height: 44px; padding: 0; justify-content: center; }
+}
+
+/* top bar: the phone bar when signed in, the public bar at every width. Clear at the top of the page, opaque once
+   the page scrolls (ui/scrollState.js). */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  padding-top: env(safe-area-inset-top, 0px);
   background-color: transparent;
   border-bottom: 1px solid transparent;
   transition: border-color var(--dur-base), background-color var(--dur-base);
 }
-.glass-header.is-scrolled,
-html.is-scrolled .glass-header { background-color: var(--surface-0); border-bottom-color: var(--border-1); }
-
-/* primary nav: a segmented pill group */
-.nav {
-  position: relative;
+html.is-scrolled .topbar { background-color: var(--surface-0); border-bottom-color: var(--border-1); }
+.topbar__inner { display: flex; align-items: center; gap: 8px; height: var(--header-h); }
+.topbar__brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; border-radius: var(--radius-md); color: var(--text-1); text-decoration: none; }
+.topbar__logo { width: 32px; height: 32px; border-radius: 50%; }
+.topbar__wordmark { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.02em; }
+.topbar__tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.topbar__account { display: inline-flex; padding: 2px; margin-left: 4px; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+/* the search control: an icon button on phone, a field that opens the palette on desktop */
+.shell-search {
   display: inline-flex;
   align-items: center;
-  padding: 2px;
-  background: var(--surface-2);
-  border-radius: var(--radius-full);
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
-.nav__link {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 14px;
-  color: var(--text-1);
-  border-radius: var(--radius-full);
-  font-size: 15px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: color var(--dur-fast), background-color var(--dur-fast);
-}
-.nav__link[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); }
-.nav .nav__link[aria-current="page"] { background: transparent; color: var(--text-1); }
-.nav:not([data-ready]) .nav__link[aria-current="page"] { background: var(--segment-on); box-shadow: var(--shadow-segment); }
+.shell-search:hover { background: var(--surface-2); color: var(--text-1); }
+.shell-search__text, .shell-search__kbd { display: none; }
 
-/* Bottom bar: shown below md (768px) only. */
-.bottom-bar {
+/* desktop, signed in: no bar. The header keeps only the search field and notifications, top right of the content,
+   on the title row (the title bar moves up beside them, see the unlayered block at the end). */
+@media (min-width: 768px) {
+  html[data-chrome="app"] .topbar {
+    position: relative;
+    z-index: 1;
+    margin-left: var(--sidebar-w);
+    padding-top: var(--shell-top);
+    background: none;
+    border-bottom: 0;
+    pointer-events: none;   /* the title row underneath stays clickable */
+  }
+  html[data-chrome="app"] .topbar__inner { height: var(--shell-row); }
+  html[data-chrome="app"] .topbar__brand, html[data-chrome="app"] .topbar__account { display: none; }
+  html[data-chrome="app"] .topbar__tools { gap: 8px; pointer-events: auto; }
+  html[data-chrome="app"] .shell-search {
+    justify-content: flex-start;
+    gap: 8px;
+    width: calc(var(--utility-w) - 48px);
+    height: 40px;
+    padding: 0 6px 0 12px;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    color: var(--text-3);
+    font: 400 15px/20px var(--font-ui);
+  }
+  html[data-chrome="app"] .shell-search:hover { background: color-mix(in srgb, var(--surface-2), var(--text-1) 5%); }
+  html[data-chrome="app"] .shell-search__text { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+  html[data-chrome="app"] .shell-search__kbd { display: inline-flex; flex-shrink: 0; }
+  html[data-chrome="app"] .shell-bell { width: 40px; height: 40px; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border-1); color: var(--text-1); }
+  html[data-chrome="app"] .shell-bell:hover:not(:disabled) { background: var(--surface-2); }
+}
+@media (hover: none) { .shell-search__kbd { display: none !important; } }
+
+/* tab bar (< 768 px, signed in): Home, Library, the accent +, Community, Stats */
+.tabbar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: var(--z-sticky);
-  flex-direction: row;
-  align-items: stretch;
-  background-color: var(--surface-side);
-  border-top: 1px solid var(--border-1);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-.bottom-bar { display: flex; }
-@media (min-width: 768px) { .bottom-bar { display: none !important; } }
-
-.bottom-bar__item {
-  position: relative;
   display: flex;
+  align-items: stretch;
+  height: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px));
+  padding: 0 4px env(safe-area-inset-bottom, 0px);
+  background-color: var(--surface-0);   /* the active item's accent text passes on surface-0, not on every surface-side */
+  border-top: 1px solid var(--border-1);
+}
+@media (min-width: 768px) { .tabbar { display: none !important; } }
+.tabbar__item {
+  display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  flex: 1;
-  padding: .5rem .25rem;
-  min-height: var(--bottom-bar-h);
+  gap: 2px;
+  min-width: 0;
   color: var(--text-2);
   text-decoration: none;
-  transition: color var(--dur-fast);
   -webkit-tap-highlight-color: transparent;
-  border-radius: 0;
+  transition: color var(--dur-fast);
 }
-.bottom-bar__item svg { stroke-width: 1.5; }
-.bottom-bar__label { font-size: 11px; font-weight: 600; line-height: 14px; }
-.bottom-bar__item:hover { color: var(--text-1); }
-.bottom-bar__item[aria-current="page"], .bottom-bar__item[aria-current="page"]:hover { color: var(--accent-text); }
-.bottom-bar__add {
-  align-self: center;
-  flex: 0 0 auto;
+.tabbar__item > svg { stroke-width: 1.5; }
+.tabbar__label { font-size: 11px; line-height: 14px; font-weight: 600; }
+.tabbar__item[aria-current="page"] { color: var(--accent-text); }
+.tabbar__item[aria-current="page"] > svg { stroke-width: 2; }
+.tabbar__add-slot { display: flex; flex: 1; align-items: center; justify-content: center; }
+.tabbar__add {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 52px;
   height: 52px;
-  margin: 0 .5rem;
-  border: none;
+  border: 0;
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-fg);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition: opacity var(--dur-fast);
 }
-.bottom-bar__add:active { opacity: .75; }
+.tabbar__add:active { opacity: .75; }
 
-/* Keep main content clear of the bottom bar (< md) */
-@media (max-width: 767px) {
-  #main-content { padding-bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + 1rem); }
-}
+/* title bar (shell/titleBar.js): caption, large title + the view's actions, one summary line */
+.title-bar { display: flex; flex-direction: column; min-width: 0; }
+.title-bar__caption { margin: 0 0 4px; }
+.title-bar__row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.title-bar__title { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.title-bar__actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.title-bar__summary { margin: 4px 0 0; color: var(--text-2); font-size: var(--text-body); line-height: var(--text-body--line-height); }
+.title-bar__summary:empty { display: none; }
 
 /* Sticky book CTA (mobile): an opaque bar with the button inside */
 .book-cta--sticky {
@@ -2032,4 +2181,40 @@ button.hero-pill, a.hero-pill { cursor: pointer; }
   .star-input__btn.is-pop > svg { animation: none; }
   .switch__thumb { transition-duration: .01ms; }
 }
+}
+
+/* ── Shell layout (unlayered: these must beat Tailwind utilities on the same elements) ─────────────
+   main padding, the sidebar offset, toasts and the bulk bar above the tab bar (F003), and the title bar's
+   pull-up into the desktop title row. */
+@media (min-width: 768px)  { html[data-chrome="app"] { --sidebar-w: 72px; --utility-w: 268px; } }
+@media (min-width: 1024px) { html[data-chrome="app"] { --sidebar-w: 260px; --utility-w: 328px; } }
+
+.app-main { display: block; width: 100%; min-height: 60vh; padding-block: 12px 32px; }
+@media (min-width: 768px) {
+  .app-main { padding-block: 32px 48px; }
+  html[data-chrome="app"] .app-main { margin-left: var(--sidebar-w); width: auto; padding-top: 16px; }
+  /* the title bar shares the row of the search field and notifications: it moves up by that row plus the gap, and
+     leaves room on the right for them. Its caption sits above the row. */
+  html[data-chrome="app"] .title-bar { margin-top: calc(-1 * (var(--shell-row) + 16px)); }
+  html[data-chrome="app"] .title-bar__caption { margin-top: -17px; margin-bottom: 4px; }
+  html[data-chrome="app"] .title-bar__row { min-height: var(--shell-row); padding-right: calc(var(--utility-w) + 16px); }
+}
+/* the Book page's ambient wash starts at the top of the window, under the top bar: --content-top is the distance
+   from the window top to the content */
+html { --content-top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 12px); }
+@media (min-width: 768px) {
+  html { --content-top: calc(var(--header-h) + 32px); }
+  html[data-chrome="app"] { --content-top: calc(var(--shell-top) + var(--shell-row) + 16px); }
+}
+.ambient--page { margin-top: calc(-1 * var(--content-top)); padding-top: var(--content-top); }
+/* phone, signed in: room for the tab bar under the content; toasts and the bulk bar sit above it */
+@media (max-width: 767px) {
+  html[data-chrome="app"] .app-main { padding-bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + 24px); }
+  html[data-chrome="app"] #toast-container,
+  html[data-chrome="app"] #bulk-bar { bottom: calc(var(--bottom-bar-h) + 16px + env(safe-area-inset-bottom, 0px)); }
+}
+/* desktop: centre them on the content, not the window */
+@media (min-width: 768px) {
+  html[data-chrome="app"] #toast-container,
+  html[data-chrome="app"] #bulk-bar { left: calc(50% + var(--sidebar-w) / 2); }
 }

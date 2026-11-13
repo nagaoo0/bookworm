@@ -1,6 +1,6 @@
-// Scroll state for the app header: after 8 px of scroll `<html>` gets `.is-scrolled`, and the header fades in
-// its background + hairline (CSS: `html.is-scrolled .glass-header`). One passive listener for the whole app, installed on import,
-// so the shell needs no code for it (it may also toggle `.is-scrolled` on the header itself; both work).
+// Scroll state for the phone top bar: after 8 px of scroll `<html>` gets `.is-scrolled`, and the bar fades in
+// its background + hairline (CSS: `html.is-scrolled .topbar`). One passive listener for the whole app, installed on import,
+// so the shell needs no code for it.
 const THRESHOLD = 8;
 
 /** Install the scroll listener (idempotent per call site). Returns cleanup; only needed in tests. */

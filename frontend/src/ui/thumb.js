@@ -1,19 +1,19 @@
-// Sliding "thumb" behind the selected item of a pill group (segmented controls, the header nav).
+// Sliding "thumb" behind the selected item of a pill group (segmented controls).
 // Same mechanism as the tabs indicator: the thumb is one absolutely positioned element that is translated
 // (--thumb-x) and resized (--thumb-w) to the selected item, so selection changes slide instead of snapping.
 // Until the first measurement (data-ready) the selected item paints its own surface, so nothing is ever unstyled.
 
 const SELECTED = '[aria-current="page"], [aria-checked="true"], [aria-selected="true"]';
-const THUMB = ':scope > .segmented__thumb, :scope > .nav__thumb';
+const THUMB = ':scope > .segmented__thumb';
 
-/** Position the thumb of one group (`.segmented` / `.nav`) at its selected item. Returns false when it can't be measured. */
+/** Position the thumb of one group (`.segmented`) at its selected item. Returns false when it can't be measured. */
 export function positionThumb(group) {
   const thumb = group.querySelector(THUMB);
   if (!thumb) return false;
   const sel = group.querySelector(SELECTED);
   if (!sel || !sel.offsetWidth) {
     thumb.dataset.hidden = '';
-    return false;                                  // hidden: no selection (e.g. a route outside the nav) or not laid out yet
+    return false;                                  // hidden: no selection or not laid out yet
   }
   delete thumb.dataset.hidden;
   group.style.setProperty('--thumb-x', `${sel.offsetLeft}px`);
@@ -22,7 +22,7 @@ export function positionThumb(group) {
 }
 
 /**
- * Activate every `.segmented` / `.nav` inside `root` that contains a `__thumb` element.
+ * Activate every `.segmented` inside `root` that contains a `__thumb` element.
  * Watches selection attributes (aria-current / aria-checked), added items and size changes, so callers that
  * just flip `aria-current` (the router) or re-render the group need no extra calls.
  * @param {Element} root
@@ -33,7 +33,7 @@ export function mountThumb(root) {
   let ro = null;
 
   const scan = () => {
-    root.querySelectorAll('.segmented, .nav').forEach((g) => {
+    root.querySelectorAll('.segmented').forEach((g) => {
       if (!g.querySelector(THUMB) || groups.has(g)) return;
       groups.add(g);
       ro?.observe(g);
