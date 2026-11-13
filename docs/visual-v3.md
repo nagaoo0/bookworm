@@ -49,7 +49,7 @@ Theme values stay `dark`, `light`, `sepia`, `system` (settings unchanged). Defau
 | `--surface-3` pressed / selected segment | `#ffffff` | `#3a3a3c` | `#ffffff` |
 | `--text-1` | `#000000` | `#ffffff` | `#2a2118` |
 | `--text-2` secondary | `#6c6c70` | `#aeaeb2` | `#6e6252` |
-| `--text-3` tertiary, captions | `#6e6e73` | `#8e8e93` | `#76695a` |
+| `--text-3` tertiary, captions | `#6e6e73` | `#8e8e93` | `#6c6050` |
 | `--border-1` hairline | `rgba(60,60,67,.14)` | `rgba(255,255,255,.08)` | `rgba(90,70,40,.16)` |
 | `--separator` list rows | `rgba(60,60,67,.12)` | `rgba(255,255,255,.10)` | `rgba(90,70,40,.12)` |
 | `--danger` fill (badges, destructive buttons, white text) | `#d70015` | `#d70015` | `#b3261e` |
@@ -67,11 +67,13 @@ Accents: `orange` (new default), `blue`, `teal`, `rose`. `amber` is removed and 
 | Accent | Fill `--accent` | Text on fill `--accent-fg` | Accent text on light surfaces `--accent-text` | Accent text on dark surfaces | Tint `--accent-soft` |
 |---|---|---|---|---|---|
 | orange | `#ff9f0a` | `#000` | `#8f5200` | `#ff9f0a` | 16 % of the fill |
-| blue | `#0066d6` | `#fff` | `#0062cc` | `#409cff` | 16 % |
+| blue | `#0066d6` | `#fff` | `#005bbd` | `#409cff` | 16 % |
 | teal | `#30b0c7` | `#000` | `#0b7285` | `#5ac8db` | 16 % |
-| rose | `#d81b48` | `#fff` | `#c41e45` | `#ff6482` | 16 % |
+| rose | `#d81b48` | `#fff` | `#b81b40` | `#ff6482` | 16 % |
 
 Blue and rose fills are darker than the iOS system colours so white button text passes 4.5:1. `--accent-text` must also pass on the 16 % tint (active nav item) and on sepia; the contrast script checks both. Accent use: primary button, active nav item (tint background + accent text), progress fills, the goal ring, links ("See all", "Edit goal"), the notification badge only if it is not `--danger`. Links use the accent, not iOS blue (the light mock's blue links are replaced).
+
+Contrast tuning (Task 4): sepia `--text-3` `#76695a` to `#6c6050` (4.2:1 on the sepia sidebar); blue accent text `#0062cc` to `#005bbd` and rose `#c41e45` to `#b81b40` (below 4.5:1 on the 16 % tint over sepia). Orange and teal fills are under 3:1 on white, so on light and sepia a progress fill or goal ring that must reach 3:1 uses `--accent-text`; the script enforces that row.
 
 Stars do not follow the accent: `--gold` is `#f5a623` in dark and `#b26a00` in light and sepia (3:1 on white for 13 px stars; this also fixes review finding F101). Empty stars are `--surface-2` with a 1 px `--border-1` outline.
 
