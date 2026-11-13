@@ -375,6 +375,16 @@ export async function migrate() {
     END
     $$;
 
+    -- The v3 design replaced the amber accent with orange (one-shot).
+    DO $$
+    BEGIN
+      INSERT INTO schema_flags (name) VALUES ('accent_amber_to_orange') ON CONFLICT DO NOTHING;
+      IF FOUND THEN
+        UPDATE users SET accent = 'orange' WHERE accent = 'amber';
+      END IF;
+    END
+    $$;
+
     -- Synced UI preferences (theme, card size, ...)
     ALTER TABLE users ADD COLUMN IF NOT EXISTS prefs JSONB NOT NULL DEFAULT '{}'::jsonb;
 

@@ -52,4 +52,12 @@ describe('migrations', () => {
     const [u] = await t.query(`SELECT is_public FROM users WHERE username = 'hush'`);
     assert.equal(u.is_public, true);
   });
+
+  it('migrates stored amber accents to orange once', async () => {
+    await t.query(`INSERT INTO users (username, password_hash, accent) VALUES ('amberite', 'x', 'amber')`);
+    await t.query(`DELETE FROM schema_flags WHERE name = 'accent_amber_to_orange'`);
+    await t.migrate();
+    const [u] = await t.query(`SELECT accent FROM users WHERE username = 'amberite'`);
+    assert.equal(u.accent, 'orange');
+  });
 });

@@ -254,7 +254,7 @@ router.post('/logout-all', authMiddleware, async (req, res, next) => {
   }
 });
 
-const ALLOWED_ACCENTS = new Set(['amber', 'blue', 'teal', 'rose']);
+const ALLOWED_ACCENTS = new Set(['orange', 'blue', 'teal', 'rose']);
 
 // PATCH /api/auth/me  { isPublic?, currentPassword?, newPassword?, bio?, avatarUrl?, accent? }
 router.patch('/me', authMiddleware, async (req, res, next) => {
@@ -266,7 +266,8 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     );
     if (!row) return res.status(404).json({ error: 'User not found' });
 
-    const { isPublic, currentPassword, newPassword, bio, avatarUrl, bannerUrl, accent, prefs } = req.body ?? {};
+    const { isPublic, currentPassword, newPassword, bio, avatarUrl, bannerUrl, prefs } = req.body ?? {};
+    let { accent } = req.body ?? {};
     const updates = [];
     const params = [];
     let passwordChanged = false;
@@ -304,8 +305,9 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     }
 
     if (accent !== undefined) {
+      if (accent === 'amber') accent = 'orange'; // legacy clients
       if (accent !== null && !ALLOWED_ACCENTS.has(accent))
-        return res.status(400).json({ error: 'accent must be one of: amber, blue, teal, rose' });
+        return res.status(400).json({ error: 'accent must be one of: orange, blue, teal, rose' });
       params.push(accent || null);
       updates.push(`accent = $${params.length}`);
     }

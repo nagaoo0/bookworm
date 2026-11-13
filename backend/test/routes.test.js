@@ -118,7 +118,12 @@ describe('stats, goals, profile', () => {
     assert.equal(ok.body.bio, 'hello');
     assert.equal(ok.body.accent, 'teal');
     assert.equal((await A.agent.patch('/api/auth/me').send({ avatarUrl: 'javascript:alert(1)' })).status, 400);
-    assert.equal((await A.agent.patch('/api/auth/me').send({ accent: 'neon' })).status, 400);
+    const legacy = await A.agent.patch('/api/auth/me').send({ accent: 'amber' });
+    assert.equal(legacy.status, 200);
+    assert.equal(legacy.body.accent, 'orange');
+    const neon = await A.agent.patch('/api/auth/me').send({ accent: 'neon' });
+    assert.equal(neon.status, 400);
+    assert.match(neon.body.error, /orange, blue, teal, rose/);
     assert.equal((await A.agent.patch('/api/auth/me').send({})).status, 400);
   });
 });
