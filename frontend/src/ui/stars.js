@@ -1,5 +1,5 @@
 // StarRating: display (stars) and input (starInput) — design-system §5.16; visual-v2 §5.15.
-// Stars are always --gold (empty ones --gold-dim), independent of the accent colour.
+// Stars are always --gold (empty ones --gold-empty with a hairline outline), independent of the accent colour.
 import { html } from '../utils.js';
 import { icon } from './icons.js';
 import { cx, attr, prefersReducedMotion } from './dom.js';

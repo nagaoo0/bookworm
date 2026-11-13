@@ -34,7 +34,7 @@ async function loadView(file, exportName) {
 // ── Shell markup ───────────────────────────────────────────────────────────────
 document.getElementById('app').innerHTML = String(html`
   <div class="flex min-h-screen flex-col">
-    <button type="button" data-shell="skip" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[var(--z-toast)] focus:rounded-md focus:bg-surface-1 focus:px-4 focus:py-2 focus:text-small focus:text-text-1 focus:shadow-2">Skip to content</button>
+    <button type="button" data-shell="skip" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[var(--z-toast)] focus:rounded-md focus:bg-surface-1 focus:px-4 focus:py-2 focus:text-small focus:text-text-1 focus:shadow-3">Skip to content</button>
     <header id="app-header" class="glass-header sticky top-0 z-[var(--z-sticky)] pt-[env(safe-area-inset-top,0px)]" hidden></header>
     <main id="main-content" tabindex="-1" class="w-full flex-1 py-5 outline-none md:py-8" data-focus-target></main>
     <div id="bottom-bar-slot"></div>
