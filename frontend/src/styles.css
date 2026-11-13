@@ -3,7 +3,7 @@
 /* ═════════════════════════════════════════════════════════════════════════════
    Bookworm — visual v2 "Lamplight".  Tokens + component CSS.
    Spec: docs/visual-v2.md (tokens §4, components §5). Contrast: `node docs/contrast.mjs`.
-   Fonts load once from index.html (Inter variable + Lora); no @import here.
+   Fonts are bundled from main.js (@fontsource-variable Inter + Inter Tight); no @import here.
    Colour rules: surfaces are paper (hairline + inner highlight + soft shadow), the accent is ink
    (text, icons, rings, one filled button per screen), stars are always --gold.
    ═════════════════════════════════════════════════════════════════════════════ */
@@ -314,8 +314,8 @@ html {
   --grid-gap-y: 28px;
 
   /* type */
-  --font-display: 'Lora', Georgia, serif;
-  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Inter Tight Variable', 'Inter Variable', system-ui, sans-serif;
+  --font-ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /* cover-derived ambient colour: defaults (warm), overwritten per element by applyAmbient() */
   --ambient-h: 35;
@@ -415,27 +415,25 @@ html[data-accent],
   --shadow-cover-hover: var(--shadow-cover-hover);
   --shadow-btn: var(--shadow-btn);
 
-  --font-display: 'Lora', Georgia, serif;
-  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  /* existing markup keeps rendering sensibly: serif = book voice, sans = UI voice */
-  --font-serif: 'Lora', Georgia, serif;
-  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Inter Tight Variable', 'Inter Variable', system-ui, sans-serif;
+  --font-ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 /* Type scale (visual-v2 §4.4). Family / tracking / case come from .h1 .h2 … below. */
 @theme {
   --text-display-xl: 3.5rem;   --text-display-xl--line-height: 3.75rem;  --text-display-xl--font-weight: 700;
   --text-display: 2.25rem;     --text-display--line-height: 2.5rem;      --text-display--font-weight: 700;
-  --text-h1: 1.75rem;          --text-h1--line-height: 2.125rem;         --text-h1--font-weight: 700;
-  --text-h2: 1.375rem;         --text-h2--line-height: 1.75rem;          --text-h2--font-weight: 600;
-  --text-h3: 1.0625rem;        --text-h3--line-height: 1.5rem;           --text-h3--font-weight: 600;
-  --text-card: .875rem;        --text-card--line-height: 1.125rem;       --text-card--font-weight: 600;
-  --text-body: .9375rem;       --text-body--line-height: 1.4375rem;      --text-body--font-weight: 400;
+  --text-h1: 2.125rem;         --text-h1--line-height: 2.5625rem;        --text-h1--font-weight: 700;
+  --text-h2: 1.375rem;         --text-h2--line-height: 1.75rem;          --text-h2--font-weight: 700;
+  --text-h3: 1.0625rem;        --text-h3--line-height: 1.375rem;          --text-h3--font-weight: 600;
+  --text-card: 1.0625rem;      --text-card--line-height: 1.375rem;       --text-card--font-weight: 600;
+  --text-body: .9375rem;       --text-body--line-height: 1.3125rem;      --text-body--font-weight: 400;
   --text-small: .8125rem;      --text-small--line-height: 1.125rem;      --text-small--font-weight: 400;
-  --text-caption: .75rem;      --text-caption--line-height: 1rem;        --text-caption--font-weight: 500;
-  --text-label: .75rem;        --text-label--line-height: 1rem;          --text-label--font-weight: 600;
+  --text-caption: .6875rem;    --text-caption--line-height: .8125rem;    --text-caption--font-weight: 600;
+  --text-label: .6875rem;      --text-label--line-height: .8125rem;          --text-label--font-weight: 600;
   --text-stat-lg: 3rem;        --text-stat-lg--line-height: 3.25rem;     --text-stat-lg--font-weight: 700;
-  --text-stat: 2.25rem;        --text-stat--line-height: 2.5rem;         --text-stat--font-weight: 700;
+  --text-stat: 1.75rem;        --text-stat--line-height: 2.125rem;         --text-stat--font-weight: 700;
   --text-stat-sm: 1.25rem;     --text-stat-sm--line-height: 1.5rem;      --text-stat-sm--font-weight: 600;
   --text-quote: 1rem;          --text-quote--line-height: 1.5625rem;     --text-quote--font-weight: 400;
   --ease-out: cubic-bezier(.22, 1, .36, 1);
@@ -487,32 +485,34 @@ body::after {
 }
 @media (prefers-reduced-transparency: reduce) { body::after { display: none; } }
 
-/* Type roles (classes, not element selectors, so existing markup is unaffected) */
+/* Type roles (visual-v3 §4.4). Classes, not element selectors, so existing markup is unaffected. */
 .tabular { font-variant-numeric: tabular-nums; }
+.h1    { font-family: var(--font-display); font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -.02em; }
+.h2    { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.02em; }
+.h3    { font-family: var(--font-display); font-size: 17px; line-height: 22px; font-weight: 600; }
+.title { font-family: var(--font-display); font-size: 17px; line-height: 22px; font-weight: 600; }
+.label, .eyebrow {
+  font-family: var(--font-ui); font-size: 11px; line-height: 13px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.label   { color: var(--text-3); }
+.eyebrow { color: var(--accent-text); }
+.stat    { font-family: var(--font-display); font-size: 28px; line-height: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-sm { font-family: var(--font-display); font-size: 20px; line-height: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* v2 display roles: Task 6 scopes them to the Year in review card */
 .display-xl { font-family: var(--font-display); font-size: 56px; line-height: 60px; font-weight: 700; letter-spacing: -.025em; }
 .display    { font-family: var(--font-display); font-size: 36px; line-height: 40px; font-weight: 700; letter-spacing: -.02em; }
-.h1         { font-family: var(--font-display); font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -.015em; }
-.h2         { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -.01em; }
-.h3         { font-family: var(--font-ui);      font-size: 17px; line-height: 24px; font-weight: 600; letter-spacing: -.005em; }
-.title      { font-family: var(--font-display); font-size: 14px; line-height: 18px; font-weight: 600; }
-.label {
-  font-family: var(--font-ui); font-size: 12px; line-height: 16px; font-weight: 600;
-  letter-spacing: .08em; text-transform: uppercase; color: var(--text-3);
-}
-.eyebrow {
-  font-family: var(--font-ui); font-size: 12px; line-height: 16px; font-weight: 600;
-  letter-spacing: .08em; text-transform: uppercase; color: var(--accent-text);
-}
-.stat    { font-family: var(--font-ui); font-size: 36px; line-height: 40px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.stat-lg { font-family: var(--font-ui); font-size: 48px; line-height: 52px; font-weight: 700; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
-.stat-sm { font-family: var(--font-ui); font-size: 20px; line-height: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.quote   { font-family: var(--font-display); font-style: italic; font-size: 16px; line-height: 25px; font-weight: 400; }
+.stat-lg    { font-family: var(--font-display); font-size: 48px; line-height: 52px; font-weight: 700; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.quote      { font-family: var(--font-display); font-style: italic; font-size: 16px; line-height: 25px; font-weight: 400; }
 @media (min-width: 768px) {
   .display-xl { font-size: 72px; line-height: 76px; }
   .display { font-size: 44px; line-height: 48px; }
-  .h1 { font-size: 34px; line-height: 40px; }
 }
 @media (min-width: 1024px) { .display-xl { font-size: 96px; line-height: 96px; letter-spacing: -.03em; } }
+@media (max-width: 767px) {
+  body { font-size: 17px; line-height: 22px; }
+  .label, .eyebrow { font-size: 12px; line-height: 16px; }
+}
 
 /* Focus: outlines follow the element's own radius; programmatic focus targets never show a ring */
 :focus { outline: none; }

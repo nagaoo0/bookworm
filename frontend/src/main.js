@@ -1,3 +1,5 @@
+import '@fontsource-variable/inter';
+import '@fontsource-variable/inter-tight';
 import './styles.css';
 import { applyPrefs, savePrefs, loadPrefs, THEMES, CARD_SIZES, ACCENT_KEYS, ACCENT_COLORS } from './prefs.js';
 import { getState, setState, subscribe } from './store.js';

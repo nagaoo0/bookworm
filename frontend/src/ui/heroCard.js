@@ -1,5 +1,5 @@
 // Hero card (visual-v2 §3.4, §6.2): Home "Continue reading". An ambient card that puts the most recently progressed book at
-// 160 × 240 (desktop) / 96 × 144 (mobile) with a real shadow, the title in Lora 28, a glowing progress bar, and the two
+// 160 × 240 (desktop) / 96 × 144 (mobile) with a real shadow, the title in Inter Tight 28, a glowing progress bar, and the two
 // CTAs; further reading books appear as compact rows underneath ("Also reading").
 // Its colour comes from the cover (ui/ambient.js), applied by mountHeroCard() / mountAmbient().
 import { html, escHtml } from '../utils.js';

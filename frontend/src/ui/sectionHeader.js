@@ -5,7 +5,7 @@ import { STATUS } from './status.js';
 import { uid, attr } from './dom.js';
 
 /**
- * Title in `.h2` (Lora 22), optional eyebrow above, the count as quiet tabular text after the title (it keeps the `.badge` class so
+ * Title in `.h2` (Inter Tight 22), optional eyebrow above, the count as quiet tabular text after the title (it keeps the `.badge` class so
  * views that patch `.section-header__title-row .badge` in place keep working; CSS strips the pill), a "See all" link
  * on the right and an `actions` slot.
  * @param {{ title: string, count?: number|string, eyebrow?: string, actions?: any, href?: string, level?: 2|3,

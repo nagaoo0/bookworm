@@ -25,7 +25,7 @@ function stageHtml() {
     </div>
     <div class="absolute inset-0" style="background:linear-gradient(90deg,transparent 55%,var(--surface-0) 100%),linear-gradient(0deg,var(--surface-0) 0%,color-mix(in srgb,var(--surface-0) 55%,transparent) 38%,transparent 70%)"></div>
     <div class="absolute bottom-12 left-12 right-12 max-w-lg">
-      <p class="font-display italic text-text-1" style="font-size:28px;line-height:36px">Every book you've read, in one place.</p>
+      <p class="font-display text-text-1" style="font-size:28px;line-height:36px">Every book you've read, in one place.</p>
       <p class="mt-3 text-caption text-text-2">Self-hosted · private by default</p>
     </div>
   </div>`;

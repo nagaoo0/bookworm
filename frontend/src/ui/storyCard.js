@@ -1,5 +1,5 @@
 // Story card (visual-v2 §3.15, §6.8): the Year-in-review "story" — 9:16, always dark whatever the theme, tinted by the user's
-// accent and by the ambient colour of their top book, with grain. Content: eyebrow, the year in Lora 96, @user, three stat
+// accent and by the ambient colour of their top book, with grain. Content: eyebrow, the year in Inter Tight 96, @user, three stat
 // rows, the top three covers fanned, favourite author + top genre pills, and the wordmark.
 import { html, raw } from '../utils.js';
 import { avatar } from './avatar.js';

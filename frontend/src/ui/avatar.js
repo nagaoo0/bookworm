@@ -14,7 +14,7 @@ export function avatarHue(username) {
  * Round avatar: image when `avatarUrl` is a safe URL, otherwise the first letter on a hue gradient.
  * A broken image falls back to the initial (delegated `error` listener, no inline handlers).
  * @param {{ username: string, avatarUrl?: string|null, size?: number, ring?: boolean, label?: string, cls?: string }} o
- *   size: 24 | 28 (feed meta) | 32 | 40 | 56 | 72 | 88 (profile hero) — any number works. The initial is set in Lora 600 at 44 % of the size
+ *   size: 24 | 28 (feed meta) | 32 | 40 | 56 | 72 | 88 (profile hero) — any number works. The initial is set in Inter Tight 600 at 44 % of the size
  *   on a hue gradient. Decorative (aria-hidden) unless `label` is given.
  */
 export function avatar({ username = '', avatarUrl, size = 40, ring = false, label, cls = '' } = {}) {
