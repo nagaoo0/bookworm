@@ -40,19 +40,19 @@ function followInner(following) {
 }
 
 /**
- * Follow / Following toggle button. Wire it with mountFollowButtons().
+ * Follow / Following toggle button, a secondary button (in a list row "Following" turns quiet, styles.css).
+ * Wire it with mountFollowButtons().
  * @param {string} username
  * @param {boolean} following
  * @param {{ size?: 'sm'|'md' }} [o]
  */
 export function followButton(username, following, { size = 'sm' } = {}) {
-  return html`<button type="button" class="btn ${size === 'sm' ? 'btn--sm' : ''} ${following ? 'btn--secondary' : 'btn--primary'}" data-follow="${username}" aria-pressed="${following ? 'true' : 'false'}" aria-label="Follow @${username}">${followInner(following)}</button>`;
+  return html`<button type="button" class="btn ${size === 'sm' ? 'btn--sm' : ''} btn--secondary${following ? ' follow-btn--on' : ''}" data-follow="${username}" aria-pressed="${following ? 'true' : 'false'}" aria-label="Follow @${username}">${followInner(following)}</button>`;
 }
 
 function paintFollow(btn, following) {
   btn.setAttribute('aria-pressed', following ? 'true' : 'false');
-  btn.classList.toggle('btn--secondary', following);
-  btn.classList.toggle('btn--primary', !following);
+  btn.classList.toggle('follow-btn--on', following);
   btn.innerHTML = String(followInner(following));
 }
 
@@ -117,7 +117,8 @@ function inLibrary(item) {
 }
 
 /**
- * One activity item: avatar · "@name finished Title" · time · cover · stars · review · actions · comment thread.
+ * One activity item as a list row (put a run of them in a `.grouped` card): avatar · "@name finished Title" · time,
+ * then cover · authors · stars · review, the actions and the comment thread.
  * Accepts rows from /feed, /profiles/:name (feed — add `username`/`avatar_url`) and /groups/:id/feed.
  * Items without social counts (group feed) render without like / comment actions.
  * @param {object} item
@@ -151,42 +152,45 @@ export function feedCardHTML(item, { viewer = getState().user, showAddToLibrary 
     : '';
 
   return html`
-    <article class="card feed-card" data-feed-sid="${sid}" aria-label="${name ? `@${name} ${verb} ${item.title}` : item.title}" style="padding:20px">
-      <div class="flex items-start gap-3">
-        ${name ? html`<a href="#u/${encodeURIComponent(name)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: name, avatarUrl: item.avatar_url, size: 40 })}</a>` : ''}
-        <p class="min-w-0 flex-1 self-center text-small text-text-2">
-          ${name ? html`<a href="#u/${encodeURIComponent(name)}" class="font-semibold text-text-1 hover:underline">@${name}</a> ` : ''}${verb}
-          <a href="#book/${item.book_id}" class="font-display font-semibold text-text-1 hover:text-accent-text">${item.title}</a>
-        </p>
-        ${when ? html`<time class="shrink-0 text-caption text-text-3" datetime="${when}" title="${formatDate(when)}">${timeAgo(when)}</time>` : ''}
-      </div>
-
-      <div class="mt-4 flex gap-4">
-        <a href="#book/${item.book_id}" class="shrink-0 self-start" tabindex="-1" aria-hidden="true">${cover({ url: item.cover_url, bookId: item.book_id, title: item.title, authors: item.authors, size: 'sm', tilt: true })}</a>
-        <div class="min-w-0 flex-1 space-y-2">
-          ${authors ? html`<p class="text-small text-text-2 line-clamp-1">${authors}</p>` : ''}
-          ${item.rating ? stars({ value: item.rating, size: 16 }) : ''}
-          ${review ? html`<p class="text-text-1 whitespace-pre-line break-words ${long ? 'line-clamp-4' : ''}" id="${reviewId}">${linkifyMentions(review)}</p>` : ''}
-          ${long ? html`<button type="button" class="btn btn--sm btn--ghost -ml-3" data-feed-more="${reviewId}" aria-expanded="false" aria-controls="${reviewId}"><span class="btn__label">More</span></button>` : ''}
+    <article class="row feed-card" data-feed-sid="${sid}" aria-label="${name ? `@${name} ${verb} ${item.title}` : item.title}">
+      ${name ? html`<a href="#u/${encodeURIComponent(name)}" class="feed-card__avatar" tabindex="-1" aria-hidden="true">${avatar({ username: name, avatarUrl: item.avatar_url, size: 40 })}</a>` : ''}
+      <div class="feed-card__main">
+        <div class="feed-card__head">
+          <p class="feed-card__line">
+            ${name ? html`<a href="#u/${encodeURIComponent(name)}" class="feed-card__name">@${name}</a> ` : ''}${verb}
+            <a href="#book/${item.book_id}" class="feed-card__book">${item.title}</a>
+          </p>
+          ${when ? html`<time class="feed-card__time" datetime="${when}" title="${formatDate(when)}">${timeAgo(when)}</time>` : ''}
         </div>
-      </div>
 
-      <div class="mt-3 flex flex-wrap items-center gap-1">
-        ${likeBtn}${commentBtn}
-        ${readers > 1 ? html`<span class="px-1 text-caption text-text-2">${plural(readers, 'reader')} finished this</span>` : ''}
-        <span class="flex-1"></span>
-        ${addBtn}
-      </div>
+        <div class="feed-card__body">
+          <a href="#book/${item.book_id}" class="feed-card__cover" tabindex="-1" aria-hidden="true">${cover({ url: item.cover_url, bookId: item.book_id, title: item.title, authors: item.authors, size: 'xs' })}</a>
+          <div class="min-w-0 flex-1 space-y-1">
+            ${authors ? html`<p class="row__sub">${authors}</p>` : ''}
+            ${item.rating ? stars({ value: item.rating, size: 14 }) : ''}
+            ${review ? html`<p class="feed-card__review whitespace-pre-line break-words ${long ? 'line-clamp-4' : ''}" id="${reviewId}">${linkifyMentions(review)}</p>` : ''}
+            ${long ? html`<button type="button" class="btn btn--sm btn--ghost -ml-3" data-feed-more="${reviewId}" aria-expanded="false" aria-controls="${reviewId}"><span class="btn__label">More</span></button>` : ''}
+          </div>
+        </div>
 
-      ${social ? html`
-        <div class="mt-3 border-t border-border-1 pt-3" id="${threadId}" data-feed-thread="${sid}" data-loaded="false" hidden>
-          <div class="space-y-3" data-feed-list aria-live="polite"></div>
-          ${viewer ? html`
-            <form class="mt-3 flex items-start gap-2" data-feed-form="${sid}" novalidate>
-              <div class="min-w-0 flex-1">${field({ name: 'body', ariaLabel: 'Write a comment', placeholder: 'Write a comment', maxlength: 1000, size: 'sm', autocomplete: 'off' })}</div>
-              ${button({ label: 'Post', variant: 'primary', size: 'sm', type: 'submit' })}
-            </form>` : ''}
-        </div>` : ''}
+        ${social || readers > 1 || addBtn ? html`
+          <div class="feed-card__actions">
+            ${likeBtn}${commentBtn}
+            ${readers > 1 ? html`<span class="px-1 text-caption text-text-2">${plural(readers, 'reader')} finished this</span>` : ''}
+            <span class="flex-1"></span>
+            ${addBtn}
+          </div>` : ''}
+
+        ${social ? html`
+          <div class="feed-card__thread" id="${threadId}" data-feed-thread="${sid}" data-loaded="false" hidden>
+            <div class="space-y-3" data-feed-list aria-live="polite"></div>
+            ${viewer ? html`
+              <form class="mt-3 flex items-start gap-2" data-feed-form="${sid}" novalidate>
+                <div class="min-w-0 flex-1">${field({ name: 'body', ariaLabel: 'Write a comment', placeholder: 'Write a comment', maxlength: 1000, size: 'sm', autocomplete: 'off' })}</div>
+                ${button({ label: 'Post', variant: 'primary', size: 'sm', type: 'submit' })}
+              </form>` : ''}
+          </div>` : ''}
+      </div>
     </article>`;
 }
 

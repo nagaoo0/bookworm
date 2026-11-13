@@ -6,9 +6,10 @@ import { loadLibrary, upsertLibraryEntry } from '../libraryStore.js';
 import { loadPrefs } from '../prefs.js';
 import { html, safeUrl } from '../utils.js';
 import { openLogReadModal } from '../components/logReadModal.js';
+import { titleBar } from '../shell/titleBar.js';
 import {
   ACTION, EMPTY, ERROR, NAV, PLACEHOLDER, TOAST, plural,
-  applyAmbient, bookCard, button, card, delegate, emptyState, field, iconButton, mountBookGrid, mountChipGroup,
+  bookCard, button, card, delegate, emptyState, field, iconButton, mountBookGrid, mountChipGroup,
   mountShelfRows, openModal, sectionHeader, segmented, select, setButtonLoading, setFieldError, shelfRow,
   skeletonBookGrid, statusLabel, toast, uid,
 } from '../ui/index.js';
@@ -97,16 +98,15 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   const startQ = (initialQ ?? '').trim() || (restored ? prev.searchQuery : '');
 
   el.innerHTML = String(html`
-    <div class="space-y-8 md:space-y-10">
-      <header class="discover-hero pt-2 md:pt-6 md:text-center md:[&.is-compact]:text-left" data-hero>
-        <h1 class="h1 md:!text-[44px] md:!leading-[48px]" data-focus-target>${NAV.discover}</h1>
-        <form id="${formId}" class="mt-4 md:mt-6 max-w-[760px] md:mx-auto md:[.is-compact_&]:mx-0 space-y-3 text-left" role="search" novalidate>
-          <div class="relative [&_.field__input]:!pr-4 md:[&_.field__input]:!pr-14 md:[.is-compact_&_.field__input]:!h-11 [&_.field__input]:transition-[height] [&_.field__input]:duration-200">
-            ${field({ name: 'q', type: 'search', size: 'xl', value: startQ, placeholder: PLACEHOLDER.searchBooks, icon: 'search', ariaLabel: 'Search books', autocomplete: 'off', id: inputId })}
-            <kbd class="kbd absolute right-4 top-[17px] hidden md:inline-flex pointer-events-none" aria-hidden="true">↵</kbd>
+    <div class="discover">
+      <div>
+        ${titleBar({ title: NAV.discover })}
+        <form id="${formId}" class="discover__form" role="search" novalidate>
+          <div class="discover__search">
+            ${field({ name: 'q', type: 'search', value: startQ, placeholder: PLACEHOLDER.searchBooks, icon: 'search', ariaLabel: 'Search books', autocomplete: 'off', id: inputId })}
+            <kbd class="kbd discover__kbd hidden md:inline-flex" aria-hidden="true">↵</kbd>
           </div>
-          ${button({ label: 'Search', variant: 'primary', size: 'lg', type: 'submit', block: true, cls: 'md:!hidden' })}
-          <div class="flex flex-wrap items-center gap-1 md:justify-center md:[.is-compact_&]:justify-start">
+          <div class="discover__links">
             ${button({
               label: 'Advanced search', variant: 'ghost', size: 'sm', iconRight: 'chevron-down',
               cls: '[&_.btn__icon]:transition-transform motion-reduce:[&_.btn__icon]:transition-none [&[aria-expanded=true]_.btn__icon]:rotate-180',
@@ -117,7 +117,6 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
           <div id="${advId}" hidden>
             ${card({
               padding: 'md',
-              tone: 'quiet',
               content: html`
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   ${field({ name: 'title', label: 'Title', size: 'sm' })}
@@ -126,23 +125,25 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
                   ${field({ name: 'publisher', label: 'Publisher', size: 'sm' })}
                   ${field({ name: 'isbn', label: 'ISBN', size: 'sm', inputmode: 'numeric', placeholder: '9780…' })}
                   ${select({ name: 'language', label: 'Language', size: 'sm', value: prefLang, options: LANGUAGES.map(([value, label]) => ({ value, label })) })}
-                </div>`,
+                </div>
+                <div class="discover__adv-foot">${button({ label: 'Search', variant: 'primary', size: 'sm', type: 'submit' })}</div>`,
             })}
           </div>
         </form>
-        <div class="mt-4" data-recent-slot></div>
-      </header>
+      </div>
 
       <p id="${statusId}" class="sr-only" role="status" aria-live="polite"></p>
+      <div class="discover__idle" data-idle>
+        <div data-recent-slot></div>
+        <div data-foryou class="discover__idle" hidden></div>
+      </div>
       <div data-results class="[--grid-min-col:6rem] md:[--grid-min-col:10.5rem]"></div>
-      <div data-foryou class="space-y-10" hidden></div>
     </div>`);
 
   const form = el.querySelector(`#${formId}`);
   const input = el.querySelector(`#${inputId}`);
   const advPanel = el.querySelector(`#${advId}`);
-  const advToggle = el.querySelector('[data-adv-toggle]');
-  const heroEl = el.querySelector('[data-hero]');
+  const idleEl = el.querySelector('[data-idle]');
   const recentSlot = el.querySelector('[data-recent-slot]');
   const resultsEl = el.querySelector('[data-results]');
   const forYouEl = el.querySelector('[data-foryou]');
@@ -175,7 +176,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     href: bookHash(b, { bookId: ownedEntry(b)?.book_id }),
   });
 
-  /** Recent searches as chips under the hero search; re-rendered only when the list changed. */
+  /** Recent searches as chips under the search field; re-rendered only when the list changed. */
   function renderRecent() {
     const recent = loadRecent();
     const sig = JSON.stringify(recent);
@@ -184,13 +185,13 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     if (!recent.length) { recentSlot.innerHTML = ''; return; }
     const id = uid('recent');
     setHTML(recentSlot, html`
-      <section aria-labelledby="${id}" data-recent-section class="flex flex-wrap items-center gap-x-3 gap-y-2 md:justify-center md:[.is-compact_&]:justify-start">
-        <h2 class="label" id="${id}">Recent</h2>
-        <ul class="flex flex-wrap items-center gap-2">
+      <section aria-labelledby="${id}" data-recent-section>
+        ${sectionHeader({ title: 'Recent searches', id })}
+        <ul class="discover__recent">
           ${recent.map((q, i) => html`
-            <li class="flex items-center">
-              <button type="button" class="chip" data-recent="${i}">${q}</button>
-              ${iconButton({ icon: 'x', label: `Remove “${q}” from recent searches`, size: 'xs', cls: '-ml-1', attrs: `data-recent-remove="${i}"` })}
+            <li>
+              <button type="button" class="chip" data-recent="${i}"><span>${q}</span></button>
+              ${iconButton({ icon: 'x', label: `Remove “${q}” from recent searches`, size: 'xs', attrs: `data-recent-remove="${i}"` })}
             </li>`)}
         </ul>
       </section>`);
@@ -219,9 +220,12 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
 
   function renderBody() {
     if (disposed) return;
-    heroEl.classList.toggle('is-compact', mode !== 'idle');
     renderRecent();
-    forYouEl.hidden = !(mode === 'idle' && recs.length);
+    // idle: recent searches and recommendations; a search replaces them with its results
+    const hasIdle = recs.length > 0 || loadRecent().length > 0;
+    idleEl.hidden = mode !== 'idle' || !hasIdle;
+    resultsEl.hidden = mode === 'idle' && hasIdle;
+    forYouEl.hidden = !recs.length;
     if (mode === 'loading') {
       setHTML(resultsEl, skeletonBookGrid(8));
       announce('Searching…');
@@ -241,7 +245,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
       }));
       announce(ERROR.searchFailed);
     } else {
-      setHTML(resultsEl, recs.length ? '' : emptyState({
+      setHTML(resultsEl, hasIdle ? '' : emptyState({
         art: 'search', title: 'Find your next book', body: 'Search by title, author or ISBN.',
       }));
       announce('');
@@ -408,7 +412,6 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     const modal = openModal({
       title: 'Add a book manually',
       size: 'md',
-      header: 'ambient',
       content: html`
         <form id="${manualFormId}" class="space-y-4" novalidate>
           <p class="field__error" data-form-error role="alert" hidden></p>
@@ -435,7 +438,6 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
       },
     });
 
-    if (modal.header) applyAmbient(modal.header, { h: 35, s: 0.3 });   // neutral lamp-amber: there is no cover yet
     const mForm = modal.body.querySelector(`#${manualFormId}`);
     const formError = mForm.querySelector('[data-form-error]');
     const primary = modal.el.querySelector('[data-modal-footer] .btn--primary');
@@ -498,14 +500,14 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     });
   }
 
-  /** A titled ledge shelf row; the header carries the ‹ › arrows. */
+  /** A titled shelf row; the header carries the ‹ › arrows. */
   function recRow(title, items) {
     const sid = uid('foryou');
     const rid = uid('rec-row');
     return html`
       <section aria-labelledby="${sid}">
         ${sectionHeader({ title, id: sid, scrollControls: rid })}
-        ${shelfRow({ id: rid, ledge: true, label: title, items })}
+        ${shelfRow({ id: rid, label: title, items })}
       </section>`;
   }
 
@@ -525,7 +527,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
     setHTML(forYouEl, html`
       ${grouped.map(([title, list]) => recRow(`Because you read “${title}”`, list.map(r => recCard(r))))}
       ${rest.length ? recRow(grouped.length ? 'More for you' : 'Recommended for you', rest.map(r => recCard(r, { because: true }))) : ''}`);
-    forYouEl.hidden = mode !== 'idle';
+    forYouEl.hidden = false;
     if (mode === 'idle') renderBody();   // the empty-state placeholder gives way to the recommendations
   }
 
@@ -550,7 +552,7 @@ export function renderDiscover(el, { q: initialQ, manual = false } = {}) {
   input.addEventListener('input', onInput);
   input.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowDown') return;
-    const target = resultsEl.querySelector('.book-card[tabindex="0"]') ?? recentSlot.querySelector('[data-recent]');
+    const target = resultsEl.querySelector('.book-card[tabindex="0"]') ?? (mode === 'idle' ? recentSlot.querySelector('[data-recent]') : null);
     if (target) { e.preventDefault(); target.focus(); }
   });
   resultsEl.addEventListener('change', (e) => {

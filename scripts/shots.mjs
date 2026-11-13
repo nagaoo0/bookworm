@@ -104,6 +104,7 @@ function buildCaptures(ctx) {
     { slug: 'auth', name: 'signedout-auth', hash: '#auth', auth: false },
     { slug: 'public', name: 'signedout-book', hash: `#book/${ctx.readingBookId}`, auth: false },
     { slug: 'public', name: 'signedout-profile', hash: '#u/mihajlo', auth: false },
+    { slug: 'public', name: 'signedout-community', hash: '#community/feed', auth: false },
   ];
 }
 

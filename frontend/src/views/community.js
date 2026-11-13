@@ -1,17 +1,19 @@
-// Community: Feed · People · Challenges · Groups  (design-system §8.5, §9, §10).
-// `#community/<tab>`; tab changes only rewrite the hash (history.replaceState), they never re-mount the view.
+// Community: Feed · People · Challenges · Groups  (design-system §8.5, §9, §10; visual-v3 §7).
+// `#community/<tab>`: a segment change pushes the hash (history.pushState) without re-mounting the view, so Back
+// returns to the previous segment (the router re-mounts the view on that hashchange).
 import { html, localDayKey } from '../utils.js';
 import { api } from '../api.js';
 import { getState } from '../store.js';
 import {
   avatar, avatarStack, badge, button, cover, emptyState, field, icon, iconButton, progressBar, sectionHeader, segmented,
-  skeletonCard, skeletonFeed, skeletonList, spinner, statusBadge, tabs, tabPanel,
+  skeletonCard, skeletonList, spinner, statusBadge,
   setButtonLoading, setFieldError,
-  mountChipGroup, mountConfirmInline, mountFields, mountTabs, confirmPopover, openMenu, openModal, toast,
+  mountChipGroup, mountConfirmInline, mountFields, confirmPopover, openMenu, openModal, toast,
   delegate, uid, plural, formatDate, formatAuthors,
   ACTION, EMPTY, ERROR, LABEL, TOAST,
 } from '../ui/index.js';
 import { feedCardHTML, mountFeedCards, followButton, mountFollowButtons } from './feedCard.js';
+import { titleBar } from '../shell/titleBar.js';
 
 const ALL_TABS = [
   { value: 'feed', label: 'Feed' },
@@ -34,6 +36,22 @@ function dayDate(v) {
 }
 const authorsText = (a) => (Array.isArray(a) ? a.join(', ') : (a ?? ''));
 
+/** A reader as a list row: avatar, @name, book count, Follow. The name link covers the row; Follow sits above it. */
+function personRow(u, viewer, { sub = '', covers = '' } = {}) {
+  return html`
+    <li class="row person-row">
+      <span class="person-row__avatar" aria-hidden="true">${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 40 })}</span>
+      <span class="row__main">
+        <a href="#u/${enc(u.username)}" class="row__title person-row__link">@${u.username}</a>
+        <span class="row__sub">${plural(u.book_count ?? 0, 'book')}${sub}</span>
+      </span>
+      ${covers}
+      ${viewer && viewer.username !== u.username
+        ? followButton(u.username, !!u.you_follow)
+        : html`<span class="row__chev">${icon('chevron-right', { size: 16 })}</span>`}
+    </li>`;
+}
+
 /**
  * @param {HTMLElement} el
  * @param {{ tab?: string }} [params]
@@ -43,24 +61,24 @@ export function renderCommunity(el, { tab } = {}) {
   const viewer = getState().user;
   const items = viewer ? ALL_TABS : ALL_TABS.slice(0, 2);
   const current = items.some(t => t.value === tab) ? tab : 'feed';
-  const tabsId = uid('community-tabs');
   let disposed = false;
   const cleanups = [];
 
   setHTML(el, html`
-    <div class="space-y-6">
-      <div>
-        <h1 class="h1" data-focus-target>Community</h1>
-        ${tabs({ id: tabsId, items, value: current, label: 'Community sections', bleed: true, cls: 'mt-4' })}
+    <div class="community">
+      <div class="community__head" data-community-head>
+        ${titleBar({ title: 'Community' })}
+        ${segmented({ name: 'community-tab', label: 'Community sections', items, value: current, block: true, cls: 'community__seg' })}
       </div>
-      ${items.map(t => tabPanel({ tabsId, value: t.value, active: t.value === current }))}
+      ${items.map(t => html`<section class="community__panel" data-panel="${t.value}" aria-label="${t.label}"${t.value === current ? '' : html` hidden`}></section>`)}
     </div>`);
 
-  const panelOf = (value) => el.querySelector(`#${tabsId}-panel-${value}`);
+  const head = el.querySelector('[data-community-head]');
+  const panelOf = (value) => el.querySelector(`[data-panel="${value}"]`);
   const ctx = {
     viewer,
     isDisposed: () => disposed,
-    goToTab: (value) => el.querySelector(`[data-tab-value="${value}"]`)?.click(),
+    goToTab: (value) => head.querySelector(`[data-chip-value="${value}"]`)?.click(),
   };
 
   const sections = {
@@ -73,9 +91,12 @@ export function renderCommunity(el, { tab } = {}) {
   }
   for (const s of Object.values(sections)) cleanups.push(s.dispose);
 
-  cleanups.push(mountTabs(el, (value) => {
-    history.replaceState(null, '', `#community/${value}`);
-    sections[value]?.activate();
+  cleanups.push(mountChipGroup(head, ({ name, value }) => {
+    if (name !== 'community-tab' || !sections[value]) return;
+    for (const t of items) panelOf(t.value).hidden = t.value !== value;
+    // a new history entry, so Back goes to the previous segment
+    try { history.pushState(null, '', `#community/${value}`); } catch { /* sandboxed frame */ }
+    sections[value].activate();
   }));
   sections[current].activate();
 
@@ -90,27 +111,17 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
   let started = false;
 
   setHTML(panel, html`
-    <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8">
+    <div class="community-feed">
       <div class="min-w-0 space-y-4">
-        ${viewer ? segmented({ name: 'feed-filter', label: 'Feed filter', value: filter, items: [{ value: 'all', label: 'Everyone' }, { value: 'following', label: 'Following' }] }) : ''}
-        <div class="lg:hidden" data-rail-mobile></div>
+        ${viewer ? segmented({ name: 'feed-filter', label: 'Feed filter', size: 'sm', value: filter, items: [{ value: 'all', label: 'Everyone' }, { value: 'following', label: 'Following' }] }) : ''}
+        <div class="community-rail-m" data-rail-mobile></div>
         <div data-feed-body aria-live="polite"></div>
       </div>
-      <aside class="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:self-start" data-rail aria-label="Readers, challenge and groups"></aside>
+      <aside class="community-rail" data-rail aria-label="Readers, challenge and groups"></aside>
     </div>`);
   const body = panel.querySelector('[data-feed-body]');
   const rail = panel.querySelector('[data-rail]');
   const railMobile = panel.querySelector('[data-rail-mobile]');
-
-  const readerRow = (u) => html`
-    <li class="flex items-center gap-3">
-      <a href="#u/${enc(u.username)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 40 })}</a>
-      <div class="min-w-0 flex-1">
-        <a href="#u/${enc(u.username)}" class="block truncate text-small font-semibold text-text-1 hover:text-accent-text">@${u.username}</a>
-        <p class="text-caption text-text-2">${plural(u.book_count ?? 0, 'book')}</p>
-      </div>
-      ${viewer && viewer.username !== u.username ? followButton(u.username, !!u.you_follow) : ''}
-    </li>`;
 
   async function loadRail() {
     const [uRes, cRes, gRes] = await Promise.allSettled([
@@ -129,47 +140,51 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
     const cards = [];
     if (users.length) {
       cards.push(html`
-        <section class="card card--sm" aria-labelledby="rail-readers">
-          <h2 class="h3 mb-3" id="rail-readers">Readers to follow</h2>
-          <ul class="space-y-3">${users.map(readerRow)}</ul>
+        <section aria-labelledby="rail-readers">
+          ${sectionHeader({ title: 'Readers to follow', id: 'rail-readers', level: 3 })}
+          <ul class="grouped">${users.map(u => personRow(u, viewer))}</ul>
         </section>`);
     }
     if (viewer && challenge) {
       const goal = Number(challenge.goal) || 0;
       const pct = goal > 0 ? Math.min(100, Math.round(((challenge.progress ?? 0) / goal) * 100)) : 0;
       cards.push(html`
-        <section class="card card--sm" aria-labelledby="rail-challenge">
-          <p class="label mb-1">${running ? 'Active challenge' : 'Upcoming challenge'}</p>
-          <h2 class="h3 break-words" id="rail-challenge">${challenge.title}</h2>
-          <p class="mt-0.5 text-caption text-text-2">${running ? `Until ${formatDate(dayDate(challenge.end_date))}` : `Starts ${formatDate(dayDate(challenge.start_date))}`} · ${challenge.participant_count} joined</p>
-          ${goal > 0 && challenge.joined ? html`<div class="mt-3">${progressBar({ value: pct, tone: pct >= 100 ? 'success' : 'accent', label: `Your progress in ${challenge.title}` })}<p class="mt-1 text-caption tabular-nums text-text-2">${challenge.progress ?? 0} of ${goal} done</p></div>` : ''}
-          <div class="mt-3">${button({ label: challenge.joined ? 'View' : ACTION.join, variant: challenge.joined ? 'secondary' : 'primary', size: 'sm', attrs: 'data-action="goto-challenges"' })}</div>
+        <section aria-labelledby="rail-challenge">
+          ${sectionHeader({ title: running ? 'Active challenge' : 'Upcoming challenge', id: 'rail-challenge', level: 3 })}
+          <div class="card">
+            <p class="font-semibold text-text-1 break-words">${challenge.title}</p>
+            <p class="mt-0.5 text-caption text-text-2">${running ? `Until ${formatDate(dayDate(challenge.end_date))}` : `Starts ${formatDate(dayDate(challenge.start_date))}`} · ${challenge.participant_count} joined</p>
+            ${goal > 0 && challenge.joined ? html`<div class="mt-3">${progressBar({ value: pct, tone: pct >= 100 ? 'success' : 'accent', label: `Your progress in ${challenge.title}` })}<p class="mt-1 text-caption tabular-nums text-text-2">${challenge.progress ?? 0} of ${goal} done</p></div>` : ''}
+            <div class="mt-3">${button({ label: challenge.joined ? 'View' : ACTION.join, variant: challenge.joined ? 'secondary' : 'primary', size: 'sm', attrs: 'data-action="goto-challenges"' })}</div>
+          </div>
         </section>`);
     }
     if (viewer) {
       cards.push(html`
-        <section class="card card--sm" aria-labelledby="rail-groups">
-          <h2 class="h3 mb-3" id="rail-groups">Your groups</h2>
+        <section aria-labelledby="rail-groups">
+          ${sectionHeader({ title: 'Your groups', id: 'rail-groups', level: 3 })}
           ${groups.length
-            ? html`<ul class="space-y-1">${groups.slice(0, 4).map(g => html`
-                <li><button type="button" class="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-2" data-action="goto-groups">
-                  <span class="min-w-0 truncate text-small font-medium text-text-1">${g.name}</span>
-                  <span class="shrink-0 text-caption text-text-2">${plural(g.member_count ?? 0, 'member')}</span>
-                </button></li>`)}</ul>`
-            : html`<p class="text-small text-text-2">Read together: start a group or join one with a code.</p><div class="mt-3">${button({ label: 'Open groups', variant: 'secondary', size: 'sm', attrs: 'data-action="goto-groups"' })}</div>`}
+            ? html`<div class="grouped">${groups.slice(0, 4).map(g => html`
+                <button type="button" class="row" data-action="goto-groups">
+                  <span class="row__main"><span class="row__title">${g.name}</span></span>
+                  <span class="row__trail">${plural(g.member_count ?? 0, 'member')}</span>
+                  <span class="row__chev">${icon('chevron-right', { size: 16 })}</span>
+                </button>`)}</div>`
+            : html`<div class="card"><p class="text-small text-text-2">Read together: start a group or join one with a code.</p><div class="mt-3">${button({ label: 'Open groups', variant: 'secondary', size: 'sm', attrs: 'data-action="goto-groups"' })}</div></div>`}
         </section>`);
     }
     setHTML(rail, html`${cards}`);
     if (users.length) {
+      // below 1200 px: a short carousel above the feed instead of the rail
       setHTML(railMobile, html`
         <section aria-labelledby="rail-readers-m">
-          <h2 class="label mb-2" id="rail-readers-m">Readers to follow</h2>
-          <ul class="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6">${users.map(u => html`
-            <li class="card card--sm w-[260px] shrink-0 snap-start">
+          ${sectionHeader({ title: 'Readers to follow', id: 'rail-readers-m', level: 3 })}
+          <ul class="community-carousel">${users.map(u => html`
+            <li class="card community-carousel__item">
               <div class="flex items-center gap-3">
                 <a href="#u/${enc(u.username)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 40 })}</a>
                 <div class="min-w-0 flex-1">
-                  <a href="#u/${enc(u.username)}" class="block truncate text-small font-semibold text-text-1">@${u.username}</a>
+                  <a href="#u/${enc(u.username)}" class="block truncate font-semibold text-text-1">@${u.username}</a>
                   <p class="text-caption text-text-2">${plural(u.book_count ?? 0, 'book')}</p>
                 </div>
                 ${viewer ? followButton(u.username, !!u.you_follow) : ''}
@@ -179,17 +194,17 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
     }
   }
 
-  async function load(first) {
+  async function load() {
     const mine = ++req;   // out-of-order guard: only the latest request may render
     body.setAttribute('aria-busy', 'true');
-    setHTML(body, skeletonFeed(3));
+    setHTML(body, html`<div class="card">${skeletonList(3)}</div>`);
     try {
       const feed = await api.getFeed(filter === 'following' ? 'following' : undefined);
       if (isDisposed() || mine !== req) return;
       if (!feed.length) {
         setHTML(body, emptyState({ ...(filter === 'following' ? EMPTY.feedFollowing : EMPTY.feedEveryone), action: { label: ACTION.findPeople, attrs: 'data-action="goto-people"' } }));
       } else {
-        setHTML(body, html`<div class="space-y-4${first ? ' stagger' : ''}">${feed.map(item => feedCardHTML(item, { viewer }))}</div>`);
+        setHTML(body, html`<div class="grouped">${feed.map(item => feedCardHTML(item, { viewer }))}</div>`);
       }
     } catch {
       if (isDisposed() || mine !== req) return;
@@ -208,14 +223,14 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
       if (name !== 'feed-filter') return;
       filter = value;
       rememberedFeedFilter = value;
-      load(false);
+      load();
     }),
-    delegate(panel, 'click', '[data-action="retry"]', () => load(false)),
+    delegate(panel, 'click', '[data-action="retry"]', () => load()),
     delegate(panel, 'click', '[data-action="goto-people"]', () => goToTab('people')),
   ];
 
   return {
-    activate() { if (!started) { started = true; load(true); loadRail(); } },
+    activate() { if (!started) { started = true; load(); loadRail(); } },
     dispose() { req++; cleanups.forEach(fn => fn()); },
   };
 }
@@ -236,25 +251,13 @@ function peopleSection(panel, { viewer, isDisposed }) {
 
   let recent = new Map();   // username → up to 3 recently finished books (from the public feed)
 
+  // up to three recently finished covers, trailing the row from 640 px
   const miniCovers = (name) => {
     const books = recent.get(name) ?? [];
-    return html`<span class="flex min-h-[54px] items-end" aria-hidden="true">${books.map((b, i) => html`<span class="${i ? '-ml-2' : ''}" style="z-index:${3 - i};position:relative">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, authors: b.authors, size: 'xs' })}</span>`)}</span>`;
+    return books.length
+      ? html`<span class="person-row__covers" aria-hidden="true">${books.map(b => cover({ url: b.cover_url, bookId: b.book_id, title: b.title, authors: b.authors, size: 'xs' }))}</span>`
+      : '';
   };
-
-  const row = (u) => html`
-    <li class="card card--interactive flex flex-col gap-4">
-      <div class="flex items-center gap-3">
-        <a href="#u/${enc(u.username)}" class="shrink-0" tabindex="-1" aria-hidden="true">${avatar({ username: u.username, avatarUrl: u.avatar_url, size: 56 })}</a>
-        <div class="min-w-0 flex-1">
-          <a href="#u/${enc(u.username)}" class="h3 block truncate hover:text-accent-text">@${u.username}</a>
-          <p class="text-caption text-text-2">${plural(u.book_count ?? 0, 'book')}${u.follows_you ? html` · ${LABEL.followsYou}` : ''}</p>
-        </div>
-      </div>
-      <div class="mt-auto flex items-end justify-between gap-3">
-        ${miniCovers(u.username)}
-        ${viewer && viewer.username !== u.username ? followButton(u.username, !!u.you_follow) : ''}
-      </div>
-    </li>`;
 
   function render() {
     const q = query.trim().toLowerCase();
@@ -263,12 +266,12 @@ function peopleSection(panel, { viewer, isDisposed }) {
       setHTML(body, emptyState({ ...EMPTY.noPeople, title: q ? EMPTY.noPeople.title : 'No readers yet', size: 'sm' }));
       return;
     }
-    setHTML(body, html`<ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${list.map(row)}</ul>`);
+    setHTML(body, html`<ul class="grouped">${list.map(u => personRow(u, viewer, { sub: u.follows_you ? html` · ${LABEL.followsYou}` : '', covers: miniCovers(u.username) }))}</ul>`);
   }
 
   async function load() {
     body.setAttribute('aria-busy', 'true');
-    setHTML(body, html`<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${[1, 2, 3, 4, 5, 6].map(() => skeletonCard())}</div>`);
+    setHTML(body, html`<div class="card">${skeletonList(5)}</div>`);
     try {
       const [data, feed] = await Promise.all([api.getUsers(), api.getFeed().catch(() => [])]);
       if (isDisposed()) return;
@@ -798,7 +801,7 @@ function groupsSection(panel, { viewer, isDisposed }) {
           </p>` : ''}
         <div class="mt-3 border-t border-border-1 pt-2">
           <button type="button" class="btn btn--sm btn--ghost" data-gr-feed="${gid}" aria-expanded="false" aria-controls="gr-feed-${gid}"><span class="btn__label">Group feed</span><span class="btn__icon">${icon('chevron-down', { size: 16 })}</span></button>
-          <div id="gr-feed-${gid}" class="mt-3 space-y-3" hidden></div>
+          <div id="gr-feed-${gid}" class="community-group-feed" hidden></div>
         </div>
       </article>`;
   };
@@ -930,9 +933,9 @@ function groupsSection(panel, { viewer, isDisposed }) {
         region.dataset.loaded = 'true';
         setHTML(region, feed.length
           ? html`${feed.map(item => feedCardHTML(item, { viewer, showAddToLibrary: false }))}`
-          : html`<p class="text-small text-text-3">No activity yet.</p>`);
+          : html`<p class="px-4 text-small text-text-3">No activity yet.</p>`);
       } catch {
-        if (!isDisposed()) setHTML(region, html`<p class="text-small text-danger">Couldn't load the group feed — try again.</p>`);
+        if (!isDisposed()) setHTML(region, html`<p class="px-4 text-small text-danger">Couldn't load the group feed — try again.</p>`);
       }
     }),
   ];

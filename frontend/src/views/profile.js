@@ -215,7 +215,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   function historyHTML() {
     const feed = data.feed ?? [];
     if (!feed.length) return emptyState({ icon: 'calendar', title: 'Nothing here yet', body: isOwn ? 'Log a read and it will show up here.' : 'No reading activity yet.', size: 'sm' });
-    return html`<div class="max-w-3xl space-y-4">${feed.map(s => feedCardHTML({ ...s, username: name, avatar_url: data.avatarUrl }, { viewer, showAddToLibrary: !isOwn }))}</div>`;
+    return html`<div class="grouped max-w-3xl">${feed.map(s => feedCardHTML({ ...s, username: name, avatar_url: data.avatarUrl }, { viewer, showAddToLibrary: !isOwn }))}</div>`;
   }
 
   // ── Stats ──

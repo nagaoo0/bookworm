@@ -2269,6 +2269,84 @@ button.hero-pill, a.hero-pill { cursor: pointer; }
 .book-row__text { margin: 2px 0 0; font-size: var(--text-body); line-height: var(--text-body--line-height); color: var(--text-1); white-space: pre-line; overflow-wrap: anywhere; }
 .book-row__delete:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger-fg); }
 
+/* ── Discover (views/discover.js): search field, recent searches, recommendations ── */
+.discover { display: flex; flex-direction: column; gap: 28px; }
+.discover__form { display: flex; flex-direction: column; gap: 8px; max-width: 760px; margin-top: 16px; }
+.discover__search { position: relative; }
+.discover__kbd { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); pointer-events: none; }
+@media (min-width: 768px) { .discover__search .field__input { padding-right: 48px; } }
+.discover__links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: -12px; }
+.discover__adv-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+.discover__idle { display: flex; flex-direction: column; gap: 28px; }
+.discover__idle[hidden] { display: none; }
+.discover__recent { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.discover__recent > li { display: inline-flex; align-items: center; max-width: 100%; }
+.discover__recent .chip { min-width: 0; max-width: 100%; }
+.discover__recent .chip > span { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 767px) {
+  .discover, .discover__idle { gap: 24px; }
+}
+
+/* ── Community (views/community.js): segmented sections, feed and people as grouped rows ── */
+.community__seg { margin-top: 16px; max-width: 480px; }
+/* signed out there are two segments (Feed, People) */
+@media (min-width: 768px) { .community__seg:not(:has(.segmented__item:nth-of-type(3))) { max-width: 240px; } }
+.community__panel { margin-top: 24px; }
+.community-feed { display: grid; gap: 24px; }
+.community-rail { display: none; }
+/* the rail needs room beside a readable feed: from 1200 px (the 260 px sidebar takes its share at 1024) */
+@media (min-width: 1200px) {
+  .community-feed { grid-template-columns: minmax(0, 1fr) 340px; gap: 32px; }
+  .community-rail-m { display: none; }
+  /* the desktop shell has no sticky bar; signed out the public top bar is sticky */
+  .community-rail { position: sticky; top: 24px; align-self: start; display: flex; flex-direction: column; gap: 24px; }
+  html:not([data-chrome="app"]) .community-rail { top: calc(var(--header-h) + 24px); }
+}
+@media (max-width: 767px) {
+  .community__seg { max-width: none; }
+  .community__seg .segmented__item { min-width: 0; padding: 0 8px; }
+  .community__panel { margin-top: 20px; }
+}
+.community-carousel { display: flex; gap: 12px; margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter) 2px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: var(--gutter); list-style: none; }
+.community-carousel__item { flex: 0 0 260px; scroll-snap-align: start; }
+/* the group feed inside a group card: its rows run to the card edges */
+.community-group-feed { margin: 8px -16px -8px; }
+
+/* a reader row: the @name link stretches over the row, the Follow button stays above it */
+.person-row { --row-inset: 68px; }
+.person-row__avatar { flex-shrink: 0; display: inline-flex; }
+.person-row__link { color: var(--text-1); text-decoration: none; }
+.person-row__link::after { content: ''; position: absolute; inset: 0; }
+.person-row:has(.person-row__link:hover) { background: color-mix(in srgb, var(--text-1) 4%, transparent); }
+.person-row .btn { position: relative; z-index: 1; flex-shrink: 0; }
+.person-row__covers { display: none; flex-shrink: 0; gap: 4px; }
+.person-row__covers .cover { width: 26px; }
+@media (min-width: 640px) { .person-row__covers { display: inline-flex; } }
+/* Follow is a secondary button; in a row "Following" turns quiet (no fill, secondary text) */
+:is(.row, .community-carousel) .btn.follow-btn--on { background: transparent; color: var(--text-2); }
+:is(.row, .community-carousel) .btn.follow-btn--on:hover:not(:disabled) { background: var(--surface-2); }
+
+/* an activity row (views/feedCard.js): avatar, "@name finished Title" and time, then cover, authors, stars, review,
+   the like and comment actions and the comment thread */
+.feed-card { --row-inset: 68px; align-items: flex-start; padding-block: 12px; }
+.feed-card__avatar { flex-shrink: 0; display: inline-flex; border-radius: 50%; }
+.feed-card__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.feed-card__head { display: flex; align-items: baseline; gap: 12px; min-height: 40px; padding-top: 9px; }
+.feed-card__line { flex: 1; min-width: 0; margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
+.feed-card__name { font-weight: 600; color: var(--text-1); text-decoration: none; }
+.feed-card__book { font-weight: 600; color: var(--text-1); text-decoration: none; }
+.feed-card__name:hover, .feed-card__book:hover { text-decoration: underline; }
+.feed-card__time { flex-shrink: 0; font-size: 13px; line-height: 18px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.feed-card__body { display: flex; gap: 12px; }
+.feed-card__cover { flex-shrink: 0; align-self: flex-start; }
+.feed-card__cover .cover { width: 48px; }
+.feed-card__review { margin: 0; color: var(--text-1); }
+.feed-card__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: -8px; }
+.feed-card__thread { padding-top: 12px; border-top: 1px solid var(--separator); }
+@media (max-width: 767px) {
+  .feed-card__head { padding-top: 8px; }
+}
+
 /* ── Story card (ui/storyCard.js): Year in review, a flat accent block ────── */
 .story-card {
   position: relative;
