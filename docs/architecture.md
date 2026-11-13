@@ -26,7 +26,7 @@ Vanilla JS (ES modules) built with Vite, styled with Tailwind CSS v4, Chart.js o
 **`frontend/src/`**
 
 ```
-main.js           Shell (header, bottom bar, account menu, notifications, quick-add sheet),
+main.js           Shell wiring (sidebar, title bar, tab bar, account menu, notifications, quick-add sheet),
                   hash router, session bootstrap (GET /auth/me), offline banner
 store.js          Global state: getState / setState / subscribe (keys below)
 libraryStore.js   loadLibrary(), upsertLibraryEntry(), removeLibraryEntries(), resetLibraryStore()
@@ -35,7 +35,7 @@ sse.js            openSse(url, onMessage): EventSource with exponential reconnec
 prefs.js          Theme / accent / card size in localStorage (bw_prefs); applyPrefs(), savePrefs()
 utils.js          html`` template, raw(), safeUrl(), safeColor(), coverProxySrc(), trapFocus()
 styles.css        Design tokens (per theme and accent), Tailwind entry, component CSS
-index.html        Pre-paint theme script, font links, service-worker registration
+index.html        Pre-paint theme script, service-worker registration (fonts are self-hosted, imported in main.js)
 
 views/
   auth.js         Sign in / create account (rendered by the router, not a hash route)
@@ -53,6 +53,7 @@ views/
 components/
   logReadModal.js openLogReadModal(book, onSaved): the log-a-read dialog (Home, Library, Discover, Book)
 
+shell/            sidebar.js (260 px sidebar at 1024 px and up, 72 px icon rail at 768-1023 px), titleBar.js (titleBar, mountTitleBar)
 ui/               Component kit (below). The only place new components come from
 ```
 
@@ -140,11 +141,13 @@ Views that render library data call `subscribe()` and unsubscribe in their clean
 | Setting | Values (default first) | Where it is applied |
 |---|---|---|
 | Theme: `data-theme` on `<html>` | `dark`, `light`, `sepia`, `system` | Token blocks `html[data-theme="…"]` in `styles.css`. `system` follows `prefers-color-scheme`; `prefs.js` listens for changes |
-| Accent: `data-accent` | `amber`, `blue`, `teal`, `rose` | Accent tokens in `styles.css`. `.accent-scope[data-accent]` scopes an accent to one subtree (used for another user's profile) |
+| Accent: `data-accent` | `orange`, `blue`, `teal`, `rose` (a stored `amber` migrates to `orange` in the API, a boot migration and the frontend) | Accent tokens in `styles.css`. `.accent-scope[data-accent]` scopes an accent to one subtree (used for another user's profile) |
 | Card size | `medium`, `miniature`, `small`, `large` | `--grid-min-col` on `:root`, read by `.book-grid` |
 
 - **Pre-paint:** the inline script in `index.html` reads `localStorage.bw_prefs` and sets `data-theme`, `data-accent` and `theme-color` before any CSS is parsed, so there is no flash. It repeats the page-background colours from `styles.css` and `prefs.js`; keep all three in sync.
 - **`prefs.js`:** `savePrefs(patch)` stores only the keys that were set, re-applies them, and dispatches `bw:prefs` and `prefs:change` (detail includes `resolvedTheme`) so canvas charts can redraw.
+- **Fonts:** Inter and Inter Tight, self-hosted through `@fontsource-variable`. No external font requests.
+- **v3 look:** grouped cards (`.grouped`), list rows (`.row`), a full-pill segmented control, flat covers, `shelfRow({ bleed })` and the dark cover-tinted `.tint-top` header. The shell is a sidebar at 1024 px and up, an icon rail at 768-1023 px and an iOS-style tab bar below 768 px. See `docs/visual-v3.md`.
 - **Server sync:** `api.updatePrefs()` sends `PATCH /api/auth/me` with `prefs` and is best effort. On sign-in the server copy wins (`applyServerPrefs()` in `main.js`); the accent comes from the `users.accent` column.
 
 **Escaping and URLs** (`utils.js`)
@@ -180,7 +183,7 @@ cd frontend && npm install && npm run dev                    # http://localhost:
 
 - Vite proxies `/api` to `localhost:3000` (`frontend/vite.config.js`), so the browser sees one origin.
 - `npm run build` writes `frontend/dist`. The frontend image serves it through nginx (`frontend/nginx.conf`).
-- There is no frontend test suite. Check UI changes in a browser, at desktop and 375 px widths, in dark and light.
+- `cd frontend && npm test` runs the frontend tests, including `node docs/contrast.mjs` (every theme times every accent). Check UI changes in a browser as well: `node scripts/shots.mjs [--only slugs] [--themes dark,light] [--seed full|empty|shelves] [--all-accents] [--check] [--out dir]` captures screenshots of home, library, book, discover, community, profile, stats, settings, auth and public, and `--check` also tests for horizontal overflow and console errors.
 
 ## Backend
 

@@ -38,9 +38,10 @@ What's built, what's known to need work, and ideas for future improvements.
 - **Year in review** (`#stats/year/:yyyy`, shareable at `#u/:name/year`)
 
 **Look and feel**
-- **Themes** — dark, light, sepia, or follow the system; accent colour amber, blue, teal or rose; four card sizes. Preferences sync to your account
+- **Themes** — dark, light, sepia, or follow the system; accent colour orange (default), blue, teal or rose; four card sizes. Preferences sync to your account
 - **Command palette** — `/` or Ctrl/Cmd+K: search your library, find books online, jump to a page
-- **Mobile** — bottom navigation below 768 px, with a quick-add sheet
+- **Native layout** — iOS-style design: sidebar at 1024 px and up, icon rail at 768-1023 px, grouped cards and list rows, Inter type
+- **Mobile** — tab bar below 768 px, with a quick-add sheet
 - **Offline shell** — a PWA whose app shell opens offline from the cache
 
 **Integrations** (Settings → Integrations)
@@ -99,4 +100,5 @@ Show what Bookworm readers are reading now, on Discover next to search. It shoul
 | 2026-10 | Integration credentials encrypted with `INTEGRATIONS_KEY` (AES-256-GCM), optional `INTEGRATION_ALLOWED_HOSTS` | Database leaks and multi-user SSRF-by-configuration |
 | 2026-10 | Design tokens in `styles.css` (theme and accent via `data-theme` / `data-accent`) plus a shared `ui/` component kit; views use tokens and kit components, with no hard-coded colours | One visual system across dark, light, sepia and system themes; screens reuse components instead of copying markup |
 | 2026-10 | Backend tests run on PGlite (Postgres compiled to WASM) in-process by default; a real Postgres server via `TEST_DATABASE_URL` before releases | `npm test` needs no Docker, and the same SQL, constraints and migrations are exercised. `scripts/dev-pglite.mjs` reuses the same embedded engine for Docker-free local runs |
+| 2026-11 | Visual v3 "Native": iOS-style shell (sidebar, icon rail, tab bar), grouped cards and list rows, flat covers, Inter fonts, orange default accent (stored `amber` migrates to `orange`) | The v2 look was decorative; a native-app look reads faster and `docs/contrast.mjs` keeps every theme and accent accessible |
 | 2026-06 | `library_books` UNIQUE(user_id, book_id) + status | Avoids duplicate library entries; status column coexists with shelf_memberships many-to-many |
