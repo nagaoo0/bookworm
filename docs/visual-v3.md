@@ -2,7 +2,7 @@
 
 Status: draft for owner approval, 13 November 2026. Scope: `frontend/src` plus two small backend and config touches (accent value, fonts). Supersedes the visual parts of `docs/visual-v2.md` (tokens, type, component looks, screen layouts). Everything else in `docs/design-system.md` and `docs/visual-v2.md` still applies: routes, copy guide, feedback table, accessibility rules, the view mount contract, data hygiene (`ui/meta.js`).
 
-Reference mocks (static HTML, open in a browser): `docs/visual-v3/mocks/home-light.html` (light theme), `docs/visual-v3/mocks/home-dark.html` (dark theme), `docs/visual-v3/mocks/home-dark-reference-night.html` (the "Night" mock in orange, reference for the dark tinted header only). The same screens, desktop and phone, are on the design canvas the owner reviewed.
+Reference mocks (static HTML, open in a browser; their streak chip and sidebar streak widget are not part of the design, see §6.3): `docs/visual-v3/mocks/home-light.html` (light theme), `docs/visual-v3/mocks/home-dark.html` (dark theme), `docs/visual-v3/mocks/home-dark-reference-night.html` (the "Night" mock in orange, reference for the dark tinted header only). The same screens, desktop and phone, are on the design canvas the owner reviewed.
 
 ## 1. Intent
 
@@ -38,7 +38,7 @@ Anti-goals (a failure even if it works)
 
 ### 4.1 Themes
 
-Theme values stay `dark`, `light`, `sepia`, `system` (settings unchanged). Default stays `dark` for existing and new users (builder note: this is my call to avoid a surprise flip for current users; the owner can change the default with one constant).
+Theme values stay `dark`, `light`, `sepia`, `system` (settings unchanged). Default stays `dark` for existing and new users, so current users see no surprise flip; the default is one constant in `prefs.js`.
 
 | Token | Light | Dark | Sepia (warm light) |
 |---|---|---|---|
@@ -49,13 +49,16 @@ Theme values stay `dark`, `light`, `sepia`, `system` (settings unchanged). Defau
 | `--surface-3` pressed / selected segment | `#ffffff` | `#3a3a3c` | `#ffffff` |
 | `--text-1` | `#000000` | `#ffffff` | `#2a2118` |
 | `--text-2` secondary | `#6c6c70` | `#aeaeb2` | `#6e6252` |
-| `--text-3` tertiary, captions | `#8e8e93` (14 px+ only; 11 to 13 px use `--text-2`) | `#8e8e93` | `#857865` |
+| `--text-3` tertiary, captions | `#6e6e73` | `#8e8e93` | `#76695a` |
 | `--border-1` hairline | `rgba(60,60,67,.14)` | `rgba(255,255,255,.08)` | `rgba(90,70,40,.16)` |
 | `--separator` list rows | `rgba(60,60,67,.12)` | `rgba(255,255,255,.10)` | `rgba(90,70,40,.12)` |
-| `--danger` / badge | `#ff3b30` | `#d70015` (white text 4.5:1) | `#c4281d` |
-| `--success` | `#248a3d` | `#30d158` | `#2f7a3f` |
+| `--danger` fill (badges, destructive buttons, white text) | `#d70015` | `#d70015` | `#b3261e` |
+| `--danger-fg` danger as text | `#c4001a` | `#ff6961` | `#a8221b` |
+| `--success` | `#1e7a36` | `#30d158` | `#2a6f39` |
 
-The values come from `docs/visual-v3/mocks/home-light.html` and `home-dark.html`; where a mock and this table differ, this table wins (it was adjusted for contrast). Sepia is new territory: the builder may tune the four sepia surfaces as long as the contrast script passes.
+The values come from `docs/visual-v3/mocks/home-light.html` and `home-dark.html`, darkened where the mocks fail contrast; where a mock and this table differ, this table wins.
+
+**Contrast rule (unchanged from the design system):** all text 4.5:1 on the surface it sits on, including `--text-3`, status and danger text; 3:1 for icons, stars, progress fills and focus rings. `node docs/contrast.mjs` enforces it for every theme times every accent. The builder may move any grey, status or accent value by small steps to pass, keeping its hue family and the overall look; sepia surfaces may be tuned freely within the rule.
 
 ### 4.2 Accent
 
@@ -63,12 +66,12 @@ Accents: `orange` (new default), `blue`, `teal`, `rose`. `amber` is removed and 
 
 | Accent | Fill `--accent` | Text on fill `--accent-fg` | Accent text on light surfaces `--accent-text` | Accent text on dark surfaces | Tint `--accent-soft` |
 |---|---|---|---|---|---|
-| orange | `#ff9f0a` | `#000` | `#a45f00` | `#ff9f0a` | 16 % of the fill |
-| blue | `#0a84ff` | `#fff` | `#0062cc` | `#409cff` | 16 % |
+| orange | `#ff9f0a` | `#000` | `#8f5200` | `#ff9f0a` | 16 % of the fill |
+| blue | `#0066d6` | `#fff` | `#0062cc` | `#409cff` | 16 % |
 | teal | `#30b0c7` | `#000` | `#0b7285` | `#5ac8db` | 16 % |
-| rose | `#ff375f` | `#fff` | `#c41e45` | `#ff6482` | 16 % |
+| rose | `#d81b48` | `#fff` | `#c41e45` | `#ff6482` | 16 % |
 
-The builder may adjust a value by a few steps where the contrast script fails; the hue family is fixed. Accent use: primary button, active nav item (tint background + accent text), progress fills, the goal ring, links ("See all", "Edit goal"), the notification badge only if it is not `--danger`. Links use the accent, not iOS blue (the light mock's blue links are replaced).
+Blue and rose fills are darker than the iOS system colours so white button text passes 4.5:1. `--accent-text` must also pass on the 16 % tint (active nav item) and on sepia; the contrast script checks both. Accent use: primary button, active nav item (tint background + accent text), progress fills, the goal ring, links ("See all", "Edit goal"), the notification badge only if it is not `--danger`. Links use the accent, not iOS blue (the light mock's blue links are replaced).
 
 Stars do not follow the accent: `--gold` is `#f5a623` in dark and `#b26a00` in light and sepia (3:1 on white for 13 px stars; this also fixes review finding F101). Empty stars are `--surface-2` with a 1 px `--border-1` outline.
 
@@ -78,7 +81,8 @@ Stars do not follow the accent: `--gold` is `#f5a623` in dark and `#b26a00` in l
 - `backend/src/db.js` `migrate()`: one-shot `UPDATE users SET accent = 'orange' WHERE accent = 'amber'`, recorded in `schema_flags`.
 - `frontend/src/prefs.js`: `ACCENT_KEYS`, `ACCENT_COLORS`, default `orange`; `normalise()` maps a stored `amber` to `orange`.
 - `frontend/index.html` pre-paint script: the accent list and the `theme-color` values per theme follow §4.1.
-- Existing tests that assert `amber` are updated; add one test for the amber-to-orange mapping on PATCH.
+- Other places that hard-code `amber` or v2 colours: `ui/storyCard.js` (`ACCENTS`, fallback), `views/settings/appearance.js` (`ACCENT_LABELS`, theme preview colours), `frontend/public/manifest.json` (`theme_color`, `background_color` to `#000000`), `android/app/src/main/res` (`colors.xml`, `splash.xml` to `#ff9f0a`). `grep -rn amber frontend/src backend/src android` must come back empty except the migration and the PATCH mapping.
+- Add one backend test: PATCH `accent: 'amber'` stores `orange`; and one for the boot migration.
 
 ### 4.4 Type
 
@@ -107,7 +111,7 @@ Stars do not follow the accent: `--gold` is `#f5a623` in dark and `#b26a00` in l
 
 ### 4.6 The dark tinted header
 
-In dark (and only dark), the top of the content area on Home and Book gets a flat vertical gradient from the current book's ambient colour to `--surface-0` over 420 px desktop, 360 px phone. Colour: `ambientFor()` result, clamped to lightness 18 to 26 % and saturation at most 55 % (the mock uses `#4a2a14` for Dune). No current book: no tint. Text on the tint uses `--text-1` / `--text-2` and must pass 4.5:1 at the lightest allowed tint.
+In dark (and only dark), the top of the content area on Home and Book gets a flat vertical gradient from the current book's ambient colour to `--surface-0` over 420 px desktop, 360 px phone. Colour: hue and saturation from `ambientFor()` (`{h, s}`), with saturation capped at 45 % and a fixed lightness of 18 % at the top (`hsl(h, min(s, 45%), 18%)`; for Dune this lands near the mock's `#4a2a14`). No current book: no tint. With that cap `--text-1` and `--text-2` pass 4.5:1 on every hue; the contrast script adds a row for the worst case (yellow-green hue at 45 % / 18 %).
 
 ## 5. Components (`ui/*`, CSS in `styles.css`)
 
@@ -140,9 +144,9 @@ Every component keeps its JS API unless listed. Changes are visual.
 
 ### 6.1 Shell (`main.js`, `styles.css`)
 
-- **1024 px and wider:** a 260 px left sidebar, fixed, full height: wordmark, the five destinations (Home, Library, Discover, Community, Stats) as 44 px rows with a 22 px icon, a "Shelves" caption and the shelf list with counts (the status shelves Reading, To read, Finished first, then custom shelves in their order; each links to its existing Library route), and at the bottom the streak widget (§6.2) and the account row (avatar, name, menu). The content header row holds the date caption, large title, search field, notifications and nothing else.
+- **1024 px and wider:** a 260 px left sidebar, fixed, full height: wordmark, the five destinations (Home, Library, Discover, Community, Stats) as 44 px rows with a 22 px icon, a "Shelves" caption and the shelf list with counts (the status shelves Reading, To read, Finished first, then custom shelves in their order; each links to its existing Library route), and at the bottom the account row (avatar, name, menu). The content header row holds the date caption, large title, search field, notifications and nothing else.
 - **768 to 1023 px:** the sidebar collapses to 72 px icons only with tooltips; shelves move into Library.
-- **Below 768 px:** no sidebar. Top bar with the wordmark, notifications and avatar; the large title below it scrolls away; the existing bottom bar becomes an iOS tab bar (Home, Library, +, Community, Stats) with an accent active item and the `+` as a 52 px accent circle. Content gets bottom padding for the tab bar (fixes F003: the bulk action bar and toasts sit above the tab bar).
+- **Below 768 px:** no sidebar. Top bar with the wordmark, a search button (opens the command palette, as today), notifications and avatar; the large title below it scrolls away; Discover stays reachable from the `+` sheet and the palette, as today; the existing bottom bar becomes an iOS tab bar (Home, Library, +, Community, Stats) with an accent active item and the `+` as a 52 px accent circle. Content gets bottom padding for the tab bar (fixes F003: the bulk action bar and toasts sit above the tab bar).
 - The current header nav pills, the `.nav` thumb and the header glass are removed. The avatar menu keeps its items.
 - Public (signed-out) routes keep a minimal top bar with the wordmark and "Sign in".
 
@@ -150,7 +154,7 @@ Every component keeps its JS API unless listed. Changes are visual.
 
 Build to the mocks. Order and content:
 
-1. Date caption (11 px uppercase), large title "Home", one line: "Good evening · 2 in progress · 10 of 24 this year", and a streak chip when the streak is at least 2 days.
+1. Date caption (11 px uppercase), large title "Home", one line: "Good evening · 2 in progress · 10 of 24 this year".
 2. Two columns at 1024 px and wider (2:1); one column below.
    - **Continue reading** (left): grouped card with the current book (cover 120 px desktop, 96 px phone), "READING NOW" eyebrow in accent text, title 28 px, author and "Page x of y" when pages are known, percentage as a stat, the progress bar, "about N h left" from `etaLabel`, buttons Update progress (primary) and Finish (secondary). Other reading books as list rows below a separator inside the same card (max 3, then "See all").
    - **2026 goal** (right): grouped card with the ring (116 px desktop, 96 px phone), "10 of 24 books", "14 to go by 31 December", the pace pill, then "Finished per month" as 12 small bars with values. "Edit goal" link in the section header. No goal: the card shows "Set a yearly goal" with a secondary button.
@@ -159,17 +163,21 @@ Build to the mocks. Order and content:
 5. **Recently finished**: grouped list rows with cover thumb, title, author, stars. Max 3.
 6. Integration widgets (Now listening, Recently added in apps) stay, as grouped cards after Recently finished, only when connected.
 
-Streak: the app already computes it in `views/stats.js` (`streak` from daily activity); move that helper into `ui/meta.js` (pure, unit tested) and reuse it for Home and the sidebar widget. The sidebar widget shows the current streak and the last 7 days as dots; hidden below 1024 px.
+Streak: see §6.3.
+
+### 6.3 Streak (owner decision: dropped)
+
+The mocks show a streak chip on Home and a 7-day streak widget in the sidebar. Neither is built. Bookworm only records days a read-through is finished (`computeStreak()` in `views/stats.js`), so a streak would almost always read 0, and a real reading streak would need new data. The existing streak tile on Stats stays as it is.
 
 ## 7. The other screens (light pass)
 
 Each view gets the shell, the large title, grouped cards and the restyled kit. Only these layout changes:
 
-- **Library:** the left rail is removed at 1024 px and wider (the sidebar has the shelves); a chip row (All, Reading, To read, Finished, then shelves) replaces it at every width. Toolbar: search field, sort menu, Grid/List segmented control, Select. Bulk bar sits above the tab bar on phone. Add "Select all" in selection mode (F088).
+- **Library:** the left rail is removed at 1024 px and wider (the sidebar lists the shelves); a chip row (All, Reading, To read, Finished, then shelves) replaces it at every width. Everything else the rail did moves, nothing is dropped: the chip row ends with a "Manage shelves" button that opens the sheet the rail already uses on phone (new, rename, recolour, delete, reorder including Alt+Arrow and `PATCH /shelves/reorder`); the "Sources" availability checkboxes (Audiobookshelf, Calibre) move into a Filter menu next to Sort. Toolbar: search field, Filter, Sort, Grid/List segmented control, Select. Bulk bar sits above the tab bar on phone. Add "Select all" in selection mode (F088).
 - **Book:** two columns at 1024 px and wider: left the cover (200 px), title, author, meta, tags, actions; right a grouped "Your reading" card (status segmented control, progress, shelves as chips, notes, reading history as rows). The "Your reading" card starts at the top of the page, not below the hero. Dark tinted header (§4.6). Comments as list rows. The "You might also like" row ends with a peeking cover, not a hard cut.
 - **Discover:** large title, search field, then grouped sections instead of an empty page: "Recent searches" as chips and "Recommended for you" as a ShelfRow (both already exist in the view).
 - **Community:** tabs become a segmented control (Feed · People · Challenges · Groups); feed items as grouped list rows; people as rows with a Follow button.
-- **Profile:** header as a grouped card (avatar 72 px, name, bio, counts, Edit profile or Follow), no cover mosaic banner; tabs as a segmented control; shelves as ShelfRows.
+- **Profile:** header as a grouped card (avatar 72 px, name, bio, counts, Edit profile or Follow). A user's own banner (`bannerUrl`) stays: a 160 px tall image strip across the top of the card (120 px on phone), with the avatar overlapping its bottom edge. Without a banner the card has no strip; the cover-mosaic fallback is removed. Tabs as a segmented control; shelves as ShelfRows.
 - **Stats:** large title, the stat tiles as one grouped card with four cells, charts in grouped cards using the accent; sparse data shows the chart with a one-line note instead of tall empty axes.
 - **Settings:** grouped list rows (iOS Settings). Appearance keeps theme (Dark, Light, Sepia, System), accent (Orange, Blue, Teal, Rose) and card size, each with a live preview redrawn in the v3 look. Search language stays where it is.
 - **Auth:** a centred grouped card on `--surface-0`, the wordmark above it, no cover wall.
@@ -181,11 +189,11 @@ Each stage is one PR, reviewed, merged before the next starts. Every PR: `npm ru
 1. **Foundations and kit:** tokens, fonts (self-hosted), accent migration (backend, prefs, pre-paint), `styles.css` component rules, removals from §4.5, contrast script. Views are untouched and will look half-converted; acceptable on the branch, not merged alone if it looks broken (stage 1 and 2 may ship together).
 2. **Shell and Home:** sidebar, tab bar, large title pattern, Home to the mocks, streak helper.
 3. **Library and Book.**
-4. **Discover, Community, Profile, Stats, Settings, Auth**, plus doc updates (`docs/architecture.md` theming section, `frontend/src/ui/README.md`, roadmap decisions log).
+4. **Discover, Community, Profile, Stats, Settings, Auth**, plus doc updates (`docs/architecture.md` theming section and its wrong "no frontend test suite" line, `frontend/src/ui/README.md`, roadmap decisions log).
 
 ## 9. Folded-in fixes from the review
 
-F003 bulk bar under the tab bar (§6.1), library cover ghost text (§5 Cover), F044 Google Fonts blocking (§4.4), F045 button loading state (§5 Button), F046 route-opened modal losing focus (stage 2, shell), F088 select all (§7 Library), F100 palette announcements (§5), F101 star contrast (§4.2).
+F003 bulk bar under the tab bar (§6.1), library cover ghost text (§5 Cover), F044 Google Fonts blocking (§4.4), F045 button loading state (§5 Button), F046 route-opened modal losing focus (stage 2, shell: when `#discover/manual` opens the manual-add modal during render, `focusHeading()` in `main.js` moves focus to the page `h1` behind the dialog; skip `focusHeading` when an `[aria-modal="true"]` dialog is open or holds focus), F088 select all (§7 Library), F100 palette announcements (§5), F101 star contrast (§4.2).
 
 ## 10. Left to the builder
 
