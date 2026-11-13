@@ -79,7 +79,7 @@ const off = mountBookGrid(container, { onStatus, onRemove });   // one delegated
 type: `.h1` `.h2` `.h3` `.title` `.label` `.eyebrow` `.stat` `.stat-sm` `.tabular` (the Year in review display sizes live inside `.story-card` only) ·
 `.card` `.grouped` (grouped cards; not `.group`, Tailwind's group-hover marker) · `.row` `.row--thumb` `.row__lead` `.row__main` `.row__title` `.row__sub` `.row__trail` `.row__chev` (list rows) ·
 `.tint-top` (the dark tinted header: dark theme only, from the element's `--ambient-h/-s`, painted from the window top across the content area; put it first in the view and add it only when there is a current book) ·
-`.ambient` `.ambient--page` (cover hue via `applyAmbient`; `.ambient--page` paints the dark tinted header behind the Book page) ·
+`.ambient` (cover hue via `applyAmbient`) ·
 `.avatar-stack` · `.rail` `.rail__item` (Library / Settings navigation rows) ·
 `.title-bar` (shell/titleBar.js, the large-title row) ·
 `.hero-pill` (profile hero stat pills) · `.btn-split` `.btn-split__toggle` · `.card--quiet` `.card--ambient` · `.delta` `.delta--up` `.delta--down`.

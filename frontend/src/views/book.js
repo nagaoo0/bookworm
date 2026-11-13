@@ -6,9 +6,10 @@
 import { api } from '../api.js';
 import { getState, subscribe } from '../store.js';
 import { loadLibrary, upsertLibraryEntry, removeLibraryEntries } from '../libraryStore.js';
-import { html, safeUrl } from '../utils.js';
+import { html, safeUrl, escHtml } from '../utils.js';
 import { openSse } from '../sse.js';
 import { openLogReadModal, dayKey } from '../components/logReadModal.js';
+import { titleBar } from '../shell/titleBar.js';
 import {
   ACTION, EMPTY, ERROR, LABEL, STATUS, TOAST, ambientFor, applyAmbient, authorsHero, avatar, badge, bookCard, bookTags,
   button, card, chipGroup, cover, delegate, emptyState, field, formatAuthors, formatDate, icon, iconButton, mountBookGrid,
@@ -106,15 +107,13 @@ export function renderBook(el, params) {
     skelTimer = setTimeout(() => {
       if (stale() || el.firstChild) return;
       el.innerHTML = String(html`
-        <div class="space-y-8 pt-8" aria-busy="true">
-          <div class="flex flex-col items-center md:flex-row md:items-end gap-6 md:gap-10">
+        <div class="book-layout pt-4" data-aside="true" aria-busy="true">
+          <div class="book-layout__hero"><div class="book-hero">
             ${skeleton({ w: 200, h: 300 })}
-            <div class="flex-1 w-full space-y-3">${skeleton({ w: '60%', h: 44 })}${skeleton({ w: '30%', h: 16 })}${skeleton({ w: '45%', h: 14 })}${skeleton({ w: 200, h: 24 })}${skeleton({ w: 220, h: 48 })}</div>
-          </div>
-          <div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <div class="space-y-3">${skeleton({ w: '20%', h: 24 })}${skeleton({ w: '100%', h: 14 })}${skeleton({ w: '96%', h: 14 })}${skeleton({ w: '88%', h: 14 })}</div>
-            ${skeleton({ w: '100%', h: 320 })}
-          </div>
+            <div class="flex-1 w-full space-y-3">${skeleton({ w: '60%', h: 40 })}${skeleton({ w: '30%', h: 16 })}${skeleton({ w: '45%', h: 14 })}${skeleton({ w: 220, h: 44 })}</div>
+          </div></div>
+          <div class="book-layout__aside">${skeleton({ w: '100%', h: 320 })}</div>
+          <div class="book-layout__rest space-y-3">${skeleton({ w: '20%', h: 24 })}${skeleton({ w: '100%', h: 14 })}${skeleton({ w: '96%', h: 14 })}${skeleton({ w: '88%', h: 14 })}</div>
         </div>`);
     }, 150);
 
@@ -213,16 +212,16 @@ function createPage(el, data, user) {
   }
 
   // ── Skeleton of the page: slots are filled by the render* functions below ──
-  // The ambient backdrop is a page-wide wash: its ::before spans the content area and runs up under the shell's top
-  // bar (see .ambient--page) while content keeps the column.
+  // From 1024 px "Your reading" is a right column that starts at the top, beside the hero; below that it follows the
+  // hero (a tab on phones). The dark tint (.tint-top) is painted from the window top behind the top block.
   el.innerHTML = String(html`
-    <div class="book-page ambient ambient--page pb-20 md:pb-0" data-page>
-      <div class="pt-1">${button({ label: 'Back', variant: 'ghost', size: 'sm', icon: 'arrow-left', cls: '-ml-2', attrs: 'data-action="back"' })}</div>
-      <section aria-label="Book details" class="mt-3 md:mt-6" data-slot="hero"></section>
-      <div class="md:hidden mt-6" data-slot="tabs"></div>
-      <div class="mt-6 md:mt-12 grid gap-8 md:gap-10 lg:grid-cols-1 lg:data-[aside=true]:grid-cols-[minmax(0,1fr)_var(--aside-w)]" data-layout data-aside="false">
-        <aside class="min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-[84px] lg:self-start lg:max-h-[calc(100dvh-100px)] lg:overflow-y-auto lg:overscroll-contain lg:[scrollbar-width:thin]" role="tabpanel" id="${tid}-panel-reading" aria-labelledby="${tid}-tab-reading" data-panel="reading" hidden><div data-slot="reading"></div></aside>
-        <div class="min-w-0 space-y-10 md:space-y-12 lg:col-start-1 lg:row-start-1">
+    <div class="book-page tint-top pb-20 md:pb-0" data-page>
+      <div class="book-page__back">${button({ label: 'Back', variant: 'ghost', size: 'sm', icon: 'arrow-left', cls: '-ml-2', attrs: 'data-action="back"' })}</div>
+      <div class="book-layout" data-layout data-aside="false">
+        <section aria-label="Book details" class="book-layout__hero" data-slot="hero"></section>
+        <div class="book-layout__tabs md:hidden" data-slot="tabs"></div>
+        <aside class="book-layout__aside" role="tabpanel" id="${tid}-panel-reading" aria-labelledby="${tid}-tab-reading" data-panel="reading" hidden><div data-slot="reading"></div></aside>
+        <div class="book-layout__rest">
           <div role="tabpanel" id="${tid}-panel-about" aria-labelledby="${tid}-tab-about" data-panel="about"><div data-slot="about"></div></div>
           <div role="tabpanel" id="${tid}-panel-community" aria-labelledby="${tid}-tab-community" data-panel="community"><div data-slot="community"></div></div>
         </div>
@@ -272,22 +271,21 @@ function createPage(el, data, user) {
     const metaLine = [year, v.pages ? plural(v.pages, 'page') : '', S.book.publisher].filter(Boolean).join(' · ');
     const tags = bookTags(v.categories, { maxGenres: 3, maxAccolades: 1 });
     return html`
-      <div class="flex flex-col items-center text-center gap-6 md:flex-row md:items-end md:text-left md:gap-10">
+      <div class="book-hero">
         <div class="shrink-0">${cover({ url: v.cover, bookId: S.book.id, title: v.title, authors: v.authors, size: 'lg', zoomable: true })}</div>
-        <div class="min-w-0 flex-1 space-y-3 pb-1">
+        <div class="min-w-0 w-full flex-1 space-y-3 pb-1">
           <div>
-            <h1 class="h1 break-words" data-focus-target>${v.title}</h1>
-            ${v.authors.length ? html`<p class="text-body text-text-2 mt-2">${authorsHero(v.authors)}</p>` : ''}
-            ${metaLine ? html`<p class="text-small text-text-3 mt-1 tabular-nums">${metaLine}</p>` : ''}
+            ${titleBar({ title: v.title, summary: v.authors.length ? authorsHero(v.authors) : undefined })}
+            ${metaLine ? html`<p class="text-small text-text-2 mt-1 tabular-nums">${metaLine}</p>` : ''}
           </div>
-          ${tags ? html`<div class="flex flex-wrap justify-center md:justify-start gap-2 max-h-[4.75rem] overflow-hidden">${tags}</div>` : ''}
+          ${tags ? html`<div class="book-hero__line flex flex-wrap gap-2 max-h-[4.75rem] overflow-hidden">${tags}</div>` : ''}
           ${(avg || e) ? html`
-            <div class="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-2">
+            <div class="book-hero__line flex flex-wrap items-center gap-x-4 gap-y-2">
               ${avg ? html`<span class="inline-flex items-center gap-2">${stars({ value: avg, size: 20 })}<span class="text-small text-text-2 tabular-nums">${avg.toFixed(1)} · ${plural(S.sessions.length, 'read')}</span></span>` : ''}
               ${e ? statusBadge(e.status, { size: 'md' }) : ''}
             </div>` : ''}
-          ${e?.status === 'reading' ? html`<div class="w-full max-w-sm mx-auto md:mx-0" data-hero-progress>${progressBar({ value: e.progress_pct ?? 0, showValue: true, label: 'Reading progress', glow: true })}</div>` : ''}
-          <div class="flex flex-wrap items-center justify-center md:justify-start gap-3 pt-2" data-hero-cta>
+          ${e?.status === 'reading' ? html`<div class="book-hero__progress w-full max-w-sm" data-hero-progress>${progressBar({ value: e.progress_pct ?? 0, showValue: true, label: 'Reading progress' })}</div>` : ''}
+          <div class="book-hero__line flex flex-wrap items-center gap-3 pt-2" data-hero-cta>
             ${primaryCta()}
             ${e?.status === 'reading' ? button({ label: ACTION.finish, variant: 'secondary', size: 'lg', icon: 'check', attrs: 'data-action="finish"' }) : ''}
             ${user ? iconButton({ icon: 'more-horizontal', label: `More actions for ${v.title}`, variant: 'solid', cls: '!h-12 !w-12', attrs: 'data-more aria-haspopup="menu"' }) : ''}
@@ -330,35 +328,34 @@ function createPage(el, data, user) {
       : s.source === 'calibre' ? badge({ label: 'Calibre', variant: 'success', icon: 'book-copy' })
         : '';
     const sid = Number(s.id);
+    const dates = readDates(s);
     return html`
-      <li class="py-3 space-y-1.5 border-t border-border-1 first:border-t-0 first:pt-0" data-session-id="${sid}">
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span class="text-small font-medium">${readDates(s)}</span>
-          ${s.rating ? stars({ value: s.rating, size: 14 }) : ''}
-          ${src}
+      <li class="row book-row" data-session-id="${sid}">
+        <div class="row__main">
+          <span class="row__title">${dates}</span>
+          ${(s.rating || src) ? html`<span class="book-row__meta">${s.rating ? stars({ value: s.rating, size: 14 }) : ''}${src}</span>` : ''}
+          ${s.review ? html`<p class="book-row__text">${s.review}</p>` : ''}
         </div>
-        ${s.review ? html`<p class="text-text-2 whitespace-pre-line break-words">${s.review}</p>` : ''}
-        <div class="flex flex-wrap items-center gap-1 -ml-2">
-          ${button({ label: ACTION.edit, variant: 'ghost', size: 'sm', icon: 'pencil', attrs: `data-action="edit-read" data-session-id="${sid}"` })}
-          <button type="button" class="btn btn--danger-ghost btn--sm" data-confirm="Delete this read?" data-confirm-verb="Delete" data-confirm-action="session" data-id="${sid}">
-            <span class="btn__icon">${icon('trash-2', { size: 16 })}</span><span class="btn__label">${ACTION.delete}</span>
-          </button>
+        <div class="row__trail">
+          ${iconButton({ icon: 'pencil', label: `${ACTION.edit} read: ${dates}`, size: 'sm', attrs: `data-action="edit-read" data-session-id="${sid}"` })}
+          ${iconButton({ icon: 'trash-2', label: `${ACTION.delete} read: ${dates}`, size: 'sm', cls: 'book-row__delete', attrs: `data-confirm="Delete this read?" data-confirm-verb="Delete" data-confirm-action="session" data-id="${sid}"` })}
         </div>
       </li>`;
   }
 
   function historyHTML() {
     return html`
-      <div class="space-y-3">
-        <div class="flex items-center justify-between gap-3">
-          <h3 class="h3">Reading history</h3>
-          ${button({ label: ACTION.logRead, variant: 'ghost', size: 'sm', icon: 'plus', attrs: 'data-action="log-read"' })}
-        </div>
-        ${S.sessions.length
-          ? html`<ul>${S.sessions.map(readRowHTML)}</ul>`
-          : html`<p class="text-small text-text-3">${EMPTY.noReads.title}</p>`}
-      </div>`;
+      <div class="book-reading__head">
+        <h3 class="h3">Reading history</h3>
+        ${button({ label: ACTION.logRead, variant: 'ghost', size: 'sm', icon: 'plus', cls: '-mr-2', attrs: 'data-action="log-read"' })}
+      </div>
+      ${S.sessions.length
+        ? html`<ul class="book-rows">${S.sessions.map(readRowHTML)}</ul>`
+        : html`<p class="book-reading__empty">${EMPTY.noReads.title}</p>`}`;
   }
+
+  // shelf chips wrap; a long name is cut with an ellipsis (the full name stays the chip's name and its tooltip)
+  const shelfItem = (s) => ({ value: s.id, label: s.name, color: s.color, attrs: String(s.name).length > 24 ? `title="${escHtml(s.name)}"` : '' });
 
   function readingHTML() {
     const e = getEntry();
@@ -367,33 +364,32 @@ function createPage(el, data, user) {
     const notes = S.notes.draft ?? e.notes ?? '';
     return html`
       <section aria-labelledby="${ids.reading}">
-        ${card({ content: html`
-          <div class="space-y-5">
-            <h2 class="h3" id="${ids.reading}">Your reading</h2>
-            <div class="space-y-2">
-              <p class="label">Status</p>
-              ${segmented({ name: 'status', label: 'Reading status', block: true, value: e.status, items: STATUS_KEYS.map(k => ({ value: k, label: STATUS[k].label, icon: STATUS[k].icon })) })}
-            </div>
-            ${e.status === 'reading' ? html`
-              <div class="space-y-2">
-                <p class="label">Progress</p>
-                <div class="flex items-center gap-3">
-                  <div class="flex-1 min-w-0">${progressSlider({ value: e.progress_pct ?? 0, label: 'Reading progress' })}</div>
-                  <span class="text-caption text-success opacity-0 transition-opacity" data-progress-saved role="status"></span>
-                </div>
-              </div>` : ''}
-            <div class="space-y-2">
-              <p class="label">Shelves</p>
-              ${shelves.length
-                ? chipGroup({ name: 'shelf', multi: true, wrap: true, label: 'Shelves', values: e.shelf_ids ?? [], items: shelves.map(s => ({ value: s.id, label: s.name, color: s.color })) })
-                : html`<p class="text-small text-text-3">No shelves yet. <a class="text-accent-text hover:underline" href="#library">Create one in your library</a>.</p>`}
-            </div>
-            <div>
-              ${field({ name: 'notes', label: LABEL.privateNotes, type: 'textarea', rows: 4, maxlength: 10000, value: notes, placeholder: 'Quotes, context, anything to remember' })}
-              <p class="text-caption mt-1 min-h-4" data-notes-status role="status"></p>
-            </div>
-            <div class="border-t border-border-1 pt-5" data-slot="history">${historyHTML()}</div>
-          </div>` })}
+        ${sectionHeader({ title: 'Your reading', id: ids.reading })}
+        <div class="grouped book-reading">
+          <div class="book-reading__sec">
+            <p class="label">Status</p>
+            ${segmented({ name: 'status', label: 'Reading status', block: true, value: e.status, items: STATUS_KEYS.map(k => ({ value: k, label: STATUS[k].label, icon: STATUS[k].icon })) })}
+          </div>
+          ${e.status === 'reading' ? html`
+            <div class="book-reading__sec">
+              <p class="label">Progress</p>
+              <div class="flex items-center gap-3">
+                <div class="flex-1 min-w-0">${progressSlider({ value: e.progress_pct ?? 0, label: 'Reading progress' })}</div>
+                <span class="text-caption text-success opacity-0 transition-opacity" data-progress-saved role="status"></span>
+              </div>
+            </div>` : ''}
+          <div class="book-reading__sec">
+            <p class="label">Shelves</p>
+            ${shelves.length
+              ? chipGroup({ name: 'shelf', multi: true, wrap: true, label: 'Shelves', values: e.shelf_ids ?? [], items: shelves.map(shelfItem) })
+              : html`<p class="text-small text-text-2">No shelves yet. <a class="text-accent-text hover:underline" href="#library">Create one in your library</a>.</p>`}
+          </div>
+          <div class="book-reading__sec book-reading__notes">
+            ${field({ name: 'notes', label: LABEL.privateNotes, type: 'textarea', rows: 4, maxlength: 10000, value: notes, placeholder: 'Quotes, context, anything to remember' })}
+            <p class="book-reading__status text-caption" data-notes-status role="status"></p>
+          </div>
+          <div class="book-reading__history" data-slot="history">${historyHTML()}</div>
+        </div>
       </section>`;
   }
 
@@ -443,7 +439,7 @@ function createPage(el, data, user) {
             <span data-abs-label>${finished ? 'Finished' : `${pct ?? 0}% complete`}</span>
             <span data-abs-remaining>${remaining ? `${hoursMins(remaining)} remaining` : ''}</span>
           </div>
-          ${progressBar({ value: finished ? 100 : (pct ?? 0), size: 'sm', tone: finished ? 'success' : 'info', label: 'Audiobook progress' })}
+          ${progressBar({ value: finished ? 100 : (pct ?? 0), size: 'sm', tone: finished ? 'success' : 'accent', label: 'Audiobook progress' })}
         </div>` });
     }
     if (a.service === 'calibre') {
@@ -550,28 +546,30 @@ function createPage(el, data, user) {
   function commentHTML(c) {
     const own = user?.username && user.username === c.username;
     return html`
-      <li class="flex gap-3" data-comment-id="${Number(c.id)}">
-        ${avatar({ username: c.username, size: 32 })}
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-x-2">
-            <a class="text-small font-medium text-accent-text hover:underline" href="#u/${encodeURIComponent(c.username)}">@${c.username}</a>
-            <time class="text-caption text-text-3" datetime="${c.created_at}" title="${formatDate(c.created_at)}">${timeAgo(c.created_at)}</time>
-          </div>
-          <p class="text-body whitespace-pre-line break-words">${c.body}</p>
-          ${own ? html`<div class="mt-1"><button type="button" class="btn btn--danger-ghost btn--sm -ml-2" data-confirm="Delete comment?" data-confirm-verb="Delete" data-confirm-action="comment" data-id="${Number(c.id)}"><span class="btn__icon">${icon('trash-2', { size: 16 })}</span><span class="btn__label">${ACTION.delete}</span></button></div>` : ''}
+      <li class="row book-row" data-comment-id="${Number(c.id)}">
+        ${avatar({ username: c.username, size: 40 })}
+        <div class="row__main">
+          <p class="book-row__head">
+            <a class="book-row__name" href="#u/${encodeURIComponent(c.username)}">@${c.username}</a>
+            <time class="book-row__time" datetime="${c.created_at}" title="${formatDate(c.created_at)}">${timeAgo(c.created_at)}</time>
+          </p>
+          <p class="book-row__text">${c.body}</p>
         </div>
+        ${own ? html`<div class="row__trail">${iconButton({ icon: 'trash-2', label: `${ACTION.delete} comment`, size: 'sm', cls: 'book-row__delete', attrs: `data-confirm="Delete comment?" data-confirm-verb="Delete" data-confirm-action="comment" data-id="${Number(c.id)}"` })}</div>` : ''}
       </li>`;
   }
 
   function commentsHTML() {
+    // comments and recommendations need an account (the API answers 401), so signed out they are not requested
+    if (!user) return html`<p class="label mb-3">Comments</p><p class="text-small text-text-2"><a class="text-accent-text hover:underline" href="${safeUrl(authHref())}">Sign in to read and post comments</a></p>`;
     return html`
       <p class="label mb-3">Comments${S.comments.length ? ` · ${S.comments.length}` : ''}</p>
       <div aria-live="polite">
         ${S.load.comments === 'loading' && !S.comments.length ? html`<div role="status" aria-label="Loading comments" aria-busy="true" class="space-y-3">${skeleton({ w: '100%', h: 40 })}${skeleton({ w: '80%', h: 40 })}</div>`
           : S.load.comments === 'error' && !S.comments.length ? sectionError('comments', 'comments')
             : S.comments.length
-              ? html`<ul class="space-y-5">${S.comments.map(commentHTML)}</ul>`
-              : html`<p class="text-small text-text-3">${user ? 'No comments yet. Be the first.' : 'No comments yet.'}</p>`}
+              ? html`<ul class="grouped book-rows">${S.comments.map(commentHTML)}</ul>`
+              : html`<p class="text-small text-text-2">No comments yet. Be the first.</p>`}
       </div>`;
   }
   function renderComments() {
@@ -590,17 +588,17 @@ function createPage(el, data, user) {
     return html`
       <div>
         <p class="label mb-3">${LABEL.friendsOnThisBook} · ${S.social.length}</p>
-        <ul>
+        <ul class="grouped book-rows">
           ${S.social.map(u => html`
-            <li class="flex gap-3 py-3 border-t border-border-1 first:border-t-0 first:pt-0">
-              ${avatar({ username: u.username, size: 32 })}
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <a class="text-small font-medium text-accent-text hover:underline" href="#u/${encodeURIComponent(u.username)}">@${u.username}</a>
+            <li class="row book-row">
+              ${avatar({ username: u.username, size: 40 })}
+              <div class="row__main">
+                <p class="book-row__head">
+                  <a class="book-row__name" href="#u/${encodeURIComponent(u.username)}">@${u.username}</a>
                   ${statusBadge(u.status)}
                   ${u.rating ? stars({ value: u.rating, size: 14 }) : ''}
-                </div>
-                ${u.review ? html`<p class="text-text-2 mt-1 line-clamp-3 whitespace-pre-line break-words">${u.review}</p>` : ''}
+                </p>
+                ${u.review ? html`<p class="book-row__text line-clamp-3">${u.review}</p>` : ''}
               </div>
             </li>`)}
         </ul>
@@ -651,7 +649,7 @@ function createPage(el, data, user) {
                   ${field({ name: 'body', ariaLabel: 'Add a comment', type: 'textarea', rows: 2, maxlength: 2000, placeholder: 'Leave a comment' })}
                   <div class="flex justify-end">${button({ label: 'Post', variant: 'ghost', size: 'sm', type: 'submit' })}</div>
                 </div>
-              </form>` : html`<p class="mt-4 text-small text-text-2"><a class="text-accent-text hover:underline" href="${safeUrl(authHref())}">Sign in to comment</a></p>`}
+              </form>` : ''}
           </div>
         </div>
       </section>`;
@@ -1140,7 +1138,7 @@ function createPage(el, data, user) {
     const n = el.querySelector('[data-notes-status]');
     if (!n) return;
     n.textContent = text;
-    n.className = `text-caption mt-1 min-h-4 ${tone === 'error' ? 'text-danger' : tone === 'ok' ? 'text-success' : ''}`;
+    n.className = `book-reading__status text-caption ${tone === 'error' ? 'text-danger' : tone === 'ok' ? 'text-success' : ''}`;
   };
   async function saveNotes() {
     clearTimeout(notesTimer);
@@ -1318,9 +1316,7 @@ function createPage(el, data, user) {
   }
 
   // Kick off the slow requests only now: the page above is already interactive
-  sectionLoaders.comments();
-  sectionLoaders.recs();
-  if (user) { sectionLoaders.social(); sectionLoaders.avail(); }
+  if (user) { sectionLoaders.comments(); sectionLoaders.recs(); sectionLoaders.social(); sectionLoaders.avail(); }
 
   return runCleanups;
   } catch (err) {

@@ -542,24 +542,9 @@ html[data-theme="light"] .tint-top::before, html[data-theme="sepia"] .tint-top::
 .page-enter { animation: fadeInUp 220ms var(--ease-out) both; }
 
 /* ── 6. Cover-derived ambient colour (ui/ambient.js) ──────────────────────────
-   JS writes --ambient-h / --ambient-s; the only thing painted from them is the dark tinted header (spec 4.6).
-   `.ambient--page` (Book) paints it behind the page top, across the content area, once the hue is known.          */
+   JS writes --ambient-h / --ambient-s; the only thing painted from them is the dark tinted header (spec 4.6,
+   `.tint-top` in the base layer, used by Home and Book).                                                        */
 .ambient { position: relative; isolation: isolate; }
-.ambient--page::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: -1px calc(50% - 50vw + var(--sidebar-w) / 2) auto;   /* the content area's width: the window minus the sidebar */
-  height: 420px;
-  pointer-events: none;
-  background: linear-gradient(var(--tint-top), transparent);
-  opacity: 0;
-  transition: opacity var(--dur-slow) var(--ease-out);
-}
-@media (max-width: 767px) { .ambient--page::before { height: 360px; } }
-.ambient--page.is-ambient::before { opacity: 1; }
-html[data-theme="light"] .ambient--page::before, html[data-theme="sepia"] .ambient--page::before { display: none; }
-@media (prefers-color-scheme: light) { html[data-theme="system"] .ambient--page::before { display: none; } }
 
 /* ═════════════════════════════════════════════════════════════════════════════
    7. Components (src/ui/*)
@@ -847,6 +832,9 @@ button.chip--tag { cursor: pointer; }
 .chip-group { position: relative; }
 .chip-group__scroll { display: flex; gap: 8px; overflow-x: auto; padding: 2px 1px; }
 .chip-group--wrap .chip-group__scroll { flex-wrap: wrap; overflow: visible; }
+/* a wrapping chip never runs past its row: a long label (a 60-character shelf name) ends in an ellipsis */
+.chip-group--wrap .chip { max-width: 100%; }
+.chip-group--wrap .chip > span:not([class]) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .chip-group--fade .chip-group__scroll {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
           mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
@@ -2224,6 +2212,63 @@ button.hero-pill, a.hero-pill { cursor: pointer; }
   .library-chips__manage-label { display: none; }
 }
 
+/* ── Book (views/book.js): layout, "Your reading" card, list rows ─────────── */
+.book-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; margin-top: 12px; }
+.book-layout > * { min-width: 0; }
+.book-layout__rest { display: flex; flex-direction: column; gap: 40px; }
+@media (min-width: 768px) {
+  .book-layout { gap: 40px; margin-top: 16px; }
+  .book-layout__rest { gap: 48px; }
+}
+/* 1024 px and wider: "Your reading" is a right column from the top of the page, beside the hero, and stays in view
+   while the left column scrolls */
+@media (min-width: 1024px) {
+  .book-layout[data-aside="true"] { grid-template-columns: minmax(0, 1fr) var(--aside-w); grid-template-rows: auto 1fr; }
+  .book-layout[data-aside="true"] > .book-layout__hero { grid-area: 1 / 1; }
+  .book-layout[data-aside="true"] > .book-layout__rest { grid-area: 2 / 1; }
+  .book-layout[data-aside="true"] > .book-layout__aside {
+    grid-area: 1 / 2 / 3 / 3;
+    align-self: start;
+    position: sticky;
+    top: 24px;
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+}
+/* hero: cover above the centred text; cover beside the text once its column has room (not by window width: from
+   1024 px the column beside "Your reading" can be as narrow as a phone) */
+.book-layout__hero { container-type: inline-size; }
+.book-hero { display: flex; flex-direction: column; align-items: center; gap: 24px; text-align: center; }
+.book-hero__line { justify-content: center; }
+.book-hero__progress { margin-inline: auto; }
+@container (min-width: 560px) {
+  .book-hero { flex-direction: row; align-items: flex-end; gap: 32px; text-align: left; }
+  .book-hero__line { justify-content: flex-start; }
+  .book-hero__progress { margin-inline: 0; }
+}
+/* the grouped card: padded sections split by separators, the reading history as rows */
+.book-reading > * + * { border-top: 1px solid var(--separator); }
+.book-reading__sec { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+/* the notes save status shares the line of the character counter */
+.book-reading__notes { position: relative; }
+.book-reading__status { position: absolute; left: 16px; bottom: 16px; margin: 0; }
+.book-reading__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px 4px; }
+.book-reading__empty { margin: 0; padding: 0 16px 16px; font-size: var(--text-small); line-height: var(--text-small--line-height); color: var(--text-2); }
+/* list rows that hold more than one line (reads, comments, friends): top-aligned, text wraps, actions on the right */
+.book-rows { margin: 0; padding: 0; list-style: none; }
+.book-row { align-items: flex-start; flex-wrap: wrap; padding-block: 12px; }
+.book-row > .row__main { flex: 1 1 160px; gap: 2px; }
+.book-row > .row__trail { gap: 0; margin: -5px -8px -5px auto; }   /* 32 px buttons centred on the first line */
+.book-row__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: var(--text-small); line-height: var(--text-small--line-height); }
+.book-row__name { font-weight: 600; color: var(--text-1); text-decoration: none; }
+.book-row__name:hover { text-decoration: underline; }
+.book-row__time { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.book-row__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 2px; }
+.book-row__text { margin: 2px 0 0; font-size: var(--text-body); line-height: var(--text-body--line-height); color: var(--text-1); white-space: pre-line; overflow-wrap: anywhere; }
+.book-row__delete:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger-fg); }
+
 /* ── Story card (ui/storyCard.js): Year in review, a flat accent block ────── */
 .story-card {
   position: relative;
@@ -2318,14 +2363,20 @@ button.hero-pill, a.hero-pill { cursor: pointer; }
   html[data-chrome="app"] .title-bar__caption { margin-top: -17px; margin-bottom: 4px; }
   html[data-chrome="app"] .title-bar__row { min-height: var(--shell-row); padding-right: calc(var(--utility-w) + 16px); }
 }
-/* the Book page's ambient wash starts at the top of the window, under the top bar: --content-top is the distance
-   from the window top to the content */
+/* the dark tinted header (.tint-top) starts at the top of the window, under the top bar: --content-top is the
+   distance from the window top to the content */
 html { --content-top: calc(var(--header-h) + env(safe-area-inset-top, 0px) + 12px); }
 @media (min-width: 768px) {
   html { --content-top: calc(var(--header-h) + 32px); }
   html[data-chrome="app"] { --content-top: calc(var(--shell-top) + var(--shell-row) + 16px); }
 }
-.ambient--page { margin-top: calc(-1 * var(--content-top)); padding-top: var(--content-top); }
+/* Book: the Back button sits in the shell's title row (left of the search field), and the book title in the hero
+   stays where it is instead of moving up into that row */
+@media (min-width: 768px) {
+  html[data-chrome="app"] .book-page__back { display: flex; align-items: center; min-height: var(--shell-row); margin-top: calc(-1 * (var(--shell-row) + 16px)); }
+  html[data-chrome="app"] .book-hero .title-bar { margin-top: 0; }
+  html[data-chrome="app"] .book-hero .title-bar__row { min-height: 0; padding-right: 0; }
+}
 /* phone, signed in: room for the tab bar under the content; toasts and the bulk bar sit above it */
 @media (max-width: 767px) {
   html[data-chrome="app"] .app-main { padding-bottom: calc(var(--bottom-bar-h) + env(safe-area-inset-bottom, 0px) + 24px); }
