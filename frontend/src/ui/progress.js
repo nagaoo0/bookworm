@@ -20,6 +20,9 @@ function alreadyAnimated(label) {
 }
 if (typeof window !== 'undefined') window.addEventListener('hashchange', () => seen.clear());
 
+// where the slider's accent fill ends: under the centre of its 22 px thumb, which travels 22 px less than the track
+const fillStop = (v) => `calc(${v}% + ${((50 - v) * 0.22).toFixed(2)}px)`;
+
 const clampPct = (value, max) => {
   const m = Number(max) > 0 ? Number(max) : 100;
   const v = Number(value);
@@ -82,7 +85,7 @@ export function progressRing({ value, max = 100, size = 96, stroke = 10, label, 
 export function progressSlider({ id, value = 0, step = 5, label = 'Reading progress', variant = 'default', attrs = '' } = {}) {
   const sid = id ?? uid('slider');
   const v = Math.min(100, Math.max(0, Math.round(Number(value) || 0)));
-  return html`<div class="${cx('slider', variant === 'hero' && 'slider--hero')}"><input type="range" class="slider__input" id="${sid}" min="0" max="100" step="${step}" value="${v}" aria-label="${label}" aria-valuetext="${v}%" style="--fill:${v}%"${attrsRaw(attrs)}><output class="slider__value" for="${sid}" aria-hidden="true">${v}%</output></div>`;
+  return html`<div class="${cx('slider', variant === 'hero' && 'slider--hero')}"><input type="range" class="slider__input" id="${sid}" min="0" max="100" step="${step}" value="${v}" aria-label="${label}" aria-valuetext="${v}%" style="--fill:${fillStop(v)}"${attrsRaw(attrs)}><output class="slider__value" for="${sid}" aria-hidden="true">${v}%</output></div>`;
 }
 
 /**
@@ -95,7 +98,7 @@ export function mountProgressSlider(root, onCommit, { debounce = 400 } = {}) {
   const timers = new WeakMap();
   const lastCommitted = new WeakMap();
 
-  const fill = (input) => input.style.setProperty('--fill', `${Number(input.value)}%`);
+  const fill = (input) => input.style.setProperty('--fill', fillStop(Number(input.value)));
   const readout = (input) => {
     const v = Number(input.value);
     input.setAttribute('aria-valuetext', `${v}%`);

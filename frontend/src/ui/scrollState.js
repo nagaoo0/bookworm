@@ -1,5 +1,5 @@
-// Scroll state for the glass header (visual-v2 §3.10): after 8 px of scroll `<html>` gets `.is-scrolled`, and the header fades in
-// its hairline + shadow (CSS: `html.is-scrolled .glass-header`). One passive listener for the whole app, installed on import,
+// Scroll state for the app header: after 8 px of scroll `<html>` gets `.is-scrolled`, and the header fades in
+// its background + hairline (CSS: `html.is-scrolled .glass-header`). One passive listener for the whole app, installed on import,
 // so the shell needs no code for it (it may also toggle `.is-scrolled` on the header itself; both work).
 const THRESHOLD = 8;
 

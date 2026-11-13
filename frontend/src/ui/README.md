@@ -38,7 +38,7 @@ const off = mountBookGrid(container, { onStatus, onRemove });   // one delegated
   - Stars are always `--gold` (empty stars `--gold-empty` with a hairline), never the accent.
   - Covers are flat: 2:3, 6 px radius (4 px at 64 px wide or less), one shadow, no tilt, spine or glow; a generated
     "cloth" cover shows while the image loads or when it is missing, and the loaded image always sits above it.
-  - Content sits in grouped cards (`card()` / `.card`, or `.group` for edge-to-edge rows): `--surface-1`, 14 px radius, a
+  - Content sits in grouped cards (`card()` / `.card`, or `.grouped` for edge-to-edge rows): `--surface-1`, 14 px radius, a
     hairline. Never a card inside a card.
   - Lists are list rows (`.row`: 56 px, 64 px with a 40 px cover thumb; `.row__main` > `.row__title` + `.row__sub`,
     `.row__trail`, `.row__chev`); consecutive rows get a `--separator` inset past the leading thumb or avatar.
@@ -77,7 +77,7 @@ const off = mountBookGrid(container, { onStatus, onRemove });   // one delegated
 
 `.page` `.page--reading` `.page--narrow` (containers) · `.raised` `.inset` `.hairline-t` `.hairline-b` `kbd.kbd` ·
 type: `.h1` `.h2` `.h3` `.title` `.label` `.eyebrow` `.stat` `.stat-sm` `.tabular` (the Year in review display sizes live inside `.story-card` only) ·
-`.card` `.group` (grouped cards) · `.row` `.row--thumb` `.row__lead` `.row__main` `.row__title` `.row__sub` `.row__trail` `.row__chev` (list rows) ·
+`.card` `.grouped` (grouped cards; not `.group`, Tailwind's group-hover marker) · `.row` `.row--thumb` `.row__lead` `.row__main` `.row__title` `.row__sub` `.row__trail` `.row__chev` (list rows) ·
 `.tint-top` (the dark tinted header: dark theme only, from the element's `--ambient-h/-s`; add it only when there is a current book) ·
 `.ambient` `.ambient--page` (cover hue via `applyAmbient`; `.ambient--page` paints the dark tinted header behind the Book page) ·
 `.avatar-stack` · `.rail` `.rail__item` (Library / Settings navigation rows) · `.nav` `.nav__link` `.nav__thumb` (header pills) ·

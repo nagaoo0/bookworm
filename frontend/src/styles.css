@@ -917,7 +917,7 @@ button.chip--tag { cursor: pointer; }
 
 /* ── Card (grouped inset card) / list rows / SectionHeader / EmptyState / StatCard ── */
 .card,
-.group {
+.grouped {
   display: block;
   min-width: 0;                    /* a card is often a grid/flex item: never let long nowrap content widen the track */
   background: var(--surface-1);
@@ -930,8 +930,9 @@ button.chip--tag { cursor: pointer; }
 .card { padding: 16px; }
 .card--sm { padding: 16px; }
 .card--flush { padding: 0; }
-/* .group: the same card holding list rows edge to edge (rows bring their own padding) */
-.group { padding: 0; overflow: hidden; }
+/* .grouped: the same card holding list rows edge to edge (rows bring their own padding). Not `.group`: that is
+   Tailwind's group-hover marker, which views already use. */
+.grouped { padding: 0; overflow: hidden; }
 .card--interactive { cursor: pointer; transition: background-color var(--dur-fast) var(--ease-out); }
 .card--interactive:hover { background: color-mix(in srgb, var(--surface-1), var(--text-1) 3%); }
 /* secondary groups inside a page: outline only, never inside another card */
@@ -1669,7 +1670,7 @@ a.row:hover, button.row:hover { background: color-mix(in srgb, var(--text-1) 4%,
 .toast-message { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .toast-action, .toast-action.btn--ghost { flex-shrink: 0; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .toast-action.btn--ghost:hover:not(:disabled) { color: inherit; background: color-mix(in srgb, currentColor 14%, transparent); }
-.toast-action .kbd { margin-left: 2px; }
+.toast-action .kbd { margin-left: 2px; background: color-mix(in srgb, currentColor 18%, transparent); color: inherit; }
 @media (hover: none) { .toast-action .kbd { display: none; } }
 
 /* ── ConfirmInline ────────────────────────────────────────────────────────── */
@@ -1728,13 +1729,14 @@ a.row:hover, button.row:hover { background: color-mix(in srgb, var(--text-1) 4%,
 @media (max-width: 767px) { .cmdk__footer { display: none; } }
 
 /* ── Shell: header, nav pills, bottom bar (Task 7 replaces these with the sidebar and tab bar) ── */
+/* the header is clear at the top of the page (a tinted header runs under it) and opaque once the page scrolls */
 .glass-header {
-  background-color: var(--surface-0);
+  background-color: transparent;
   border-bottom: 1px solid transparent;
-  transition: border-color var(--dur-base);
+  transition: border-color var(--dur-base), background-color var(--dur-base);
 }
 .glass-header.is-scrolled,
-html.is-scrolled .glass-header { border-bottom-color: var(--border-1); }
+html.is-scrolled .glass-header { background-color: var(--surface-0); border-bottom-color: var(--border-1); }
 
 /* primary nav: a segmented pill group */
 .nav {
