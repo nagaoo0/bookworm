@@ -179,7 +179,7 @@ export function renderHome(el) {
     region.innerHTML = String(html`
       ${sectionHeader({ title: LABEL.upNext, href: queue.length ? '#library/status/to_read' : undefined, id: ids.upnext, scrollControls: picks.length ? true : undefined })}
       ${picks.length
-        ? shelfRow({ ledge: true, label: LABEL.upNext, items: picks.map((b) => bookCard(b, { variant: 'compact' })) })
+        ? shelfRow({ bleed: true, label: LABEL.upNext, items: picks.map((b) => bookCard(b, { variant: 'compact' })) })
         : emptyState({ art: 'stack', title: EMPTY.toReadEmpty.title, size: 'sm', action: { label: ACTION.discoverBooks, href: '#discover', variant: 'secondary' } })}`);
   }
 

@@ -76,13 +76,14 @@ export function openCommandPalette({ initialQuery = '', onAdded, onAdd } = {}) {
   const results = modal.el.querySelector('[data-cmdk-results]');
   const status = modal.el.querySelector('[data-cmdk-status]');
 
-  // what the status line says for the current query (nothing until something is typed)
-  function announce(q) {
+  // what the status line says for the current query (nothing until something is typed);
+  // n counts book results (library + online), not the "Go to" shortcuts
+  function announce(q, n) {
     let text = '';
     if (q) {
-      const n = rows.length;
       if (n) text = `${n} ${n === 1 ? 'result' : 'results'}${onlineState === 'loading' ? ', searching online…' : ''}`;
-      else text = onlineState === 'loading' ? 'Searching…' : 'No results';
+      else if (onlineState === 'loading') text = 'Searching…';
+      else text = onlineState === 'error' ? ERROR.searchFailed : 'No results';
     }
     if (status.textContent !== text) status.textContent = text;
   }
@@ -145,7 +146,7 @@ export function openCommandPalette({ initialQuery = '', onAdded, onAdd } = {}) {
     if (!rows.length && !onlineHtml) results.innerHTML = String(html`<div class="cmdk__empty cmdk__empty--art"><div class="empty-state__art">${illustration('search', { width: 80 })}</div><div>${q ? html`No results for “${input.value.trim()}”` : 'No matches'}</div></div>`);
     active = Math.min(active, Math.max(0, rows.length - 1));
     paintActive();
-    announce(q);
+    announce(q, rows.filter((r) => r.kind === 'add').length + lib.length);
   }
 
   function paintActive() {

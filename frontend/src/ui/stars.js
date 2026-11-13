@@ -1,4 +1,4 @@
-// StarRating: display (stars) and input (starInput) — design-system §5.16; visual-v2 §5.15.
+// StarRating: display (stars) and input (starInput) — design-system §5.16; visual-v3 §4.2, §5.
 // Stars are always --gold (empty ones --gold-empty with a hairline outline), independent of the accent colour.
 import { html } from '../utils.js';
 import { icon } from './icons.js';

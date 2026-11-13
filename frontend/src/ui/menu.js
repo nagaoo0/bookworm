@@ -1,4 +1,4 @@
-// Menu + Popover (design-system §5.18; visual-v2 §5.17). Panels are opaque surfaces (never see-through while opening);
+// Menu + Popover (design-system §5.18; visual-v3 §5): opaque surface-1 panels, 16 px radius, the standard shadow;
 // `glass` (v2) is accepted and ignored: menus and popovers are always opaque.
 // role=menu / menuitem(radio|checkbox), arrow keys, Home/End, type-ahead, Escape, viewport clamping,
 // closes on outside click and on route change. Below md, menus with more than 6 items render as a Sheet.

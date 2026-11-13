@@ -1,4 +1,4 @@
-// StatCard (design-system §5.22; visual-v2 §5.21). Grid: `grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4`.
+// StatCard (design-system §5.22; visual-v3 §5). Grid: `grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4`.
 import { html, raw, safeUrl, escHtml } from '../utils.js';
 import { icon } from './icons.js';
 import { sparkline } from './sparkline.js';
@@ -9,7 +9,7 @@ import { cx } from './dom.js';
  *   tone?: 'neutral'|'accent'|'success', href?: string, size?: 'md'|'sm'|'lg',
  *   delta?: { value: string|number, tone?: 'up'|'down'|'flat', label?: string }, spark?: number[] }} o
  *   value null/undefined renders "—". emoji is decorative, allowed on Stats / Year-in-review tiles only (20 px in a 32 px roundel).
- *   size: md = `.stat` 36 px · lg = `.stat-lg` 48 px · sm = 20 px (mobile 2 × 2 grids).
+ *   size: md = 28 px (the `.stat` role) · lg = 34 px · sm = 20 px (mobile 2 × 2 grids).
  *   delta: a 22 px pill (success-soft / danger-soft / neutral) + an optional caption ("vs 2025").
  *   spark: a sparkline bottom-right in --accent-text (--success-fg for the success tone); needs ≥ 1 value.
  */

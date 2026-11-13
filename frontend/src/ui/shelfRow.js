@@ -6,13 +6,14 @@ import { iconButton } from './button.js';
 import { cx, uid, delegate, prefersReducedMotion } from './dom.js';
 
 /**
- * @param {{ id?: string, items: any[], size?: 'md'|'sm', label?: string, cls?: string }} o
- *   items: rendered cards, normally `bookCard(entry, { variant: 'compact' })` (add `size: 'sm'` to both for 112 / 128 px
+ * @param {{ id?: string, items: any[], size?: 'md'|'sm', bleed?: boolean, label?: string, cls?: string }} o
+ *   items: rendered cards, normally `bookCard(entry, { variant: 'compact' })` (add `size: 'sm'` to both for the smaller
  *   cards). The cards must be direct children of the track so `mountBookGrid` can rove across them.
- *   ledge (v2) is accepted and ignored.
+ *   bleed: the row runs out to the page edge so the last cover peeks; only for rows that span the full content width
+ *   (Home "Up next"). Without it the row clips at its own container. `ledge` (v2) is accepted and ignored.
  *   id: lets a `sectionHeader({ scrollControls: id })` target this row (generated when omitted).
  */
-export function shelfRow({ id, items = [], size = 'md', label = 'Books', cls = '' } = {}) {
+export function shelfRow({ id, items = [], size = 'md', bleed = false, label = 'Books', cls = '' } = {}) {
   const rowId = id ?? uid('shelf');
   const arrow = (dir) => iconButton({
     icon: dir === 'prev' ? 'chevron-left' : 'chevron-right',
@@ -20,7 +21,7 @@ export function shelfRow({ id, items = [], size = 'md', label = 'Books', cls = '
     variant: 'solid', size: 'sm', cls: `shelf-row__arrow shelf-row__arrow--${dir}`,
     attrs: `data-shelf-${dir} tabindex="-1"`,
   });
-  return html`<div class="${cx('shelf-row', size === 'sm' && 'shelf-row--sm', cls)}" data-shelf-row="${rowId}">${arrow('prev')}<div class="shelf-row__track" role="group" aria-label="${label}">${items}</div>${arrow('next')}</div>`;
+  return html`<div class="${cx('shelf-row', bleed && 'shelf-row--bleed', size === 'sm' && 'shelf-row--sm', cls)}" data-shelf-row="${rowId}">${arrow('prev')}<div class="shelf-row__track" role="group" aria-label="${label}">${items}</div>${arrow('next')}</div>`;
 }
 
 /**
