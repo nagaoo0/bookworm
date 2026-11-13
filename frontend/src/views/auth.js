@@ -7,22 +7,10 @@
 // that resolved target; the shell does the navigation. `mode` is 'login' (default) or 'register'.
 import { html } from '../utils.js';
 import { api } from '../api.js';
-import { button, setButtonLoading, field, setFieldError, mountFields, card, cover, icon } from '../ui/index.js';
-
-// Public-domain titles for the stage mosaic: generated "cloth" covers only (no network), hue per title.
-const MOSAIC = [
-  ['Middlemarch', 'George Eliot'], ['Dracula', 'Bram Stoker'], ['Persuasion', 'Jane Austen'], ['Frankenstein', 'Mary Shelley'],
-  ['The Odyssey', 'Homer'], ['Moby-Dick', 'Herman Melville'], ['Jane Eyre', 'Charlotte Brontë'], ['Walden', 'Henry David Thoreau'],
-  ['Great Expectations', 'Charles Dickens'], ['Emma', 'Jane Austen'], ['Wuthering Heights', 'Emily Brontë'], ['The Iliad', 'Homer'],
-];
+import { button, setButtonLoading, field, setFieldError, mountFields, card, icon } from '../ui/index.js';
 
 function stageHtml() {
   return html`<div class="relative hidden overflow-hidden lg:block lg:w-[55%]" aria-hidden="true">
-    <div class="cover-mosaic">
-      <div class="cover-mosaic__grid" style="inset:-22% -14%;gap:14px;transform:rotate(-6deg)">
-        ${MOSAIC.map(([title, author]) => cover({ title, author, size: 'md' }))}
-      </div>
-    </div>
     <div class="absolute inset-0" style="background:linear-gradient(90deg,transparent 55%,var(--surface-0) 100%),linear-gradient(0deg,var(--surface-0) 0%,color-mix(in srgb,var(--surface-0) 55%,transparent) 38%,transparent 70%)"></div>
     <div class="absolute bottom-12 left-12 right-12 max-w-lg">
       <p class="font-display text-text-1" style="font-size:28px;line-height:36px">Every book you've read, in one place.</p>
@@ -123,7 +111,7 @@ export function renderAuth(el, { onSuccess, next, mode: startMode = 'login' } = 
             <img src="/logo.png" class="h-14 w-14 rounded-full" alt="">
             <span class="font-display text-text-1" style="font-size:24px;line-height:32px">Bookworm</span>
           </div>
-          <h1 class="display mt-4 text-text-1" style="font-size:36px;line-height:44px" tabindex="-1" data-focus-target>${isRegister ? 'Create your account' : 'Welcome back'}</h1>
+          <h1 class="h1 mt-4 text-text-1" tabindex="-1" data-focus-target>${isRegister ? 'Create your account' : 'Welcome back'}</h1>
           <p class="text-small text-text-2">${isRegister ? 'Start tracking everything you read' : 'Sign in to your library'}</p>
         </div>
         ${card({ padding: 'md', content: html`

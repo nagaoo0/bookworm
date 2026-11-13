@@ -173,7 +173,7 @@ export function bookCard(entry, { variant = 'grid', size = 'md', showStatus = fa
 
   return html`<article class="${klass}" tabindex="0" aria-label="${label}" ${dataAttrs}>
     <div class="book-card__cover">
-      ${cover({ url: coverUrl, bookId, title, author: firstAuthor, size: 'md', tilt: true })}
+      ${cover({ url: coverUrl, bookId, title, author: firstAuthor, size: 'md' })}
       ${readingProgress && variant === 'grid' ? html`<div class="book-card__progress">${progressBar({ value: pct, size: 'sm', onCover: true, label: `Progress for ${title}` })}</div>` : ''}
       ${alsoRead && !selectable ? html`<span class="book-card__flag">${badge({ label: LABEL.youReadThis, variant: 'accent', icon: 'check' })}</span>` : ''}
       ${selectable ? html`<span class="book-card__select">${checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select tabindex="-1"' })}</span>` : ''}

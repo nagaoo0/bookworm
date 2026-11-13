@@ -275,7 +275,7 @@ function createPage(el, data, user) {
         <div class="shrink-0">${cover({ url: v.cover, bookId: S.book.id, title: v.title, authors: v.authors, size: 'lg', zoomable: true })}</div>
         <div class="min-w-0 flex-1 space-y-3 pb-1">
           <div>
-            <h1 class="display break-words" data-focus-target>${v.title}</h1>
+            <h1 class="h1 break-words" data-focus-target>${v.title}</h1>
             ${v.authors.length ? html`<p class="text-body text-text-2 mt-2">${authorsHero(v.authors)}</p>` : ''}
             ${metaLine ? html`<p class="text-small text-text-3 mt-1 tabular-nums">${metaLine}</p>` : ''}
           </div>
@@ -336,7 +336,7 @@ function createPage(el, data, user) {
           ${s.rating ? stars({ value: s.rating, size: 14 }) : ''}
           ${src}
         </div>
-        ${s.review ? html`<p class="quote text-text-2 whitespace-pre-line break-words">${s.review}</p>` : ''}
+        ${s.review ? html`<p class="text-text-2 whitespace-pre-line break-words">${s.review}</p>` : ''}
         <div class="flex flex-wrap items-center gap-1 -ml-2">
           ${button({ label: ACTION.edit, variant: 'ghost', size: 'sm', icon: 'pencil', attrs: `data-action="edit-read" data-session-id="${sid}"` })}
           <button type="button" class="btn btn--danger-ghost btn--sm" data-confirm="Delete this read?" data-confirm-verb="Delete" data-confirm-action="session" data-id="${sid}">
@@ -599,7 +599,7 @@ function createPage(el, data, user) {
                   ${statusBadge(u.status)}
                   ${u.rating ? stars({ value: u.rating, size: 14 }) : ''}
                 </div>
-                ${u.review ? html`<p class="quote text-text-2 mt-1 line-clamp-3 whitespace-pre-line break-words">${u.review}</p>` : ''}
+                ${u.review ? html`<p class="text-text-2 mt-1 line-clamp-3 whitespace-pre-line break-words">${u.review}</p>` : ''}
               </div>
             </li>`)}
         </ul>

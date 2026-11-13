@@ -166,7 +166,7 @@ export function feedCardHTML(item, { viewer = getState().user, showAddToLibrary 
         <div class="min-w-0 flex-1 space-y-2">
           ${authors ? html`<p class="text-small text-text-2 line-clamp-1">${authors}</p>` : ''}
           ${item.rating ? stars({ value: item.rating, size: 16 }) : ''}
-          ${review ? html`<p class="quote text-text-1 whitespace-pre-line break-words ${long ? 'line-clamp-4' : ''}" id="${reviewId}">${linkifyMentions(review)}</p>` : ''}
+          ${review ? html`<p class="text-text-1 whitespace-pre-line break-words ${long ? 'line-clamp-4' : ''}" id="${reviewId}">${linkifyMentions(review)}</p>` : ''}
           ${long ? html`<button type="button" class="btn btn--sm btn--ghost -ml-3" data-feed-more="${reviewId}" aria-expanded="false" aria-controls="${reviewId}"><span class="btn__label">More</span></button>` : ''}
         </div>
       </div>

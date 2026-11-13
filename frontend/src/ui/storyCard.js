@@ -25,7 +25,6 @@ export function storyCard({ year, username, avatarUrl, stats = {}, topBooks = []
   const author = favouriteAuthor ?? stats.favouriteAuthor;
   const genre = topGenre ?? stats.topGenre;
   const top = topBooks.slice(0, 3);
-  const order = top.length >= 3 ? [1, 0, 2] : (top.length === 2 ? [1, 0] : [0]);
   const first = top[0];
   const rating = Number(stats.avgRating);
   const statRows = [
@@ -39,8 +38,7 @@ export function storyCard({ year, username, avatarUrl, stats = {}, topBooks = []
     <div class="story-card__user">${avatar({ username, avatarUrl, size: 32 })}<span>@${username}</span></div>
     <hr class="story-card__rule">
     <div class="story-card__stats">${statRows.map((s) => html`<div class="story-card__stat"><span class="story-card__stat-value">${s.value}</span><span class="story-card__stat-label">${s.label}</span></div>`)}</div>
-    ${top.length ? html`<div class="story-card__covers cover-fan cover-fan--${top.length}">${order.map((i) => {
-      const b = top[i];
+    ${top.length ? html`<div class="story-card__covers">${top.map((b, i) => {
       return html`<div${i === 0 ? raw(' data-ambient-source') : ''}>${cover({ url: b.cover_url ?? b.coverUrl, bookId: b.book_id ?? b.id, title: b.title, author: Array.isArray(b.authors) ? b.authors[0] : b.authors, size: 'md' })}</div>`;
     })}</div>` : ''}
     ${(author || genre) ? html`<div class="story-card__pills">${

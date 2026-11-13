@@ -807,7 +807,7 @@ export function renderLibrary(el, params = {}) {
           <div class="lg:hidden" data-region="chips"></div>
           <div class="min-h-[40vh]" data-region="content"></div>
         </div>
-        <div id="bulk-bar" role="toolbar" aria-label="Bulk actions" class="glass fixed bottom-6 left-1/2 z-[var(--z-sticky)] hidden h-14 max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-5 shadow-3">
+        <div id="bulk-bar" role="toolbar" aria-label="Bulk actions" class="bg-surface-1 fixed bottom-6 left-1/2 z-[var(--z-sticky)] hidden h-14 max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-5 shadow-3">
           <span class="mr-1 text-small font-medium tabular-nums" data-bulk-count aria-live="polite"></span>
           ${button({ label: 'Set status', iconRight: 'chevron-down', size: 'sm', attrs: 'data-action="bulk-status" aria-haspopup="menu"' })}
           ${button({ label: 'Add to shelf', iconRight: 'chevron-down', size: 'sm', attrs: 'data-action="bulk-shelf" aria-haspopup="menu"' })}

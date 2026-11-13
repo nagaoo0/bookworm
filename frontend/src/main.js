@@ -166,7 +166,7 @@ function openAddSheet() {
   const content = document.createElement('div');
   content.innerHTML = String(html`<ul class="flex flex-col gap-1">${rows.map(r => html`<li>
     <a href="${safeUrl(r.href ?? '#discover')}"${r.palette ? html` data-add-palette` : ''} class="flex h-14 items-center gap-3 rounded-md px-1 text-body font-medium text-text-1 no-underline transition-colors duration-[var(--dur-fast)] hover:bg-surface-2">
-      <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-1 shadow-[inset_0_1px_0_var(--highlight)]">${icon(r.icon, { size: 20 })}</span>
+      <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-1">${icon(r.icon, { size: 20 })}</span>
       <span class="min-w-0 flex-1">${r.label}</span>
       <span class="text-text-3">${icon('chevron-right', { size: 20 })}</span>
     </a></li>`)}</ul>`);

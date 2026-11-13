@@ -516,22 +516,8 @@ function heroHTML({ data, isOwn, viewer, following, followers, followingCount })
   const rated = library.map(b => Number(b.rating)).filter(r => r > 0);
   const avg = rated.length ? (rated.reduce((a, b) => a + b, 0) / rated.length).toFixed(1) : null;
 
-  // Cover mosaic (no banner): the finished books' covers, padded with generated covers named after the user's shelves
-  const finished = library.filter(b => b.status === 'done' && b.cover_url).slice(0, 12);
-  const mosaic = [];
-  if (!banner) {
-    if (finished.length >= 6) {
-      for (let i = 0; i < Math.ceil(finished.length / 6) * 6; i++) mosaic.push(finished[i % finished.length]);
-    } else {
-      mosaic.push(...finished);
-      const names = (data.shelves ?? []).map(s => s.name).filter(Boolean);
-      if (!names.length) names.push('Reading', 'To read', 'Finished');
-      for (let i = 0; mosaic.length < 12; i++) mosaic.push({ title: names[i % names.length], generated: true });
-    }
-  }
-
   const action = isOwn
-    ? html`<a class="btn btn--glass" href="#settings/profile"><span class="btn__icon">${icon('pencil', { size: 16 })}</span><span class="btn__label">Edit profile</span></a>`
+    ? html`<a class="btn btn--secondary" href="#settings/profile"><span class="btn__icon">${icon('pencil', { size: 16 })}</span><span class="btn__label">Edit profile</span></a>`
     : (viewer ? followButton(name, following, { size: 'md' }) : '');
   const pills = html`
               <span class="hero-pill">${plural(library.length, 'book')}</span>
@@ -546,16 +532,14 @@ function heroHTML({ data, isOwn, viewer, following, followers, followingCount })
     <div>
       <div class="relative">
         <header class="hero h-[180px] md:h-[300px]">
-          ${banner
-            ? html`<img class="absolute inset-0 h-full w-full object-cover" src="${banner}" alt="" loading="lazy" decoding="async">`
-            : html`<div class="cover-mosaic" aria-hidden="true"><div class="cover-mosaic__grid">${mosaic.map(b => cover({ url: b.generated ? null : b.cover_url, bookId: b.generated ? null : b.book_id, title: b.generated ? b.title : '', size: 'md' }))}</div></div>`}
+          ${banner ? html`<img class="absolute inset-0 h-full w-full object-cover" src="${banner}" alt="" loading="lazy" decoding="async">` : ''}
           <div class="absolute inset-0" style="background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 28%,transparent),transparent 70%);pointer-events:none"></div>
           <div class="hero__scrim"></div>
           <div class="relative flex h-full flex-col justify-end gap-4 p-5 pb-14 md:p-8">
             <div class="flex items-end gap-6">
               <span class="hidden shrink-0 md:block">${avatar({ username: name, avatarUrl: data.avatarUrl, size: 88, ring: true })}</span>
               <div class="hidden min-w-0 flex-1 md:block">
-                <h1 class="display break-words" data-focus-target>@${name}</h1>
+                <h1 class="h1 break-words" data-focus-target>@${name}</h1>
                 ${bio}
               </div>
               <div class="absolute right-4 top-4 md:static md:shrink-0">${action}</div>
@@ -566,7 +550,7 @@ function heroHTML({ data, isOwn, viewer, following, followers, followingCount })
         <span class="absolute -bottom-6 left-5 md:hidden">${avatar({ username: name, avatarUrl: data.avatarUrl, size: 72, ring: true })}</span>
       </div>
       <div class="mt-10 md:hidden">
-        <h1 class="display break-words" data-focus-target>@${name}</h1>
+        <h1 class="h1 break-words" data-focus-target>@${name}</h1>
         ${data.bio ? html`<p class="mt-1 max-w-prose text-small text-text-2 line-clamp-3 whitespace-pre-line">${data.bio}</p>` : ''}
         <div class="hero-pills--flat mt-3 flex flex-wrap gap-2">${pills}</div>
       </div>

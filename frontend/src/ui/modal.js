@@ -18,8 +18,7 @@ const isMobileViewport = () => {
  * @param {{ title?: string, subtitle?: string, content?: any, footer?: any, size?: 'sm'|'md'|'lg'|'palette'|'full',
  *   dismissible?: boolean, onClose?: () => void, id?: string, sheet?: boolean, top?: boolean, ariaLabel?: string,
  *   header?: 'default'|'ambient' }} opts
- *   header 'ambient': the header gets the `.ambient` backdrop strip (Log-a-read uses it with the book's colour):
- *   `applyAmbient(modal.header, await ambientFor({ … }))`. size 'palette' is the 640 px command palette.
+ *   header 'ambient' (v2) is accepted and ignored: every header is plain. size 'palette' is the 640 px command palette.
  *   content / footer: html`` or raw() output (or a DOM Node). A modal needs `title` or `ariaLabel`.
  *   Mark the element that should get initial focus with `data-autofocus`; otherwise the first control is focused.
  *   Footer buttons: primary last on desktop, first on mobile (CSS flips the order).
@@ -29,7 +28,7 @@ const isMobileViewport = () => {
 export function openModal(opts = {}) {
   const {
     title, subtitle, content = '', footer, size = 'md', dismissible = true, onClose, id,
-    sheet = false, top = false, ariaLabel, lightbox = false, header: headerKind = 'default',
+    sheet = false, top = false, ariaLabel, lightbox = false,
   } = opts;
 
   current?.close(true);
@@ -48,7 +47,7 @@ export function openModal(opts = {}) {
     <div class="modal__panel" role="dialog" aria-modal="true"${title ? raw(` aria-labelledby="${titleId}"`) : attr('aria-label', ariaLabel ?? 'Dialog')}${subtitle ? raw(` aria-describedby="${subId}"`) : ''}>
       ${lightbox ? '' : html`<div class="modal__handle" aria-hidden="true"></div>`}
       ${hasHeader ? html`
-        <div class="${headerKind === 'ambient' ? 'modal__header modal__header--ambient ambient ambient--strip' : 'modal__header'}">
+        <div class="modal__header">
           <div class="modal__heading">
             ${title ? html`<h2 class="h2 modal__title" id="${titleId}">${title}</h2>` : ''}
             ${subtitle ? html`<p class="modal__subtitle" id="${subId}">${subtitle}</p>` : ''}

@@ -1,26 +1,26 @@
-// Shelf row (visual-v2 §3.5): a horizontal row of compact book cards that rests on a ledge: scroll-snapping,
-// edge-faded, with hover-only arrow buttons on desktop. Keyboard: the cards are one roving tab stop and the arrow keys
+// Shelf row (visual-v3 §5): a horizontal row of compact book cards: scroll-snapping, the last cover peeks at the
+// edge, with hover-only arrow buttons on desktop. Keyboard: the cards are one roving tab stop and the arrow keys
 // move between them (mountBookGrid), so the arrow buttons stay out of the tab order.
 import { html } from '../utils.js';
 import { iconButton } from './button.js';
 import { cx, uid, delegate, prefersReducedMotion } from './dom.js';
 
 /**
- * @param {{ id?: string, items: any[], ledge?: boolean, size?: 'md'|'sm', label?: string, cls?: string }} o
+ * @param {{ id?: string, items: any[], size?: 'md'|'sm', label?: string, cls?: string }} o
  *   items: rendered cards, normally `bookCard(entry, { variant: 'compact' })` (add `size: 'sm'` to both for 112 / 128 px
  *   cards). The cards must be direct children of the track so `mountBookGrid` can rove across them.
- *   ledge: a hairline + soft shadow under the covers (Home "Up next", Discover recommendation rows only).
+ *   ledge (v2) is accepted and ignored.
  *   id: lets a `sectionHeader({ scrollControls: id })` target this row (generated when omitted).
  */
-export function shelfRow({ id, items = [], ledge = false, size = 'md', label = 'Books', cls = '' } = {}) {
+export function shelfRow({ id, items = [], size = 'md', label = 'Books', cls = '' } = {}) {
   const rowId = id ?? uid('shelf');
   const arrow = (dir) => iconButton({
     icon: dir === 'prev' ? 'chevron-left' : 'chevron-right',
     label: dir === 'prev' ? 'Scroll left' : 'Scroll right',
-    variant: 'glass', size: 'header', cls: `shelf-row__arrow shelf-row__arrow--${dir}`,
+    variant: 'solid', size: 'sm', cls: `shelf-row__arrow shelf-row__arrow--${dir}`,
     attrs: `data-shelf-${dir} tabindex="-1"`,
   });
-  return html`<div class="${cx('shelf-row', ledge && 'shelf-row--ledge', size === 'sm' && 'shelf-row--sm', cls)}" data-shelf-row="${rowId}">${arrow('prev')}<div class="shelf-row__track" role="group" aria-label="${label}">${items}</div>${arrow('next')}</div>`;
+  return html`<div class="${cx('shelf-row', size === 'sm' && 'shelf-row--sm', cls)}" data-shelf-row="${rowId}">${arrow('prev')}<div class="shelf-row__track" role="group" aria-label="${label}">${items}</div>${arrow('next')}</div>`;
 }
 
 /**

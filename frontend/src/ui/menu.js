@@ -1,5 +1,5 @@
 // Menu + Popover (design-system §5.18; visual-v2 §5.17). Panels are opaque surfaces (never see-through while opening);
-// `glass: true` opts into the blurred glass look for header popovers.
+// `glass` (v2) is accepted and ignored: menus and popovers are always opaque.
 // role=menu / menuitem(radio|checkbox), arrow keys, Home/End, type-ahead, Escape, viewport clamping,
 // closes on outside click and on route change. Below md, menus with more than 6 items render as a Sheet.
 import { html, raw } from '../utils.js';
@@ -135,7 +135,7 @@ function floating(el, { trigger, point, placement, kind, onClose, restoreFocusOn
  *   Items may carry a `shortcut` (rendered as a <kbd> hint). The panel animates from the trigger corner (scale .96 → 1, 160 ms).
  * @returns {{ close: () => void } | null}  null when this click merely dismissed the same trigger's menu
  */
-export function openMenu({ trigger, point, items = [], onSelect, placement = 'bottom-end', label, onClose, glass = false } = {}) {
+export function openMenu({ trigger, point, items = [], onSelect, placement = 'bottom-end', label, onClose } = {}) {
   if (trigger && lastDismissedByTrigger.trigger === trigger && performance.now() - lastDismissedByTrigger.at < 400) {
     lastDismissedByTrigger = { trigger: null, at: 0 };
     return null;
@@ -150,7 +150,7 @@ export function openMenu({ trigger, point, items = [], onSelect, placement = 'bo
   const asSheet = actionable > 6 && isMobileViewport();
 
   const wrapper = document.createElement('div');
-  wrapper.className = asSheet ? 'menu menu--inline' : `menu${glass ? ' menu--glass' : ''}`;
+  wrapper.className = asSheet ? 'menu menu--inline' : 'menu';
   wrapper.setAttribute('role', 'menu');
   if (triggerId) wrapper.setAttribute('aria-labelledby', triggerId); else wrapper.setAttribute('aria-label', label ?? 'Menu');
   wrapper.tabIndex = -1;
@@ -275,10 +275,10 @@ export function mountMenuTriggers(root, { selector, getItems, onSelect, placemen
  * @param {{ trigger?: Element, point?: {x:number,y:number}, content: any, placement?: string, width?: number, label?: string, onClose?: () => void, glass?: boolean }} o
  * @returns {{ el: HTMLElement, close: () => void }}
  */
-export function openPopover({ trigger, point, content = '', placement = 'bottom-end', width, label = 'Details', onClose, glass = false } = {}) {
+export function openPopover({ trigger, point, content = '', placement = 'bottom-end', width, label = 'Details', onClose } = {}) {
   closeOverlays('menu');
   const el = document.createElement('div');
-  el.className = glass ? 'popover popover--glass' : 'popover';
+  el.className = 'popover';
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', label);
   el.tabIndex = -1;
