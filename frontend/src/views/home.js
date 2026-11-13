@@ -137,7 +137,7 @@ export function renderHome(el) {
   el.innerHTML = String(html`
     <div class="home mx-auto w-full max-w-[var(--page-max)]">
       <div data-region="top">
-        ${titleBar({ caption: today(), title: 'Home', summary: '' })}
+        ${titleBar({ caption: today(), title: 'Home', summary: '', actions: button({ label: 'Add a book', icon: 'plus', variant: 'secondary', cls: 'hidden md:inline-flex', attrs: 'data-shell="add-book" aria-haspopup="dialog"' }) })}
         <div data-region="gate"></div>
         <div class="home__grid" data-region="dash-top" hidden>
           <section aria-labelledby="${ids.reading}" data-region="reading-section">
@@ -269,7 +269,13 @@ export function renderHome(el) {
   function paintLibraryDriven() {
     const st = getState();
     H.last = { library: st.library, shelves: st.shelves, libraryLoaded: st.libraryLoaded, error: st.error };
-    if (paintGate()) { paintReading(); paintUpNext(); } else paintTint(null);
+    const dash = paintGate();
+    if (dash) { paintReading(); paintUpNext(); } else paintTint(null);
+    // the page's one primary: Update progress in the hero, else Add a book (desktop; the tab bar + on phone)
+    const reading = (!st.libraryLoaded && !st.error) || (dash && entriesWith('reading').length > 0);   // secondary while loading
+    const add = el.querySelector('.title-bar [data-shell="add-book"]');
+    add?.classList.toggle('btn--primary', !reading);
+    add?.classList.toggle('btn--secondary', reading);
     paintSummary();
   }
 
