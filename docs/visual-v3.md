@@ -163,7 +163,7 @@ Build to the mocks. Order and content:
 5. **Recently finished**: grouped list rows with cover thumb, title, author, stars. Max 3.
 6. Integration widgets (Now listening, Recently added in apps) stay, as grouped cards after Recently finished, only when connected.
 
-Streak: see §6.3.
+
 
 ### 6.3 Streak (owner decision: dropped)
 
@@ -187,7 +187,7 @@ Each view gets the shell, the large title, grouped cards and the restyled kit. O
 Each stage is one PR, reviewed, merged before the next starts. Every PR: `npm run build`, backend `npm test`, frontend `npm test`, `node docs/contrast.mjs` (updated in stage 1 to the v3 tokens, every theme times every accent), and screenshots at 1440 and 390 in dark and light of every screen it touches.
 
 1. **Foundations and kit:** tokens, fonts (self-hosted), accent migration (backend, prefs, pre-paint), `styles.css` component rules, removals from §4.5, contrast script. Views are untouched and will look half-converted; acceptable on the branch, not merged alone if it looks broken (stage 1 and 2 may ship together).
-2. **Shell and Home:** sidebar, tab bar, large title pattern, Home to the mocks, streak helper.
+2. **Shell and Home:** sidebar, tab bar, large title pattern, Home to the mocks.
 3. **Library and Book.**
 4. **Discover, Community, Profile, Stats, Settings, Auth**, plus doc updates (`docs/architecture.md` theming section and its wrong "no frontend test suite" line, `frontend/src/ui/README.md`, roadmap decisions log).
 
