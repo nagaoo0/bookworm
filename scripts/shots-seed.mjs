@@ -4,7 +4,8 @@
 // profiles: full (default), empty (one user, nothing else), shelves (full + 20 extra shelves)
 
 const PASSWORD = 'bookworm-demo-pass1';
-const cover = (isbn) => `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`;
+// every isbn is the edition whose Open Library cover is that title's (checked against openlibrary.org/isbn/<isbn>.json)
+const cover = (isbn) => (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg` : undefined);
 const LONG_TITLE = 'The Extraordinarily Long and Winding Title of a Surprisingly Compact Book';
 
 // status: reading | to_read | done; pct for reading; rating/review for finished
@@ -17,12 +18,12 @@ const BOOKS = [
     review: 'Holden is exhausting and I could not stop reading.' },
   { title: 'Sapiens', authors: ['Yuval Noah Harari'], isbn: '9780062316097', pages: 464, status: 'to_read' },
   { title: 'Project Hail Mary', authors: ['Andy Weir'], isbn: '9780593135204', pages: 496, status: 'to_read' },
-  { title: 'The Road', authors: ['Cormac McCarthy'], isbn: '9780307454546', pages: 287, status: 'to_read' },
-  { title: 'Atomic Habits', authors: ['James Clear'], isbn: '9780399590504', pages: 320, status: 'to_read' },
+  { title: 'The Road', authors: ['Cormac McCarthy'], isbn: '9780307387899', pages: 287, status: 'to_read' },
+  { title: 'Atomic Habits', authors: ['James Clear'], isbn: '9780735211292', pages: 320, status: 'to_read' },
   { title: 'Beloved', authors: ['Toni Morrison'], isbn: '9781400033416', pages: 324, status: 'to_read' },
-  // 70-character title and four authors, for overflow checks
+  // 70-character title and four authors, for overflow checks; a made-up book, so no isbn and the generated cover
   { title: LONG_TITLE, authors: ['Ada Lovelace', 'Grace Hopper', 'Katherine Johnson', 'Margaret Hamilton'],
-    isbn: '9781635575637', pages: 240, status: 'to_read' },
+    isbn: null, pages: 240, status: 'to_read' },
 ];
 
 const SHELF_NAMES = ['Favourites', 'Summer reading', 'Book club'];
@@ -50,7 +51,7 @@ async function register(baseUrl, username) {
 async function addBook(baseUrl, cookie, b) {
   const { data: entry } = await call(baseUrl, 'POST', '/api/library', {
     cookie,
-    body: { title: b.title, authors: b.authors, coverUrl: cover(b.isbn), pageCount: b.pages, isbn13: b.isbn, status: b.status },
+    body: { title: b.title, authors: b.authors, coverUrl: cover(b.isbn), pageCount: b.pages, isbn13: b.isbn ?? undefined, status: b.status },
   });
   if (b.pct != null) await call(baseUrl, 'PATCH', `/api/library/${entry.id}`, { cookie, body: { progress_pct: b.pct } });
   if (b.status === 'done') {
@@ -89,7 +90,7 @@ export async function seed(baseUrl, profile = 'full') {
 
   const june = await register(baseUrl, 'june');
   await addBook(baseUrl, june, {
-    title: 'Piranesi', authors: ['Susanna Clarke'], isbn: '9780140268867', pages: 272, status: 'done',
+    title: 'Piranesi', authors: ['Susanna Clarke'], isbn: '9781635575637', pages: 272, status: 'done',
     rating: 5, review: 'Strange, tender and beautifully built. Read it in one sitting.',
   });
   await call(baseUrl, 'POST', '/api/follows/june', { cookie: mihajlo });

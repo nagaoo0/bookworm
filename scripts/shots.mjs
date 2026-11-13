@@ -1,6 +1,6 @@
 // Screenshot and layout-check harness.
 //   node scripts/shots.mjs [--out shots/<label>] [--only home,library,...] [--themes dark,light]
-//                          [--all-accents] [--seed full|empty|shelves] [--check]
+//                          [--all-accents] [--seed full|empty|shelves] [--check] [--widths 1440,390]
 // Boots the API (embedded DB) and vite itself, seeds, captures, then stops both.
 import { spawn } from 'node:child_process';
 import { mkdirSync, openSync, readFileSync } from 'node:fs';
@@ -15,13 +15,14 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API = 'http://localhost:3000';
 const APP = 'http://localhost:5173';
-const ACCENTS = ['amber', 'blue', 'teal', 'rose'];
+const ACCENTS = ['orange', 'blue', 'teal', 'rose'];
 const VIEWPORTS = [{ width: 1440, height: 900 }, { width: 390, height: 844 }];
+const viewportFor = (width) => ({ width, height: width < 768 ? 844 : 900 });
 const SLUGS = ['home', 'library', 'book', 'discover', 'community', 'profile', 'stats', 'settings', 'auth', 'public'];
 
 // ── args ──
 function parseArgs(argv) {
-  const opts = { out: 'shots/latest', only: null, themes: ['dark', 'light'], allAccents: false, seed: 'full', check: false };
+  const opts = { out: 'shots/latest', only: null, themes: ['dark', 'light'], allAccents: false, seed: 'full', check: false, viewports: VIEWPORTS };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -31,11 +32,13 @@ function parseArgs(argv) {
     else if (a === '--seed') opts.seed = next();
     else if (a === '--all-accents') opts.allAccents = true;
     else if (a === '--check') opts.check = true;
+    else if (a === '--widths') opts.viewports = next().split(',').map((w) => viewportFor(Number(w)));
     else throw new Error(`unknown argument: ${a}`);
   }
   const bad = (opts.only ?? []).filter((s) => !SLUGS.includes(s));
   if (bad.length) throw new Error(`unknown --only slug: ${bad.join(', ')} (valid: ${SLUGS.join(', ')})`);
   if (!['full', 'empty', 'shelves'].includes(opts.seed)) throw new Error(`unknown --seed: ${opts.seed}`);
+  if (opts.viewports.some((v) => !(v.width >= 320 && v.width <= 3840))) throw new Error('--widths takes pixel widths, e.g. 1200,390');
   return opts;
 }
 
@@ -213,7 +216,7 @@ async function main() {
   const browser = await chromium.launch();
   try {
     for (const theme of opts.themes) {
-      for (const viewport of VIEWPORTS) {
+      for (const viewport of opts.viewports) {
         for (const c of captures) {
           const accents = c.accents && opts.allAccents ? ACCENTS : [null];
           for (const accent of accents) {
@@ -221,7 +224,7 @@ async function main() {
             let opened;
             try {
               opened = await openPage(browser, {
-                viewport, theme, accent: accent ?? 'amber', list: c.list, cookie: c.auth ? cookie : null,
+                viewport, theme, accent: accent ?? ACCENTS[0], list: c.list, cookie: c.auth ? cookie : null,
               });
               const { page, errors } = opened;
               await go(page, c.hash);
@@ -254,7 +257,7 @@ async function main() {
         for (const theme of opts.themes) {
           let opened;
           try {
-            opened = await openPage(browser, { viewport, theme, accent: 'amber', cookie });
+            opened = await openPage(browser, { viewport, theme, accent: ACCENTS[0], cookie });
             const msg = await sp.run(opened.page);
             if (msg) fail(`${sp.label} [${theme}]`, msg);
           } catch (err) {
