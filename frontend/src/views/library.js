@@ -9,12 +9,13 @@ import { loadPrefs, savePrefs } from '../prefs.js';
 import { html, raw, safeColor } from '../utils.js';
 import {
   ACTION, EMPTY, ERROR, PLACEHOLDER, STATUS, STATUS_ORDER, TOAST,
-  badge, bookCard, button, card, checkbox, chipGroup, confirmPopover, cover, cssEscape, cx, delegate, emptyState, field, icon,
+  badge, bookCard, button, card, chipGroup, confirmPopover, cover, cssEscape, cx, delegate, emptyState, field, icon,
   iconButton, isStatus, mountBookGrid, mountChipGroup, mountProgressSlider, openMenu, openPopover, openSheet, plural,
   progressSlider, sectionHeader, segmented, setButtonLoading, setFieldError, skeletonBookGrid, statusLabel,
   toast, uid, undoToast,
 } from '../ui/index.js';
 import { openLogReadModal } from '../components/logReadModal.js';
+import { titleBar } from '../shell/titleBar.js';
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -299,8 +300,8 @@ const LAYOUTS = [
   { value: 'list', label: 'List', icon: 'list' },
 ];
 const SOURCES = [
-  { key: 'audiobookshelf', label: 'Audio' },
-  { key: 'calibre', label: 'Ebook' },
+  { key: 'audiobookshelf', label: 'Audiobookshelf', icon: 'headphones' },
+  { key: 'calibre', label: 'Calibre', icon: 'book' },
 ];
 const SWATCHES = [
   ['#f59e0b', 'Amber'], ['#22c55e', 'Green'], ['#3b82f6', 'Blue'], ['#a78bfa', 'Violet'],
@@ -338,6 +339,10 @@ function syncHash(S) {
   const next = hashFor(S);
   if (location.hash === next || !location.hash.startsWith('#library')) return;
   try { history.replaceState(history.state, '', next); } catch { /* sandboxed frame */ }
+  // the sidebar marks the shelf from the route params
+  if (getState().route === 'library') {
+    setState({ routeParams: S.shelfId != null ? { shelfId: String(S.shelfId) } : (S.status ? { status: S.status } : {}) });
+  }
 }
 
 function parseView(value) {
@@ -346,10 +351,9 @@ function parseView(value) {
   return {};
 }
 
-// ── Rail (status / shelves / sources) ────────────────────────────────────────
+// ── Chip row, filter menu, shelf manager (status / shelves / sources) ────────
 
-function countsMap() {
-  const { library = [], shelves = [] } = getState();
+function countsMap({ library = [], shelves = [] } = getState()) {
   const map = { 'status:all': library.length, 'status:reading': 0, 'status:to_read': 0, 'status:done': 0 };
   for (const s of shelves) map[`shelf:${s.id}`] = 0;
   for (const b of library) {
@@ -359,8 +363,35 @@ function countsMap() {
   return map;
 }
 
+/** Chip row under the title: All, the three statuses, the custom shelves (with counts), then "Manage shelves". */
+export function chipRowHTML(S, { library = [], shelves = [] } = getState()) {
+  const counts = countsMap({ library, shelves });
+  const items = [
+    { value: 'all', label: 'All', count: counts['status:all'] },
+    ...STATUS_ORDER.map((key) => ({ value: `status:${key}`, label: STATUS[key].label, icon: STATUS[key].icon, count: counts[`status:${key}`] })),
+    ...shelves.map((s) => ({ value: `shelf:${s.id}`, label: s.name, color: s.color, count: counts[`shelf:${s.id}`] ?? 0 })),
+  ];
+  let value = 'all';
+  if (S.shelfId != null) value = `shelf:${S.shelfId}`;
+  else if (S.status) value = `status:${S.status}`;
+  return html`<div class="library-chips">
+    ${chipGroup({ name: 'library-view', label: 'Shelves', items, value, cls: 'library-chips__group' })}
+    <button type="button" class="chip library-chips__manage" data-action="manage-shelves" aria-haspopup="dialog" aria-label="Manage shelves">${icon('settings', { size: 16 })}<span class="library-chips__manage-label">Manage shelves</span></button>
+  </div>`;
+}
+
+/** The Filter menu: one checkbox per source that at least one book is available from (Audiobookshelf, Calibre). */
+export function filterMenuItems(S, library = getState().library ?? []) {
+  const sources = SOURCES.filter((src) => S.sources.has(src.key) || library.some((b) => (b.availability ?? []).some((a) => a.service === src.key)));
+  if (!sources.length) return [{ kind: 'heading', label: 'Sources' }, { id: 'none', label: 'No books from Audiobookshelf or Calibre', disabled: true }];
+  return [
+    { kind: 'heading', label: 'Sources' },
+    ...sources.map((src) => ({ id: `source:${src.key}`, label: src.label, icon: src.icon, kind: 'checkbox', checked: S.sources.has(src.key) })),
+  ];
+}
+
 function railHTML(S) {
-  const { library = [], shelves = [] } = getState();
+  const { shelves = [] } = getState();
   const counts = countsMap();
   const statusItems = [{ key: null, label: 'All' }, ...STATUS_ORDER.map((key) => ({ key, label: STATUS[key].label }))];
 
@@ -389,10 +420,6 @@ function railHTML(S) {
     </li>`;
   });
 
-  const sourceRows = SOURCES
-    .filter((src) => library.some((b) => (b.availability ?? []).some((a) => a.service === src.key)))
-    .map((src) => html`<li class="px-2.5 py-0.5">${checkbox({ label: src.label, checked: S.sources.has(src.key), attrs: `data-source="${src.key}"` })}</li>`);
-
   return html`
     <div class="space-y-6">
       <section aria-label="Status">
@@ -407,11 +434,6 @@ function railHTML(S) {
         ${S.rail.creating ? html`<div class="mb-2">${shelfForm(S, 'create')}</div>` : ''}
         ${shelves.length ? html`<ul class="rail" data-shelf-list>${shelfRows}</ul>` : (S.rail.creating ? '' : html`<p class="px-2.5 text-small text-text-3">No shelves yet.</p>`)}
       </section>
-      ${sourceRows.length ? html`
-        <section aria-label="Sources">
-          <h2 class="label mb-2 px-2.5">Sources</h2>
-          <ul>${sourceRows}</ul>
-        </section>` : ''}
     </div>`;
 }
 
@@ -445,8 +467,9 @@ function paintRail(S, root, { force = false } = {}) {
   else if (focusKey) root.querySelector(`[data-focus-key="${cssEscape(focusKey)}"]`)?.focus();
 }
 
+// the shelf manager sheet, when it is open
 function repaintRails(S, opts) {
-  for (const root of S.railRoots) paintRail(S, root, opts);
+  if (S.sheetRoot) paintRail(S, S.sheetRoot, opts);
   S.rail.focus = null;
 }
 
@@ -465,8 +488,7 @@ export function renderLibrary(el, params = {}) {
     mode: null,
     secs: new Map(),
     groupKeys: [],
-    railRoots: new Set(),
-    railCleanups: [],
+    sheetRoot: null,
     rail: { creating: false, editingId: null, error: null, focus: null },
     drag: null,
     sheet: null,
@@ -532,13 +554,10 @@ export function renderLibrary(el, params = {}) {
   // ── header, toolbar bits ──
   function updateHeader() {
     const { base, filtered } = viewEntries();
-    const count = q('[data-region="count"]');
+    const count = q('[data-title-summary]');
     if (count) count.textContent = filtered.length === base.length ? plural(base.length, 'book') : `${filtered.length} of ${plural(base.length, 'book')}`;
     const badgeSlot = q('[data-filter-badge]');
-    if (badgeSlot) {
-      const n = (S.status || S.shelfId != null ? 1 : 0) + S.sources.size;
-      badgeSlot.innerHTML = n ? String(badge({ label: n, variant: 'accent' })) : '';
-    }
+    if (badgeSlot) badgeSlot.innerHTML = S.sources.size ? String(badge({ label: S.sources.size, variant: 'accent' })) : '';
     const sel = q('[data-region="select-btn"]');
     if (sel) {
       sel.setAttribute('aria-pressed', String(S.selectMode));
@@ -550,26 +569,36 @@ export function renderLibrary(el, params = {}) {
   function paintChips() {
     const region = q('[data-region="chips"]');
     if (!region) return;
-    const shelves = getState().shelves ?? [];
-    const next = shelves.length ? String(chipGroup({
-      name: 'shelf',
-      label: 'Shelves',
-      items: [{ value: 'all', label: 'All' }, ...shelves.map((s) => ({ value: String(s.id), label: s.name, color: s.color }))],
-      value: S.shelfId != null ? String(S.shelfId) : (S.status ? undefined : 'all'),
-    })) : '';
+    const next = String(chipRowHTML(S));
     if (region._h === next) return;
     region._h = next;
-    if (!region.contains(document.activeElement)) region.innerHTML = next;   // the chip group already updated itself in place
+    // keep focus and the scroll position across the repaint
+    const active = region.contains(document.activeElement) ? document.activeElement : null;
+    const focusSel = active?.dataset.chipValue != null ? `[data-chip-value="${cssEscape(active.dataset.chipValue)}"]` : (active ? '[data-action="manage-shelves"]' : null);
+    const left = region.querySelector('.chip-group__scroll')?.scrollLeft ?? 0;
+    region.innerHTML = next;
+    const scroller = region.querySelector('.chip-group__scroll');
+    if (scroller) scroller.scrollLeft = left;
+    if (focusSel) region.querySelector(focusSel)?.focus({ preventScroll: true });
   }
 
   function updateBulkBar() {
     const bar = q('#bulk-bar');
     if (!bar) return;
     const n = S.selected.size;
-    const show = S.selectMode && n > 0;
+    const show = S.selectMode;
     bar.classList.toggle('hidden', !show);
     bar.classList.toggle('flex', show);
     bar.querySelector('[data-bulk-count]').textContent = show ? `${n} selected` : '';
+    bar.querySelectorAll('[data-bulk-needs]').forEach((b) => { b.disabled = !n; });
+    const all = bar.querySelector('[data-action="select-all"] .btn__label');
+    if (all) all.textContent = allSelected() ? 'Select none' : 'Select all';
+  }
+
+  // every entry in the current filter is selected
+  function allSelected() {
+    const { filtered } = viewEntries();
+    return filtered.length > 0 && filtered.every((b) => S.selected.has(String(b.id)));
   }
 
   // ── content: sections, grids, incremental rendering ──
@@ -776,61 +805,51 @@ export function renderLibrary(el, params = {}) {
   // ── modes (loading / error / empty / ready) ──
   function teardownPage() {
     disposeSections();
-    S.railCleanups.forEach((off) => off());
-    S.railCleanups = [];
-    for (const root of [...S.railRoots]) if (!root.dataset.sheet) S.railRoots.delete(root);
     S.groupKeys = [];
   }
 
+  // the bulk bar on phones: count, Select all and close on the first line, the actions on the second
   function pageHTML() {
     return html`
-      <div class="mx-auto w-full max-w-[var(--page-max)] lg:grid lg:grid-cols-[var(--rail-w)_minmax(0,1fr)] lg:gap-10">
-        <aside class="hidden lg:block" aria-label="Library filters">
-          <div class="sticky top-[76px] max-h-[calc(100vh-6rem)] overflow-y-auto pb-4 pl-4" data-rail></div>
-        </aside>
-        <div class="min-w-0 space-y-5 md:space-y-6">
-          <div class="flex items-end justify-between gap-x-4 gap-y-2">
-            <div>
-              <h1 class="h1" data-focus-target>Library</h1>
-              <p class="text-small text-text-3" data-region="count"></p>
-            </div>
-            <div><button type="button" class="btn btn--secondary btn--sm lg:hidden" data-action="filters" aria-haspopup="dialog"><span class="btn__icon">${icon('filter', { size: 16 })}</span><span class="btn__label">Filters</span><span data-filter-badge></span></button></div>
+      <div class="mx-auto w-full max-w-[var(--page-max)] min-w-0 space-y-5 md:space-y-6">
+        ${titleBar({ title: 'Library', summary: '' })}
+        <div class="library-toolbar">
+          <div class="library-toolbar__search">
+            ${field({ name: 'q', type: 'search', value: S.q, placeholder: PLACEHOLDER.filterBooks, icon: 'search', id: 'library-search', ariaLabel: 'Filter by title or author', autocomplete: 'off' })}
           </div>
-          <div class="flex flex-wrap items-center gap-2 md:flex-nowrap">
-            <div class="min-w-full flex-1 md:min-w-0">
-              ${field({ name: 'q', type: 'search', value: S.q, placeholder: PLACEHOLDER.filterBooks, icon: 'search', id: 'library-search', ariaLabel: 'Filter by title or author', autocomplete: 'off' })}
-            </div>
-            ${button({ label: `Sort: ${sortLabel()}`, iconRight: 'chevron-down', cls: 'shrink-0', attrs: 'data-action="sort" data-region="sort-btn" aria-haspopup="menu"' })}
-            ${segmented({ name: 'view', label: 'Layout', items: LAYOUTS, value: S.layout })}
+          <button type="button" class="btn btn--secondary library-toolbar__filter" data-action="filter" aria-haspopup="menu"><span class="btn__icon">${icon('filter', { size: 16 })}</span><span class="btn__label max-md:sr-only">Filter</span><span data-filter-badge></span></button>
+          <div class="library-toolbar__controls">
+            ${button({ label: html`<span class="max-xl:sr-only">Sort: </span><span data-sort-label>${sortLabel()}</span>`, iconRight: 'chevron-down', cls: 'library-toolbar__sort', attrs: 'data-action="sort" data-region="sort-btn" aria-haspopup="menu"' })}
+            ${segmented({ name: 'view', label: 'Layout', items: LAYOUTS, value: S.layout, cls: 'library-toolbar__layout' })}
             <button type="button" class="btn btn--secondary shrink-0" data-action="select-mode" data-region="select-btn" aria-pressed="false"></button>
           </div>
-          <div class="lg:hidden" data-region="chips"></div>
-          <div class="min-h-[40vh]" data-region="content"></div>
         </div>
-        <div id="bulk-bar" role="toolbar" aria-label="Bulk actions" class="bg-surface-1 fixed bottom-6 left-1/2 z-[var(--z-sticky)] hidden h-14 max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-5 shadow-3">
-          <span class="mr-1 text-small font-medium tabular-nums" data-bulk-count aria-live="polite"></span>
-          ${button({ label: 'Set status', iconRight: 'chevron-down', size: 'sm', attrs: 'data-action="bulk-status" aria-haspopup="menu"' })}
-          ${button({ label: 'Add to shelf', iconRight: 'chevron-down', size: 'sm', attrs: 'data-action="bulk-shelf" aria-haspopup="menu"' })}
-          ${button({ label: ACTION.remove, icon: 'trash-2', variant: 'danger-ghost', size: 'sm', attrs: 'data-action="bulk-remove"' })}
-          ${iconButton({ icon: 'x', label: 'Exit selection', size: 'sm', attrs: 'data-action="select-mode"' })}
+        <div data-region="chips"></div>
+        <div class="min-h-[40vh]" data-region="content"></div>
+        <div id="bulk-bar" role="toolbar" aria-label="Bulk actions" class="bg-surface-1 fixed bottom-6 left-1/2 z-[var(--z-sticky)] hidden w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-[20px] px-3 py-2 shadow-3 md:h-14 md:w-auto md:max-w-[calc(100vw-2rem)] md:flex-nowrap md:rounded-full md:px-5 md:py-0">
+          <span class="mr-1 whitespace-nowrap pl-1 text-small font-medium tabular-nums md:pl-0" data-bulk-count aria-live="polite"></span>
+          ${button({ label: 'Select all', variant: 'ghost', size: 'sm', cls: 'shrink-0', attrs: 'data-action="select-all"' })}
+          <span class="basis-full max-md:order-1 md:hidden" aria-hidden="true"></span>
+          ${button({ label: 'Set status', iconRight: 'chevron-down', size: 'sm', cls: 'max-md:order-2', attrs: 'data-action="bulk-status" data-bulk-needs aria-haspopup="menu"' })}
+          ${button({ label: 'Add to shelf', iconRight: 'chevron-down', size: 'sm', cls: 'max-md:order-2', attrs: 'data-action="bulk-shelf" data-bulk-needs aria-haspopup="menu"' })}
+          ${button({ label: html`<span class="max-md:sr-only">${ACTION.remove}</span>`, icon: 'trash-2', variant: 'danger-ghost', size: 'sm', cls: 'max-md:order-2', attrs: 'data-action="bulk-remove" data-bulk-needs' })}
+          ${iconButton({ icon: 'x', label: 'Exit selection', size: 'sm', cls: 'max-md:ml-auto', attrs: 'data-action="select-mode"' })}
         </div>
         <p class="sr-only" role="status" aria-live="polite" data-region="live"></p>
       </div>`;
   }
 
   function loadingHTML() {
-    const bar = (w) => html`<span class="skeleton skeleton--text" style="width:${w}"></span>`;
-    return html`<div class="mx-auto w-full max-w-[var(--page-max)] lg:grid lg:grid-cols-[var(--rail-w)_minmax(0,1fr)] lg:gap-10" role="status" aria-label="Loading library">
-      <aside class="hidden space-y-3 pl-4 lg:block" aria-hidden="true">${bar('30%')}${bar('100%')}${bar('100%')}${bar('100%')}${bar('100%')}</aside>
-      <div class="min-w-0 space-y-5 md:space-y-6">
-        <div><h1 class="h1" data-focus-target>Library</h1></div>
-        <div class="flex items-center gap-2" aria-hidden="true">
-          <span class="skeleton min-w-0 flex-1" style="height:40px;border-radius:var(--radius-md)"></span>
-          <span class="skeleton hidden md:block" style="width:120px;height:40px;border-radius:var(--radius-md)"></span>
-          <span class="skeleton hidden md:block" style="width:96px;height:40px;border-radius:var(--radius-full)"></span>
-        </div>
-        ${skeletonBookGrid(14)}
+    const pill = (w) => html`<span class="skeleton shrink-0" style="width:${w}px;height:32px;border-radius:var(--radius-full)"></span>`;
+    return html`<div class="mx-auto w-full max-w-[var(--page-max)] min-w-0 space-y-5 md:space-y-6" role="status" aria-label="Loading library">
+      ${titleBar({ title: 'Library' })}
+      <div class="flex items-center gap-2" aria-hidden="true">
+        <span class="skeleton min-w-0 flex-1" style="height:44px;border-radius:var(--radius-md)"></span>
+        <span class="skeleton hidden md:block" style="width:120px;height:44px;border-radius:var(--radius-full)"></span>
+        <span class="skeleton hidden md:block" style="width:150px;height:44px;border-radius:var(--radius-full)"></span>
       </div>
+      <div class="flex gap-2 overflow-hidden" aria-hidden="true">${pill(64)}${pill(96)}${pill(88)}${pill(96)}${pill(110)}</div>
+      ${skeletonBookGrid(14)}
     </div>`;
   }
 
@@ -839,16 +858,12 @@ export function renderLibrary(el, params = {}) {
     if (S.mode === 'loading') {
       el.innerHTML = String(loadingHTML());
     } else if (S.mode === 'error') {
-      el.innerHTML = String(html`<div class="mx-auto w-full max-w-[var(--page-max)]"><h1 class="h1" data-focus-target>Library</h1>${emptyState({ art: 'open-book', title: EMPTY.loadError.title, body: EMPTY.loadError.body, action: { label: ACTION.tryAgain, variant: 'primary', attrs: 'data-action="retry"' } })}</div>`);
+      el.innerHTML = String(html`<div class="mx-auto w-full max-w-[var(--page-max)]">${titleBar({ title: 'Library' })}${emptyState({ art: 'open-book', title: EMPTY.loadError.title, body: EMPTY.loadError.body, action: { label: ACTION.tryAgain, variant: 'primary', attrs: 'data-action="retry"' } })}</div>`);
     } else if (S.mode === 'empty') {
-      el.innerHTML = String(html`<div class="mx-auto w-full max-w-[var(--page-max)]"><h1 class="h1" data-focus-target>Library</h1>${onboardingHTML()}</div>`);
+      el.innerHTML = String(html`<div class="mx-auto w-full max-w-[var(--page-max)]">${titleBar({ title: 'Library' })}${onboardingHTML()}</div>`);
     } else {
       validateView();
       el.innerHTML = String(pageHTML());
-      const rail = q('[data-rail]');
-      S.railRoots.add(rail);
-      paintRail(S, rail, { force: true });
-      S.railCleanups.push(mountRail(rail));
       paintChips();
       updateHeader();
       buildContent();
@@ -952,8 +967,9 @@ export function renderLibrary(el, params = {}) {
   async function commitShelfOrder(ids, message) {
     const prev = getState().shelves ?? [];
     const byId = new Map(prev.map((s) => [Number(s.id), s]));
-    const next = ids.map((id) => byId.get(id)).filter(Boolean);
-    if (next.length !== prev.length || next.every((s, i) => s === prev[i])) return;
+    // positions too: the sidebar orders shelves by position
+    const next = ids.map((id) => byId.get(id)).filter(Boolean).map((s, i) => (s.position === i ? s : { ...s, position: i }));
+    if (next.length !== prev.length || next.every((s, i) => Number(s.id) === Number(prev[i].id))) return;
     setState({ shelves: next });
     if (message) announce(message);
     try { await api.reorderShelves(ids); } catch {
@@ -997,20 +1013,13 @@ export function renderLibrary(el, params = {}) {
 
   function mountRail(root) {
     const cleanups = [];
-    const closeSheet = () => root.dataset.sheet && S.sheet?.close();
+    const closeSheet = () => S.sheet?.close();
 
     cleanups.push(delegate(root, 'click', 'a[data-view]', (e, a) => {
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       setView(parseView(a.dataset.view));
       closeSheet();
-    }));
-
-    cleanups.push(delegate(root, 'change', 'input[data-source]', (e, input) => {
-      if (input.checked) S.sources.add(input.dataset.source); else S.sources.delete(input.dataset.source);
-      for (const r of S.railRoots) if (r !== root) paintRail(S, r, { force: true });
-      updateHeader();
-      buildContent();
     }));
 
     cleanups.push(delegate(root, 'click', '[data-action="new-shelf"]', () => {
@@ -1123,19 +1132,41 @@ export function renderLibrary(el, params = {}) {
     return () => cleanups.forEach((off) => off());
   }
 
-  function openFilters() {
+  // "Manage shelves": the status and shelf lists with every shelf action, in a sheet at every width
+  function openShelfManager() {
     const body = document.createElement('div');
-    body.dataset.rail = '';
-    body.dataset.sheet = '1';
     let off = () => {};
     S.sheet = openSheet({
-      title: 'Filters',
+      title: 'Shelves',
       content: body,
-      onClose: () => { S.railRoots.delete(body); off(); S.sheet = null; },
+      onClose: () => {
+        off();
+        if (S.sheetRoot === body) { S.sheetRoot = null; S.sheet = null; }
+        S.rail.creating = false;
+        S.rail.editingId = null;
+        S.rail.error = null;
+      },
     });
-    S.railRoots.add(body);
+    S.sheetRoot = body;
     paintRail(S, body, { force: true });
     off = mountRail(body);
+  }
+
+  function openFilterMenu(trigger) {
+    openMenu({
+      trigger,
+      placement: 'bottom-start',
+      label: 'Filter',
+      items: filterMenuItems(S),
+      onSelect: (id, item) => {
+        if (!id?.startsWith('source:')) return;
+        const key = id.slice(7);
+        if (item.checked) S.sources.add(key); else S.sources.delete(key);
+        updateHeader();
+        buildContent();
+        updateBulkBar();
+      },
+    });
   }
 
   // ── selection & bulk actions ──
@@ -1152,11 +1183,28 @@ export function renderLibrary(el, params = {}) {
     updateBulkBar();
   }
 
+  // put the rendered cards' checkboxes in step with S.selected
+  function syncSelectionDom() {
+    el.querySelectorAll('.book-card--selectable').forEach((card) => {
+      const on = S.selected.has(String(card.dataset.libId));
+      const box = card.querySelector('[data-book-select]');
+      if (box) box.checked = on;
+      card.classList.toggle('book-card--selected', on);
+    });
+    updateBulkBar();
+  }
+
   function clearSelectionDom() {
     S.selected.clear();
-    el.querySelectorAll('[data-book-select]').forEach((box) => { box.checked = false; });
-    el.querySelectorAll('.book-card--selected').forEach((c) => c.classList.remove('book-card--selected'));
-    updateBulkBar();
+    syncSelectionDom();
+  }
+
+  // "Select all" picks every entry in the current filter (collapsed groups too); "Select none" clears
+  function toggleSelectAll() {
+    if (allSelected()) S.selected.clear();
+    else for (const b of viewEntries().filtered) S.selected.add(String(b.id));
+    syncSelectionDom();
+    announce(`${S.selected.size} selected`);
   }
 
   async function bulkSetStatus(entries, status, { silent = false } = {}) {
@@ -1256,9 +1304,9 @@ export function renderLibrary(el, params = {}) {
     S.sources.clear();
     const input = q('#library-search');
     if (input) input.value = '';
-    for (const root of S.railRoots) paintRail(S, root, { force: true });
     updateHeader();
     buildContent();
+    updateBulkBar();
   }
 
   // ── wiring (delegated on `el`, once) ──
@@ -1279,14 +1327,16 @@ export function renderLibrary(el, params = {}) {
       S.layout = value === 'list' ? 'list' : 'grid';
       savePrefs({ libraryView: S.layout });
       buildContent();
-    } else if (name === 'shelf') {
-      setView(value === 'all' ? {} : { shelfId: Number(value) });
+    } else if (name === 'library-view') {
+      setView(parseView(value));
     }
   }));
 
   offs.push(delegate(el, 'click', '[data-action]', (e, t) => {
     switch (t.dataset.action) {
-      case 'filters': openFilters(); break;
+      case 'filter': openFilterMenu(t); break;
+      case 'manage-shelves': openShelfManager(); break;
+      case 'select-all': toggleSelectAll(); break;
       case 'select-mode': setSelectMode(!S.selectMode); break;
       case 'sort': openSortMenu(t); break;
       case 'clear-filter': clearFilter(); break;
@@ -1306,6 +1356,7 @@ export function renderLibrary(el, params = {}) {
       S.q = input.value;
       updateHeader();
       buildContent();
+      updateBulkBar();
     }, 150);
   }));
 
@@ -1317,8 +1368,8 @@ export function renderLibrary(el, params = {}) {
       items: SORTS.map((x) => ({ id: x.value, label: x.label, kind: 'radio', checked: x.value === sortKey })),
       onSelect: (id) => {
         sortKey = SORTS.some((x) => x.value === id) ? id : 'added';
-        const label = trigger.querySelector('.btn__label');
-        if (label) label.textContent = `Sort: ${sortLabel()}`;
+        const label = trigger.querySelector('[data-sort-label]');
+        if (label) label.textContent = sortLabel();
         buildContent();
       },
     });
@@ -1354,7 +1405,6 @@ export function renderLibrary(el, params = {}) {
     clearTimeout(searchTimer);
     document.removeEventListener('keydown', onKey);
     offs.forEach((off) => off());
-    S.railCleanups.forEach((off) => off());
     S.sheet?.close(true);
     disposeSections();
   };

@@ -2197,6 +2197,34 @@ button.hero-pill, a.hero-pill { cursor: pointer; }
   .feed-row__line, .feed-row .row__sub { white-space: normal; }
 }
 
+/* ── Library (views/library.js): toolbar, chip row ───────────────────────── */
+/* phone: search + Filter on the first line, Sort / layout / Select (the controls box) on the second; one line from
+   768 px, where the controls box is no box at all */
+.library-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.library-toolbar__search { flex: 1 1 0; min-width: 0; }
+.library-toolbar__controls { display: contents; }
+.library-toolbar .btn, .library-toolbar .segmented { flex-shrink: 0; }
+@media (max-width: 767px) {
+  .library-toolbar__search { flex-basis: calc(100% - 52px); }
+  .library-toolbar__filter { width: 44px; padding: 0; justify-content: center; }
+  .library-toolbar__filter [data-filter-badge]:not(:empty) { position: absolute; top: -4px; right: -4px; }
+  .library-toolbar__controls { display: flex; flex-basis: 100%; align-items: center; gap: 8px; min-width: 0; }
+  .library-toolbar .library-toolbar__sort { flex-shrink: 1; min-width: 0; margin-right: auto; }
+  .library-toolbar__sort .btn__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+/* below 1280 px the layout items show their icons only (the labels stay their names) and Sort drops its "Sort:" */
+@media (max-width: 1279px) {
+  .library-toolbar__layout .segmented__item > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+.library-chips { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.library-chips__group { flex: 1; min-width: 0; }
+.library-chips__group .chip > span:not([class]) { max-width: 16em; overflow: hidden; text-overflow: ellipsis; }   /* long shelf names */
+.library-chips__manage { flex-shrink: 0; }
+@media (max-width: 767px) {
+  .library-chips__manage { width: 32px; padding: 0; justify-content: center; }
+  .library-chips__manage-label { display: none; }
+}
+
 /* ── Story card (ui/storyCard.js): Year in review, a flat accent block ────── */
 .story-card {
   position: relative;
