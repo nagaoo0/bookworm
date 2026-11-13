@@ -3,7 +3,7 @@
 //                          [--all-accents] [--seed full|empty|shelves] [--check]
 // Boots the API (embedded DB) and vite itself, seeds, captures, then stops both.
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, openSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -41,10 +41,16 @@ function parseArgs(argv) {
 
 // ── servers ──
 const children = [];
-function start(cmd, args, cwd, env = {}) {
-  const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env }, stdio: 'ignore', detached: true });
+// start a server with stdout/stderr in a log file; exits before ready are caught by waitFor
+function start(name, cmd, args, cwd, logDir, env = {}) {
+  const logPath = path.join(logDir, `${name}.log`);
+  const fd = openSync(logPath, 'w');
+  const child = spawn(cmd, args, { cwd, env: { ...process.env, ...env }, stdio: ['ignore', fd, fd], detached: true });
+  const server = { name, child, logPath, exited: null };
+  child.on('exit', (code, sig) => { server.exited = `exited with ${code ?? sig}`; });
+  child.on('error', (err) => { server.exited = `failed to start: ${err.message}`; });
   children.push(child);
-  return child;
+  return server;
 }
 function stopAll() {
   for (const c of children) {
@@ -55,13 +61,21 @@ function stopAll() {
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { stopAll(); process.exit(130); });
 process.on('exit', stopAll);
 
-async function waitFor(url, label, ms = 90000) {
+function logTail(server, n = 20) {
+  try { return readFileSync(server.logPath, 'utf8').trimEnd().split('\n').slice(-n).join('\n'); } catch { return '(no log)'; }
+}
+
+// wait until url answers; give up at once when any server has exited
+async function waitFor(url, label, servers, ms = 90000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
+    const dead = servers.find((sv) => sv.exited);
+    if (dead) throw new Error(`${dead.name} ${dead.exited} before ${label} was ready. Last log lines (${dead.logPath}):\n${logTail(dead)}`);
     try { if ((await fetch(url)).ok) return; } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(`timed out waiting for ${label} at ${url}`);
+  const tails = servers.map((sv) => `--- ${sv.name} (${sv.logPath})\n${logTail(sv)}`).join('\n');
+  throw new Error(`timed out waiting for ${label} at ${url}\n${tails}`);
 }
 
 async function assertPortFree(url, label) {
@@ -90,6 +104,11 @@ function buildCaptures(ctx) {
   ];
 }
 
+// cover images come from Open Library (and the archive.org host it redirects to)
+function isCoverHost(url) {
+  try { return /(^|\.)(openlibrary\.org|archive\.org)$/.test(new URL(url).hostname); } catch { return false; }
+}
+
 async function openPage(browser, { viewport, theme, accent, list, cookie }) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
   if (cookie) {
@@ -102,12 +121,15 @@ async function openPage(browser, { viewport, theme, accent, list, cookie }) {
   }, prefs);
   const page = await context.newPage();
   const errors = [];
+  const api401 = new Set();   // urls of /api requests answered 401
+  page.on('response', (r) => { if (r.status() === 401 && new URL(r.url()).pathname.startsWith('/api/')) api401.add(r.url()); });
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     const url = m.location().url ?? '';
-    // cover hosts failing to load is not an app error
-    if (url && !url.startsWith(APP)) return;
+    if (isCoverHost(url)) return;
+    // signed out, a 401 from the API is expected
+    if (!cookie && api401.has(url)) return;
     errors.push(m.text());
   });
   return { context, page, errors };
@@ -169,11 +191,13 @@ async function main() {
 
   await assertPortFree(`${API}/api/health`, 'API');
   await assertPortFree(APP, 'vite');
-  start(process.execPath, ['scripts/dev-pglite.mjs'], root, { PGLITE_FRESH: '1' });
-  start('npx', ['vite', '--port', '5173', '--strictPort'], path.join(root, 'frontend'));
-  await waitFor(`${API}/api/health`, 'API');
-  await waitFor(APP, 'vite');
-  await waitFor(`${APP}/api/health`, 'vite proxy');
+  const servers = [
+    start('api', process.execPath, ['scripts/dev-pglite.mjs'], root, outDir, { PGLITE_FRESH: '1' }),
+    start('vite', 'npx', ['vite', '--port', '5173', '--strictPort'], path.join(root, 'frontend'), outDir),
+  ];
+  await waitFor(`${API}/api/health`, 'API', servers);
+  await waitFor(APP, 'vite', servers);
+  await waitFor(`${APP}/api/health`, 'vite proxy', servers);
 
   const { cookie } = await seed(API, opts.seed);
   const items = await (await fetch(`${API}/api/library`, { headers: { Cookie: cookie } })).json();
@@ -185,6 +209,7 @@ async function main() {
   const fail = (what, msg) => { failures.push(`FAIL ${what}: ${msg}`); };
   let written = 0;
 
+  const skipped = [];
   const browser = await chromium.launch();
   try {
     for (const theme of opts.themes) {
@@ -192,45 +217,52 @@ async function main() {
         for (const c of captures) {
           const accents = c.accents && opts.allAccents ? ACCENTS : [null];
           for (const accent of accents) {
-            const { context, page, errors } = await openPage(browser, {
-              viewport, theme, accent: accent ?? 'amber', list: c.list, cookie: c.auth ? cookie : null,
-            });
+            const file = fileName(c, viewport.width, theme, accent);
+            let opened;
             try {
+              opened = await openPage(browser, {
+                viewport, theme, accent: accent ?? 'amber', list: c.list, cookie: c.auth ? cookie : null,
+              });
+              const { page, errors } = opened;
               await go(page, c.hash);
-              const file = fileName(c, viewport.width, theme, accent);
               await page.screenshot({ path: path.join(outDir, file) });
               written++;
               if (opts.check) {
                 const over = await overflowCheck(page);
                 if (over) fail(`${file} overflow`, over);
-                const bad = errors.filter((e) => c.auth || !/401/.test(e));
-                for (const e of bad) fail(`${file} console`, e.slice(0, 200));
+                for (const e of errors) fail(`${file} console`, e.slice(0, 200));
               }
+            } catch (err) {
+              fail(file, `capture threw: ${String(err.message).split('\n')[0]}`);
             } finally {
-              await context.close();
+              await opened?.context.close();
             }
           }
         }
       }
     }
 
-    // special checks: 390 px, first theme
+    // special checks at 390 px, in every theme
     if (opts.check) {
       const viewport = VIEWPORTS[1];
-      const theme = opts.themes[0];
-      if (want('library')) {
-        const { context, page } = await openPage(browser, { viewport, theme, accent: 'amber', cookie });
-        try {
-          const msg = await bulkBarCheck(page);
-          if (msg) fail('F003 bulk bar tappable at 390', msg);
-        } finally { await context.close(); }
-      }
-      if (want('discover')) {
-        const { context, page } = await openPage(browser, { viewport, theme, accent: 'amber', cookie });
-        try {
-          const msg = await manualFocusCheck(page);
-          if (msg) fail('F046 manual dialog focus', msg);
-        } finally { await context.close(); }
+      const specials = [
+        { slug: 'library', label: 'F003 bulk bar tappable at 390', run: bulkBarCheck },
+        { slug: 'discover', label: 'F046 manual dialog focus', run: manualFocusCheck },
+      ];
+      for (const sp of specials) {
+        if (!want(sp.slug)) { skipped.push(`${sp.label.split(' ')[0]} (needs --only ${sp.slug})`); continue; }
+        for (const theme of opts.themes) {
+          let opened;
+          try {
+            opened = await openPage(browser, { viewport, theme, accent: 'amber', cookie });
+            const msg = await sp.run(opened.page);
+            if (msg) fail(`${sp.label} [${theme}]`, msg);
+          } catch (err) {
+            fail(`${sp.label} [${theme}]`, `check threw: ${String(err.message).split('\n')[0]}`);
+          } finally {
+            await opened?.context.close();
+          }
+        }
       }
     }
   } finally {
@@ -239,6 +271,7 @@ async function main() {
 
   console.log(`${written} screenshots written to ${path.relative(root, outDir) || '.'}`);
   if (opts.check) {
+    if (skipped.length) console.log(`skipped special checks: ${skipped.join(', ')}`);
     if (failures.length) console.log(failures.join('\n'));
     else console.log('all checks passed');
   }
