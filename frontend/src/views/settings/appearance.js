@@ -1,4 +1,4 @@
-// Settings · Appearance: theme (mini-UI previews), accent colour (gradient swatches), card size (live preview with real covers).
+// Settings · Appearance: theme (mini-UI previews in the v3 surfaces), accent colour (flat swatches), card size (live preview with real covers).
 // Applied instantly; server sync is best effort.
 import { api } from '../../api.js';
 import { html } from '../../utils.js';
@@ -11,53 +11,67 @@ const SIZE_LABELS = { miniature: 'Miniature', small: 'Small', medium: 'Medium', 
 const ACCENT_LABELS = { orange: 'Orange', blue: 'Blue', teal: 'Teal', rose: 'Rose' };
 const PREVIEW_COUNT = 4;
 
-// Page / header / card / text tones of each theme (styles.css §1), so a preview shows its theme whatever the current one is.
+// The v3 surfaces of each theme (visual-v3 §4.1), so a preview shows its theme whatever the current one is.
+// page, sidebar, grouped card, fill, hairline, text 1, text 2
 const PALETTES = {
-  dark:  { bg: '#0d0b0a', bar: '#171412', card: '#221e1b', line: '#8f877e', ink: '#f4efe9' },
-  light: { bg: '#f6f1ea', bar: '#fffcf8', card: '#fffcf8', line: '#8a8178', ink: '#1c1815' },
-  sepia: { bg: '#f0e6cf', bar: '#f8f0dc', card: '#eadcbe', line: '#8a7757', ink: '#35291a' },
+  dark:  { bg: '#000000', side: '#0a0a0a', card: '#1c1c1e', fill: '#2c2c2e', line: 'rgba(255,255,255,.08)', ink: '#ffffff', ink2: '#aeaeb2' },
+  light: { bg: '#f2f2f7', side: '#f2f2f7', card: '#ffffff', fill: 'rgba(118,118,128,.12)', line: 'rgba(60,60,67,.14)', ink: '#000000', ink2: '#6c6c70' },
+  sepia: { bg: '#f3ecdf', side: '#ece3d2', card: '#fbf7ef', fill: 'rgba(120,100,70,.12)', line: 'rgba(90,70,40,.16)', ink: '#2a2118', ink2: '#6e6252' },
 };
 
-/** A 120 × 80 miniature page: header with nav pills, two covers and a card with text lines. */
+/** A miniature v3 page: sidebar with the active item tinted, a large title, and a grouped card with a cover,
+ *  two text lines and a progress bar. Flat, in the accent of the page. */
 function miniUI(p, cls = '') {
-  return html`<span class="absolute inset-0 block overflow-hidden ${cls}" style="${`background:${p.bg}`}" aria-hidden="true">
-    <span class="absolute left-0 right-0 top-0 h-3.5 flex items-center gap-1 px-2" style="${`background:${p.bar}`}">
-      <span class="block w-2 h-2 rounded-full" style="background:var(--accent)"></span>
-      <span class="block h-1 w-5 rounded-full" style="${`background:${p.line};opacity:.55`}"></span>
-      <span class="block h-1 w-4 rounded-full ml-auto" style="${`background:${p.line};opacity:.35`}"></span>
+  const bar = (w, color, opacity = 1) => html`<span class="block h-1 rounded-full" style="${`width:${w};background:${color};opacity:${opacity}`}"></span>`;
+  return html`<span class="absolute inset-0 flex overflow-hidden ${cls}" style="${`background:${p.bg}`}" aria-hidden="true">
+    <span class="flex w-[30px] shrink-0 flex-col gap-1.5 px-1.5 pt-2" style="${`background:${p.side};box-shadow:inset -1px 0 0 ${p.line}`}">
+      <span class="block h-2 w-2 rounded-full" style="background:var(--accent)"></span>
+      <span class="block h-1.5 rounded-sm" style="background:color-mix(in srgb, var(--accent) 30%, transparent)"></span>
+      ${bar('80%', p.ink2, .5)}
+      ${bar('65%', p.ink2, .5)}
     </span>
-    <span class="absolute left-2 top-[22px] w-8 h-12 rounded-[3px]" style="background:linear-gradient(150deg, var(--accent-hover), var(--accent))"></span>
-    <span class="absolute left-[44px] top-[22px] w-8 h-12 rounded-[3px]" style="${`background:${p.card};box-shadow:inset 0 0 0 1px ${p.line}55`}"></span>
-    <span class="absolute right-2 top-[22px] bottom-3 w-[34px] rounded-[4px] p-1.5 flex flex-col gap-1" style="${`background:${p.card}`}">
-      <span class="block h-1 w-full rounded-full" style="${`background:${p.ink};opacity:.8`}"></span>
-      <span class="block h-1 w-3/4 rounded-full" style="${`background:${p.line};opacity:.6`}"></span>
-      <span class="block h-1.5 w-1/2 rounded-full mt-auto" style="background:var(--accent)"></span>
+    <span class="flex min-w-0 flex-1 flex-col gap-1.5 p-2">
+      ${bar('55%', p.ink)}
+      <span class="flex gap-1.5 rounded-[5px] p-1.5" style="${`background:${p.card};box-shadow:inset 0 0 0 1px ${p.line}`}">
+        <span class="block h-[30px] w-5 shrink-0 rounded-[2px]" style="background:var(--accent)"></span>
+        <span class="flex min-w-0 flex-1 flex-col gap-1 pt-0.5">
+          ${bar('90%', p.ink, .85)}
+          ${bar('60%', p.ink2, .7)}
+          <span class="mt-auto block h-1 w-full overflow-hidden rounded-full" style="${`background:${p.fill}`}"><span class="block h-full w-3/5 rounded-full" style="background:var(--accent)"></span></span>
+        </span>
+      </span>
+      <span class="flex flex-1 gap-1">
+        ${[0, 1, 2].map(() => html`<span class="block flex-1 rounded-[2px]" style="${`background:${p.fill}`}"></span>`)}
+      </span>
     </span>
   </span>`;
 }
 
 function themeCards(current) {
-  return html`<div class="grid grid-cols-2 sm:grid-cols-4 gap-3" role="radiogroup" aria-label="Theme" data-chip-group="theme">
-    ${THEMES.map((t, i) => {
+  return html`<div class="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-4" role="radiogroup" aria-label="Theme" data-chip-group="theme">
+    ${THEMES.map((t) => {
     const on = t.value === current;
     const preview = t.value === 'system'
       ? html`${miniUI(PALETTES.dark)}${miniUI(PALETTES.light, '[clip-path:polygon(58%_0,100%_0,100%_100%,42%_100%)]')}`
       : miniUI(PALETTES[t.value]);
     return html`<button type="button" role="radio" aria-checked="${on ? 'true' : 'false'}" tabindex="${on ? 0 : -1}" data-chip-value="${t.value}" aria-label="${t.label} theme"
-        class="group text-left rounded-xl p-1.5 transition-shadow duration-[var(--dur-fast)] shadow-[inset_0_0_0_1px_var(--border-2)] hover:shadow-[inset_0_0_0_1px_var(--border-3)] aria-checked:shadow-[0_0_0_2px_var(--accent)]">
-        <span class="relative block w-full max-w-[120px] h-20 rounded-lg overflow-hidden shadow-[inset_0_0_0_1px_var(--border-1)]">${preview}</span>
-        <span class="flex items-center gap-1.5 mt-2 px-0.5 text-small font-medium ${on ? 'text-text-1' : 'text-text-2'}">${icon(t.icon, { size: 16 })}<span class="flex-1">${t.label}</span><span class="${on ? 'inline-flex' : 'hidden'} text-accent-text">${icon('check', { size: 16 })}</span></span>
+        class="theme-option group text-left">
+        <span class="theme-option__preview">${preview}</span>
+        <span class="theme-option__label">${icon(t.icon, { size: 16 })}<span class="flex-1">${t.label}</span><span class="theme-option__check">${icon('check', { size: 16 })}</span></span>
       </button>`;
   })}
   </div>`;
 }
 
 function swatches(accent) {
-  return html`<div class="flex flex-wrap gap-3" role="radiogroup" aria-label="Accent colour" data-chip-group="accent">
-    ${ACCENT_KEYS.map(key => html`<button type="button" role="radio" aria-checked="${key === accent ? 'true' : 'false'}" tabindex="${key === accent ? 0 : -1}" data-chip-value="${key}" title="${ACCENT_LABELS[key]}" aria-label="${ACCENT_LABELS[key]}"
-        class="accent-scope group inline-flex items-center justify-center w-9 h-9 rounded-full text-accent-fg shadow-[inset_0_1px_0_rgba(255,255,255,.28),0_1px_2px_rgba(0,0,0,.4)] transition-transform duration-[var(--dur-fast)] hover:scale-[1.08] aria-checked:ring-2 aria-checked:ring-text-1 aria-checked:ring-offset-2 aria-checked:ring-offset-surface-1" data-accent="${key}" style="background:linear-gradient(145deg, var(--accent-hover), var(--accent))">
-        <span class="hidden group-aria-checked:inline-flex">${icon('check', { size: 18 })}</span>
-      </button>`)}
+  return html`<div class="flex flex-wrap items-center gap-3">
+    <div class="flex flex-wrap gap-3" role="radiogroup" aria-label="Accent colour" data-chip-group="accent">
+      ${ACCENT_KEYS.map(key => html`<button type="button" role="radio" aria-checked="${key === accent ? 'true' : 'false'}" tabindex="${key === accent ? 0 : -1}" data-chip-value="${key}" title="${ACCENT_LABELS[key]}" aria-label="${ACCENT_LABELS[key]}"
+          class="accent-scope accent-swatch" data-accent="${key}">
+          <span class="accent-swatch__check">${icon('check', { size: 18 })}</span>
+        </button>`)}
+    </div>
+    <span class="text-small text-text-2" data-accent-name aria-hidden="true">${ACCENT_LABELS[accent] ?? ''}</span>
   </div>`;
 }
 
@@ -86,7 +100,7 @@ export function mount(el) {
     group(swatches(prefs.accent), { label: 'Accent colour' }),
     group(html`
       ${segmented({ name: 'cardSize', label: 'Card size', value: prefs.cardSize, items: Object.keys(CARD_SIZES).map(k => ({ value: k, label: SIZE_LABELS[k] })) })}
-      <div class="rounded-xl bg-surface-2 p-4 overflow-hidden">
+      <div class="rounded-[var(--radius-md)] bg-surface-2 p-4 overflow-hidden">
         <div class="flex gap-3 items-start" data-size-preview>${sizePreview(prefs.cardSize)}</div>
       </div>`, { label: 'Card size' }),
   ]));
@@ -100,12 +114,6 @@ export function mount(el) {
     if (name === 'theme') {
       savePrefs({ theme: value });
       api.updatePrefs({ theme: value }).catch(() => {});
-      // the check marks follow the selection
-      el.querySelectorAll('[data-chip-group="theme"] [role="radio"]').forEach((b) => {
-        const on = b.getAttribute('aria-checked') === 'true';
-        b.querySelector('.text-accent-text')?.classList.toggle('hidden', !on);
-        b.querySelector('.text-accent-text')?.classList.toggle('inline-flex', on);
-      });
     } else if (name === 'cardSize') {
       size = value;
       savePrefs({ cardSize: value });
@@ -113,6 +121,8 @@ export function mount(el) {
       api.updatePrefs({ cardSize: value }).catch(() => {});
     } else if (name === 'accent') {
       savePrefs({ accent: value });
+      const name = el.querySelector('[data-accent-name]');
+      if (name) name.textContent = ACCENT_LABELS[value] ?? '';
       api.updateMe({ accent: value }).then(u => patchUser({ accent: u?.accent ?? value })).catch(() => {});
     }
   }));

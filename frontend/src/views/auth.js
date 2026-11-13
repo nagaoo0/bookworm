@@ -1,4 +1,4 @@
-// Auth screen: sign in / create account (design-system §8.9).
+// Auth screen: sign in / create account (visual-v3 §7: a centred grouped card on surface-0, the wordmark above it).
 //
 //   renderAuth(el, { onSuccess(user, target), next?, mode? }) -> cleanup
 //
@@ -8,16 +8,6 @@
 import { html } from '../utils.js';
 import { api } from '../api.js';
 import { button, setButtonLoading, field, setFieldError, mountFields, card, icon } from '../ui/index.js';
-
-function stageHtml() {
-  return html`<div class="relative hidden overflow-hidden lg:block lg:w-[55%]" aria-hidden="true">
-    <div class="absolute inset-0" style="background:linear-gradient(90deg,transparent 55%,var(--surface-0) 100%),linear-gradient(0deg,var(--surface-0) 0%,color-mix(in srgb,var(--surface-0) 55%,transparent) 38%,transparent 70%)"></div>
-    <div class="absolute bottom-12 left-12 right-12 max-w-lg">
-      <p class="font-display text-text-1" style="font-size:28px;line-height:36px">Every book you've read, in one place.</p>
-      <p class="mt-3 text-caption text-text-2">Self-hosted · private by default</p>
-    </div>
-  </div>`;
-}
 
 /** Resolve a `next` hash to a safe in-app target. */
 export function safeNext(next) {
@@ -102,17 +92,16 @@ export function renderAuth(el, { onSuccess, next, mode: startMode = 'login' } = 
     const isRegister = mode === 'register';
     document.title = `${isRegister ? 'Create account' : 'Sign in'} · Bookworm`;
     el.innerHTML = String(html`
-      <div class="fixed inset-0 z-[var(--z-sticky)] flex overflow-y-auto">
-      ${stageHtml()}
-      <div class="flex min-h-full flex-1 items-center justify-center px-4 py-8 lg:px-12">
+      <div class="fixed inset-0 z-[var(--z-sticky)] overflow-y-auto bg-surface-0">
+      <div class="flex min-h-full items-center justify-center px-4 py-10">
       <div class="flex w-full max-w-[400px] flex-col">
-        <div class="mb-8 flex flex-col items-center gap-3 text-center">
-          <div class="flex items-center gap-3">
-            <img src="/logo.png" class="h-14 w-14 rounded-full" alt="">
-            <span class="font-display text-text-1" style="font-size:24px;line-height:32px">Bookworm</span>
+        <div class="mb-6 flex flex-col items-center gap-2 text-center">
+          <div class="mb-6 flex items-center gap-2.5">
+            <img src="/logo.png" class="h-10 w-10 rounded-full" alt="">
+            <span class="auth__wordmark text-text-1">Bookworm</span>
           </div>
-          <h1 class="h1 mt-4 text-text-1" tabindex="-1" data-focus-target>${isRegister ? 'Create your account' : 'Welcome back'}</h1>
-          <p class="text-small text-text-2">${isRegister ? 'Start tracking everything you read' : 'Sign in to your library'}</p>
+          <h1 class="h1 text-text-1" tabindex="-1" data-focus-target>${isRegister ? 'Create your account' : 'Welcome back'}</h1>
+          <p class="text-body text-text-2">${isRegister ? 'Start tracking everything you read' : 'Sign in to your library'}</p>
         </div>
         ${card({ padding: 'md', content: html`
           <form class="flex flex-col gap-4" data-auth-form novalidate>
@@ -123,7 +112,7 @@ export function renderAuth(el, { onSuccess, next, mode: startMode = 'login' } = 
             })}
             ${field({
               name: 'password', label: 'Password', type: 'password', id: 'auth-password', required: true, size: 'lg',
-              autocomplete: isRegister ? 'new-password' : 'current-password',
+              autocomplete: isRegister ? 'new-password' : 'current-password', hint: isRegister ? '8 to 128 characters' : undefined,
             })}
             ${isRegister ? html`
               ${field({ name: 'confirmPassword', label: 'Confirm password', type: 'password', id: 'auth-confirm', required: true, size: 'lg', autocomplete: 'new-password' })}

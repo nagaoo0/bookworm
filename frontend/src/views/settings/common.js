@@ -1,7 +1,6 @@
 // Small helpers shared by the Settings sections.
 import { getState, setState } from '../../store.js';
 import { html } from '../../utils.js';
-import { card } from '../../ui/index.js';
 
 /** Merge fields returned by the API into the logged-in user in the store. */
 export function patchUser(patch) {
@@ -35,21 +34,33 @@ export function errorText(err, fallback = 'Something went wrong') {
 }
 
 /**
- * One Settings section: a single quiet card whose groups are separated by hairlines. `groups` are html`` blocks
- * (see `group()`); `footer` is pinned to the bottom of the card (the section's one primary button).
+ * One Settings section: a grouped card (iOS Settings) whose groups are separated by hairlines. `groups` are html``
+ * blocks (`group()` or `settingRow()`); `footer` is pinned to the bottom of the card (the section's one primary button).
  */
 export function groupCard(groups, { footer } = {}) {
-  return card({ tone: 'quiet', padding: 'none', content: html`
-    <div class="divide-y divide-border-1">${groups}</div>
-    ${footer ? html`<div class="px-5 py-4 md:px-6 border-t border-border-1 flex flex-wrap items-center gap-3">${footer}</div>` : ''}` });
+  return html`<div class="grouped settings-card">
+    ${groups}
+    ${footer ? html`<div class="settings-card__footer">${footer}</div>` : ''}
+  </div>`;
 }
 
 /** A padded group inside groupCard(): optional label (caps) or title, then the controls. */
 export function group(body, { label, title, help } = {}) {
-  return html`<section class="px-5 py-5 md:px-6 space-y-3">
+  return html`<section class="p-4 space-y-3">
     ${title ? html`<h3 class="h3">${title}</h3>` : ''}
     ${label ? html`<p class="label">${label}</p>` : ''}
     ${help ? html`<p class="text-small text-text-2">${help}</p>` : ''}
     ${body}
   </section>`;
+}
+
+/** A list row inside groupCard(): title and a wrapping description on the left, one control on the right. */
+export function settingRow(title, sub, trail) {
+  return html`<div class="row settings-row">
+    <div class="row__main">
+      <h3 class="row__title">${title}</h3>
+      ${sub ? html`<p class="settings-row__sub">${sub}</p>` : ''}
+    </div>
+    ${trail ? html`<div class="row__trail">${trail}</div>` : ''}
+  </div>`;
 }

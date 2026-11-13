@@ -322,6 +322,7 @@ html[data-accent],
   --color-border-1: var(--border-1);
   --color-border-2: var(--border-2);
   --color-border-3: var(--border-3);
+  --color-separator: var(--separator);
   --color-gold: var(--gold);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
@@ -1756,7 +1757,7 @@ a.row:hover, button.row:hover { background: color-mix(in srgb, var(--text-1) 4%,
 .sidebar { display: flex; flex-direction: column; height: 100%; padding: calc(20px + env(safe-area-inset-top, 0px)) 12px 12px; }
 .sidebar__brand { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 10px; margin-bottom: 16px; border-radius: var(--radius-md); color: var(--text-1); text-decoration: none; }
 .sidebar__logo { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; }
-.sidebar__wordmark { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.02em; }
+.sidebar__wordmark, .auth__wordmark { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.02em; }
 .sidebar__nav { display: flex; flex-direction: column; gap: 2px; }
 .side-link {
   position: relative;
@@ -2040,7 +2041,7 @@ html.is-scrolled .topbar { background-color: var(--surface-0); border-bottom-col
   .profile__seg .segmented__item { min-width: 0; padding: 0 6px; }
 }
 
-/* ── Rail rows (Library / Settings navigation) ────────────────────────────── */
+/* ── Rail rows (Library navigation) ───────────────────────────────────────── */
 .rail { display: flex; flex-direction: column; gap: 2px; }
 .rail__item {
   position: relative;
@@ -2380,6 +2381,68 @@ html.is-scrolled .topbar { background-color: var(--surface-0); border-bottom-col
 .feed-card__thread { padding-top: 12px; border-top: 1px solid var(--separator); }
 @media (max-width: 767px) {
   .feed-card__head { padding-top: 8px; }
+}
+
+/* ── Settings (views/settings): the section list is a grouped card of rows on phone (iOS Settings), the
+   sidebar-style row list on desktop; a section on phone is a pushed page with a back link ── */
+.settings__layout { margin-top: 16px; }
+/* a section card: groups get full-width hairlines, rows that follow each other keep their inset separator */
+.settings-card > * + * { border-top: 1px solid var(--separator); }
+.settings-card > .row + .row { border-top: 0; }
+.settings-card__footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; }
+.settings-row { flex-wrap: wrap; padding-block: 12px; }
+.settings-row .row__title { white-space: normal; }
+.settings-row__sub { margin: 0; font-size: var(--text-small); line-height: var(--text-small--line-height); color: var(--text-2); }
+.settings-row .row__main { flex-basis: 220px; }
+.settings-row .row__trail { margin-left: 0; }   /* the title grows; a wrapped control starts at the left */
+.settings-nav__list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.settings-nav__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-1);
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.settings-nav__icon { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+.settings-nav__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings__back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin-left: -6px; color: var(--accent-text); font-size: 17px; line-height: 22px; text-decoration: none; }
+.settings__title { margin: 0; font-family: var(--font-display); font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -.02em; }
+/* Appearance: theme previews (a miniature page each) and flat accent swatches; the selection follows aria-checked */
+.theme-option { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
+.theme-option__preview { position: relative; display: block; width: 100%; aspect-ratio: 3 / 2; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--border-1); transition: box-shadow var(--dur-fast) var(--ease-out); }
+.theme-option:hover .theme-option__preview { box-shadow: 0 0 0 1px var(--border-3); }
+.theme-option[aria-checked="true"] .theme-option__preview { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--accent-text); }
+.theme-option__label { display: flex; align-items: center; gap: 6px; padding: 0 2px; font-size: var(--text-small); line-height: var(--text-small--line-height); font-weight: 500; }
+.theme-option[aria-checked="true"] .theme-option__label { color: var(--text-1); font-weight: 600; }
+.theme-option__check { display: none; color: var(--accent-text); }
+.theme-option[aria-checked="true"] .theme-option__check { display: inline-flex; }
+.accent-swatch { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-fg); cursor: pointer; transition: box-shadow var(--dur-fast) var(--ease-out); }
+.accent-swatch::after { content: ''; position: absolute; inset: -4px; }   /* 44 px hit area */
+.accent-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--text-1); }
+.accent-swatch__check { display: none; }
+.accent-swatch[aria-checked="true"] .accent-swatch__check { display: inline-flex; }
+@media (max-width: 767px) {
+  .settings-nav__list { background: var(--surface-1); border: 1px solid var(--border-1); border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow: hidden; }
+  .settings-nav__item { min-height: 52px; padding: 8px 16px; font-size: 17px; line-height: 22px; }
+  .settings-nav__item:hover { background: color-mix(in srgb, var(--text-1) 4%, transparent); }
+  .settings-nav li + li .settings-nav__item::before { content: ''; position: absolute; top: 0; right: 0; left: 58px; height: 1px; background: var(--separator); }
+  .settings-nav__icon { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-2); }
+}
+@media (min-width: 768px) {
+  .settings__layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; margin-top: 24px; }
+  /* the desktop shell has no sticky bar */
+  .settings-nav { position: sticky; top: 24px; align-self: start; }
+  .settings-nav__list { gap: 2px; }
+  .settings-nav__item { height: 40px; padding: 0 10px; border-radius: var(--radius-md); font-size: 15px; line-height: 20px; font-weight: 600; }
+  .settings-nav__item:hover { background: var(--surface-2); }
+  .settings-nav__icon { color: var(--text-2); }
+  /* the 16 % tint laid on surface-1, the pair docs/contrast.mjs checks */
+  .settings-nav__item[aria-current="page"], .settings-nav__item[aria-current="page"]:hover { background: color-mix(in srgb, var(--accent) 16%, var(--surface-1)); color: var(--accent-text); }
+  .settings-nav__item[aria-current="page"] .settings-nav__icon { color: inherit; }
+  .settings__back { display: none; }
+  .settings__title { font-size: 22px; line-height: 28px; }
 }
 
 /* ── Story card (ui/storyCard.js): Year in review, a flat accent block ────── */

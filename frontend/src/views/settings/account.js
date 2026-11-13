@@ -4,7 +4,7 @@ import { html } from '../../utils.js';
 import {
   TOAST, button, field, mountConfirmInline, mountFields, setButtonLoading, setFieldError, toast,
 } from '../../ui/index.js';
-import { createScope, group, groupCard } from './common.js';
+import { createScope, group, groupCard, settingRow } from './common.js';
 
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
@@ -24,8 +24,8 @@ export function mount(el, { user }) {
     </form>
 
     ${groupCard([
-      group(html`<div>${button({ label: 'Sign out everywhere', variant: 'danger-ghost', icon: 'log-out', attrs: 'data-confirm="Sign out on every device?" data-confirm-verb="Sign out"' })}</div>`,
-        { title: 'Sessions', help: `You are signed in as @${user.username}. Signing out everywhere ends every session, including this one.` }),
+      settingRow('Sessions', `You are signed in as @${user.username}. Signing out everywhere ends every session, including this one.`,
+        button({ label: 'Sign out everywhere', variant: 'danger-ghost', icon: 'log-out', attrs: 'data-confirm="Sign out on every device?" data-confirm-verb="Sign out"' })),
     ])}`);
 
   scope.add(mountFields(el));

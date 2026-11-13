@@ -3,9 +3,9 @@ import { api } from '../../api.js';
 import { html } from '../../utils.js';
 import { loadLibrary } from '../../libraryStore.js';
 import {
-  TOAST, badge, button, card, cover, delegate, field, openPopover, plural, setButtonLoading, toast,
+  TOAST, badge, button, cover, delegate, field, openPopover, plural, setButtonLoading, toast,
 } from '../../ui/index.js';
-import { createScope, errorText, group, groupCard } from './common.js';
+import { createScope, errorText, group, groupCard, settingRow } from './common.js';
 
 const authorOf = (authors) => (Array.isArray(authors) ? authors[0] : authors) ?? '';
 
@@ -43,34 +43,25 @@ function pairHTML(pair, index) {
   </li>`;
 }
 
-function toolRow(title, body, action) {
-  return html`<div class="flex flex-wrap items-start justify-between gap-3">
-    <div class="min-w-0 flex-1">
-      <h3 class="h3">${title}</h3>
-      <p class="text-small text-text-2">${body}</p>
-    </div>
-    <div class="shrink-0">${action}</div>
-  </div>`;
-}
-
 export function mount(el) {
   const scope = createScope();
   let pairs = [];
 
   el.innerHTML = String(groupCard([
-    group(html`
-      ${toolRow('Find duplicates', 'Spot books that were imported from more than one source, then merge them into a single entry.',
-        button({ label: 'Find duplicates', variant: 'secondary', attrs: 'data-action="find-dupes"' }))}
-      <p class="text-small text-text-2" data-dupes-msg role="status" hidden></p>
-      <ul class="space-y-3" data-dupes-list></ul>`),
-    group(toolRow('Fetch missing covers', 'Search Google Books and Open Library for cover art on books that have none.',
-      button({ label: 'Fetch covers', variant: 'secondary', icon: 'image', attrs: 'data-action="fetch-covers"' }))),
-    group(toolRow('Export', 'Download your whole library as a tab-separated CSV file.',
-      button({ label: 'Export library', variant: 'secondary', icon: 'download', attrs: 'data-action="export"' }))),
+    settingRow('Find duplicates', 'Spot books that were imported from more than one source, then merge them into a single entry.',
+      button({ label: 'Find duplicates', variant: 'secondary', attrs: 'data-action="find-dupes"' })),
+    html`<div class="p-4 space-y-3" data-dupes hidden>
+      <p class="text-small text-text-2" data-dupes-msg role="status"></p>
+      <ul class="space-y-3" data-dupes-list></ul>
+    </div>`,
+    settingRow('Fetch missing covers', 'Search Google Books and Open Library for cover art on books that have none.',
+      button({ label: 'Fetch covers', variant: 'secondary', icon: 'image', attrs: 'data-action="fetch-covers"' })),
+    settingRow('Export', 'Download your whole library as a tab-separated CSV file.',
+      button({ label: 'Export library', variant: 'secondary', icon: 'download', attrs: 'data-action="export"' })),
     group(html`
       <form class="space-y-4" data-import-form novalidate>
         <div>
-          <h3 class="h3">Import</h3>
+          <h3 class="row__title">Import</h3>
           <p class="text-small text-text-2">Import a tab-separated CSV in the same format as the export above.</p>
         </div>
         <div class="field">
@@ -84,18 +75,19 @@ export function mount(el) {
       </form>`),
   ]));
 
+  const dupesBox = el.querySelector('[data-dupes]');
   const dupesMsg = el.querySelector('[data-dupes-msg]');
   const dupesList = el.querySelector('[data-dupes-list]');
 
   // ── Duplicates ──
   scope.add(delegate(el, 'click', '[data-action="find-dupes"]', async (e, btn) => {
     setButtonLoading(btn, true);
-    dupesMsg.hidden = true;
+    dupesBox.hidden = true;
     dupesList.innerHTML = '';
     try {
       pairs = await api.findDuplicates();
       if (scope.disposed) return;
-      dupesMsg.hidden = false;
+      dupesBox.hidden = false;
       if (!pairs.length) {
         dupesMsg.textContent = 'No duplicate books found';
         dupesMsg.className = 'text-small text-success';
@@ -106,7 +98,7 @@ export function mount(el) {
       }
     } catch (err) {
       if (scope.disposed) return;
-      dupesMsg.hidden = false;
+      dupesBox.hidden = false;
       dupesMsg.textContent = `Couldn't scan for duplicates — ${errorText(err, 'try again')}`;
       dupesMsg.className = 'text-small text-danger';
     } finally {
@@ -220,8 +212,7 @@ export function mount(el) {
     try {
       const { imported = 0, skipped = 0 } = await api.importLibrary(csv);
       if (scope.disposed) { loadLibrary(); return; }
-      result.innerHTML = String(card({ padding: 'sm', cls: 'bg-surface-2', content: html`
-        <p class="font-medium">Imported ${plural(imported, 'book')} · ${skipped} skipped</p>` }));
+      result.innerHTML = String(html`<p class="rounded-[var(--radius-md)] bg-surface-2 px-4 py-3 font-medium">Imported ${plural(imported, 'book')} · ${skipped} skipped</p>`);
       form.reset();
       toast(TOAST.importFinished);
       loadLibrary();
