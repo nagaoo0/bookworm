@@ -492,7 +492,6 @@ export function renderLibrary(el, params = {}) {
     rail: { creating: false, editingId: null, error: null, focus: null },
     drag: null,
     sheet: null,
-    animate: true,
     forceRebuild: false,
     last: {},
   };
@@ -667,14 +666,13 @@ export function renderLibrary(el, params = {}) {
     rec.teaserKey = null;
     rec.slot.innerHTML = '';
     const grid = document.createElement('div');
-    grid.className = cx(S.layout === 'list' ? 'flex flex-col' : (rowGroup(rec.key) ? 'grid gap-4 lg:grid-cols-2' : 'book-grid'), S.animate && 'stagger');
+    grid.className = cx(S.layout === 'list' ? 'flex flex-col' : (rowGroup(rec.key) ? 'grid gap-4 lg:grid-cols-2' : 'book-grid'));
     rec.slot.appendChild(grid);
     rec.gridEl = grid;
     rec.html = new Map();
     rec.rendered = 0;
     appendChunk(rec, Math.min(GRID_CHUNK, rec.entries.length));
     syncPager(rec);
-    if (S.animate) setTimeout(() => grid.classList.remove('stagger'), 900);
   }
 
   function appendChunk(rec, to) {
@@ -725,7 +723,6 @@ export function renderLibrary(el, params = {}) {
       if (!rec.collapsed) mountGrid(rec);
       else setTeaser(rec, rec.entries);
     });
-    S.animate = false;
   }
 
   function replaceCard(rec, oldCard, entry, htmlString) {

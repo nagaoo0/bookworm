@@ -1119,8 +1119,6 @@ a.row:hover, button.row:hover { background: color-mix(in srgb, var(--text-1) 4%,
 .skeleton-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 @media (min-width: 768px) { .skeleton-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; } }
 .skeleton-stats > .card { display: flex; flex-direction: column; gap: 10px; }
-.skeleton-feed { display: flex; flex-direction: column; gap: 16px; }
-.skeleton-feed > .card { display: flex; gap: 14px; }
 
 /* ── Cover: a flat 2:3 image with one shadow ──────────────────────────────── */
 .cover {
@@ -1391,9 +1389,6 @@ a.row:hover, button.row:hover { background: color-mix(in srgb, var(--text-1) 4%,
 .slider__input:focus-visible::-moz-range-thumb { box-shadow: var(--shadow-segment), 0 0 0 2px var(--focus-ring); }
 .slider__value { min-width: 2.75rem; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-1); }
 /* hero variant (Continue reading card): an 8 px bar */
-.slider--hero .slider__input::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; }
-.slider--hero .slider__input::-moz-range-track, .slider--hero .slider__input::-moz-range-progress { height: 8px; border-radius: 4px; }
-.slider--hero .slider__input::-webkit-slider-thumb { margin-top: -7px; }
 
 /* ── Stars: --gold, empty ones a grey star with a hairline outline ────────── */
 .stars { display: inline-flex; align-items: center; gap: 2px; }
@@ -2211,6 +2206,7 @@ html.is-scrolled .topbar { background-color: var(--surface-0); border-bottom-col
 .feed-row__like::after { content: ''; position: absolute; inset: -10px -4px; }   /* 44 px hit area */
 .feed-row__like:hover { background: var(--surface-2); }
 .feed-row__like .btn__label:empty { display: none; }
+.feed-row__like.is-liked, .icon-btn.is-liked, .icon-btn.is-liked:hover:not(:disabled) { color: var(--danger-fg); background: var(--danger-soft); }
 @media (max-width: 767px) {
   .feed-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) 16px; grid-template-areas: "av main chev" "av trail chev"; align-items: start; row-gap: 4px; }
   .feed-row__avatar { grid-area: av; }

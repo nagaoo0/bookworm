@@ -99,21 +99,6 @@ export function skeletonStat(n = 4) {
   return status(html`<div class="skeleton-stats">${cards}</div>`);
 }
 
-/** n feed-card shapes (cover sm 72 + header line, title, review lines). */
-export function skeletonFeed(n = 3) {
-  const cards = Array.from({ length: n }, () => html`
-    <div class="card">
-      <span class="skeleton skeleton--cover" style="width:72px;flex-shrink:0;border-radius:var(--radius-cover-sm)"></span>
-      <div class="flex-1 min-w-0" style="display:flex;flex-direction:column;gap:10px">
-        <div class="flex items-center gap-2"><span class="skeleton skeleton--circle" style="width:32px;height:32px"></span><span class="skeleton skeleton--text" style="width:50%"></span></div>
-        <span class="skeleton skeleton--text" style="width:70%"></span>
-        <span class="skeleton skeleton--text" style="width:100%"></span>
-        <span class="skeleton skeleton--text" style="width:60%"></span>
-      </div>
-    </div>`);
-  return status(html`<div class="skeleton-feed">${cards}</div>`);
-}
-
 /** Profile header card: avatar, name and bio lines, the Year in review row (views/profile.js). */
 export function skeletonProfileHero() {
   return status(html`

@@ -61,11 +61,11 @@ const off = mountBookGrid(container, { onStatus, onRemove });   // one delegated
 | `chip.js` | `chip` (`variant` default/`tag`/`accolade`; selected = inverted pill) `chipGroup` `segmented` (iOS segmented control) `mountChipGroup` |
 | `badge.js` `card.js` `sectionHeader.js` `emptyState.js` `statCard.js` | `badge` `statusBadge` (dot) `countBadge` · `card` (`tone` ambient/quiet; `glass` ignored) · `sectionHeader` (`eyebrow`, `scrollControls`) · `emptyState` (`art`) · `statCard` (`delta`, `spark`, `size` lg) |
 | `illustrations.js` `sparkline.js` | `illustration` `ILLUSTRATIONS` · `sparkline` |
-| `skeleton.js` `cover.js` `avatar.js` | `skeleton*` (+ `skeletonHero` `skeletonShelf` `skeletonStat` `skeletonFeed` `skeletonProfileHero`) `spinner` · `cover` (`author`; `tilt` ignored) `mountCoverZoom` · `avatar` `avatarStack` |
+| `skeleton.js` `cover.js` `avatar.js` | `skeleton*` (+ `skeletonHero` `skeletonShelf` `skeletonStat` `skeletonProfileHero`) `spinner` · `cover` (`author`; `tilt` ignored) `mountCoverZoom` · `avatar` `avatarStack` |
 | `ambient.js` | `hashHue` `rgbToHsl` `extractAmbient` `peekAmbient` `ambientFor` `applyAmbient` `mountAmbient` |
 | `meta.js` | `cleanCategories` `splitAccolades` `genreBreakdown` `formatAuthorsHero` `generatedCoverStyle` `renderDescription` `etaLabel` (pure, unit-tested: `npm test`) |
 | `bookMeta.js` | `bookTags` `authorsHero` `mountBookMeta` |
-| `progress.js` `stars.js` | `progressBar` (`showValue`; `glow` ignored) `progressRing` (10 px arc, centre value) `progressSlider` (`variant: 'hero'`) `mountProgressSlider` · `stars` (half steps) `starInput` `mountStarInput` |
+| `progress.js` `stars.js` | `progressBar` (`showValue`; `glow` ignored) `progressRing` (10 px arc, centre value) `progressSlider` `mountProgressSlider` · `stars` (half steps) `starInput` `mountStarInput` |
 | `bookCard.js` | `bookCard` (`variant` grid/list/compact/row, `size`, `owned`, `index`) `bookMenuItems` `bookAddMenuItems` `mountBookGrid` (`onAdd`) |
 | `shelfRow.js` `heroCard.js` `storyCard.js` | `shelfRow` (`ledge` ignored) `mountShelfRows` · `heroCard` `mountHeroCard` `updateHeroProgress` · `storyCard` `mountStoryCard` |
 | `modal.js` `menu.js` `tabs.js` | `openModal` (`size: 'palette'`; `header: 'ambient'` ignored) `openSheet` `openLightbox` · `openMenu` `openPopover` (`glass` ignored on both) `mountMenuTriggers` · `tabs` (`bleed`) `tabPanel` `mountTabs` |

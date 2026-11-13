@@ -1,6 +1,6 @@
 // Profile: header card + Reading · Shelves · History · Stats · Grid, and the shareable Year in review (visual-v3 §7).
-// `#u/:name[/:tab[/:year]]`. A segment change pushes the hash (history.pushState) without re-mounting the view, so Back
-// returns to the previous segment (the router re-mounts on that hashchange). The owner's accent is scoped to this
+// `#u/:name[/:tab[/:year]]`. A segment change replaces the hash (history.replaceState) without re-mounting the view, so
+// Back leaves the profile instead of stepping through segments. The owner's accent is scoped to this
 // view's root with `class="accent-scope" data-accent`, so it disappears with the root.
 import { html, raw, safeUrl } from '../utils.js';
 import { api } from '../api.js';
@@ -372,8 +372,7 @@ function mountProfile(el, data, { viewer, following: initialFollowing, start }) 
   cleanups.push(mountChipGroup(nav, ({ name: group, value }) => {
     if (group !== 'profile-tab' || !TABS.some(t => t.value === value)) return;
     for (const t of TABS) panelOf(t.value).hidden = t.value !== value;
-    // a new history entry, so Back goes to the previous segment
-    try { history.pushState(null, '', `#u/${enc(name)}/${value}`); } catch { /* sandboxed frame */ }
+    try { history.replaceState(null, '', `#u/${enc(name)}/${value}`); } catch { /* sandboxed frame */ }
     renderPanel(value);
   }));
   cleanups.push(mountBookGrid(root, { entries: () => library }));

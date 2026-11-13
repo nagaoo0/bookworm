@@ -14,7 +14,7 @@ const THEME_VALUES = THEMES.map(t => t.value);
 
 export const ACCENT_KEYS = ['orange', 'blue', 'teal', 'rose'];
 
-// Accent fill (`main`); hover is the same value, identical in every theme.
+// Accent fill (`main`) as a plain hex for swatches; `hover` mirrors it here (the live --accent-hover lives in styles.css).
 export const ACCENT_COLORS = {
   orange: { main: '#ff9f0a', hover: '#ff9f0a' },
   blue:   { main: '#0066d6', hover: '#0066d6' },

@@ -1,6 +1,6 @@
 // Community: Feed · People · Challenges · Groups  (design-system §8.5, §9, §10; visual-v3 §7).
-// `#community/<tab>`: a segment change pushes the hash (history.pushState) without re-mounting the view, so Back
-// returns to the previous segment (the router re-mounts the view on that hashchange).
+// `#community/<tab>`: a segment change replaces the hash (history.replaceState) without re-mounting the view, so
+// Back leaves Community instead of stepping through segments.
 import { html, localDayKey } from '../utils.js';
 import { api } from '../api.js';
 import { getState } from '../store.js';
@@ -94,8 +94,7 @@ export function renderCommunity(el, { tab } = {}) {
   cleanups.push(mountChipGroup(head, ({ name, value }) => {
     if (name !== 'community-tab' || !sections[value]) return;
     for (const t of items) panelOf(t.value).hidden = t.value !== value;
-    // a new history entry, so Back goes to the previous segment
-    try { history.pushState(null, '', `#community/${value}`); } catch { /* sandboxed frame */ }
+    try { history.replaceState(null, '', `#community/${value}`); } catch { /* sandboxed frame */ }
     sections[value].activate();
   }));
   sections[current].activate();
@@ -155,7 +154,7 @@ function feedSection(panel, { viewer, isDisposed, goToTab }) {
             <p class="font-semibold text-text-1 break-words">${challenge.title}</p>
             <p class="mt-0.5 text-caption text-text-2">${running ? `Until ${formatDate(dayDate(challenge.end_date))}` : `Starts ${formatDate(dayDate(challenge.start_date))}`} · ${challenge.participant_count} joined</p>
             ${goal > 0 && challenge.joined ? html`<div class="mt-3">${progressBar({ value: pct, tone: pct >= 100 ? 'success' : 'accent', label: `Your progress in ${challenge.title}` })}<p class="mt-1 text-caption tabular-nums text-text-2">${challenge.progress ?? 0} of ${goal} done</p></div>` : ''}
-            <div class="mt-3">${button({ label: challenge.joined ? 'View' : ACTION.join, variant: challenge.joined ? 'secondary' : 'primary', size: 'sm', attrs: 'data-action="goto-challenges"' })}</div>
+            <div class="mt-3">${button({ label: challenge.joined ? 'View' : ACTION.join, variant: 'secondary', size: 'sm', attrs: 'data-action="goto-challenges"' })}</div>
           </div>
         </section>`);
     }

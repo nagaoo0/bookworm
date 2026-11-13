@@ -142,8 +142,7 @@ export function feedCardHTML(item, { viewer = getState().user, showAddToLibrary 
   const canAdd = showAddToLibrary && viewer && viewer.username !== name && inLibrary(item) === false;
   const gate = (control) => (viewer ? control : html`<span title="Sign in to react">${control}</span>`);
 
-  const likeStyle = liked ? 'width:auto;padding:0 8px;gap:4px;color:var(--danger);background:var(--danger-soft)' : 'width:auto;padding:0 8px;gap:4px';
-  const likeBtn = social ? gate(html`<button type="button" class="icon-btn icon-btn--xs text-caption" style="${likeStyle}" data-feed-like="${sid}" data-count="${likes}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${likes > 0 ? `Like, ${plural(likes, 'like')}` : 'Like'}"${viewer ? '' : raw(' disabled aria-disabled="true"')}>${icon('heart', { size: 16, fill: liked })}<span class="btn__label tabular-nums">${likes > 0 ? likes : ''}</span></button>`) : '';
+  const likeBtn = social ? gate(html`<button type="button" class="${liked ? 'icon-btn icon-btn--xs text-caption is-liked' : 'icon-btn icon-btn--xs text-caption'}" style="width:auto;padding:0 8px;gap:4px" data-feed-like="${sid}" data-count="${likes}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${likes > 0 ? `Like, ${plural(likes, 'like')}` : 'Like'}"${viewer ? '' : raw(' disabled aria-disabled="true"')}>${icon('heart', { size: 16, fill: liked })}<span class="btn__label tabular-nums">${likes > 0 ? likes : ''}</span></button>`) : '';
 
   const commentBtn = social ? gate(html`<button type="button" class="icon-btn icon-btn--xs text-caption" style="width:auto;padding:0 8px;gap:4px" data-feed-comments="${sid}" data-count="${comments}" aria-expanded="false" aria-controls="${threadId}" aria-label="${comments > 0 ? `Comments, ${comments}` : 'Comments'}"${viewer ? '' : raw(' disabled aria-disabled="true"')}>${icon('message-circle', { size: 16 })}<span class="btn__label tabular-nums">${comments > 0 ? comments : ''}</span></button>`) : '';
 
@@ -200,8 +199,7 @@ function paintLike(btn, liked, count) {
   btn.setAttribute('aria-pressed', liked ? 'true' : 'false');
   btn.setAttribute('aria-label', count > 0 ? `Like, ${plural(count, 'like')}` : 'Like');
   btn.dataset.count = String(count);
-  btn.style.color = liked ? 'var(--danger)' : '';
-  btn.style.background = liked ? 'var(--danger-soft)' : '';
+  btn.classList.toggle('is-liked', liked);
   btn.querySelector('svg')?.setAttribute('fill', liked ? 'currentColor' : 'none');
   const label = btn.querySelector('.btn__label');
   if (label) label.textContent = count > 0 ? String(count) : '';

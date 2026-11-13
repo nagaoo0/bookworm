@@ -98,7 +98,7 @@ function feedRowHTML(item) {
       ${item.rating ? stars({ value: item.rating, size: 12 }) : ''}
       <span class="feed-row__meta">
         ${when ? html`<time datetime="${when}">${timeAgo(when)}</time>` : ''}
-        ${social ? html`<span aria-hidden="true">·</span><button type="button" class="feed-row__like" data-feed-like="${sid}" data-count="${likes}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${likes > 0 ? `Like, ${plural(likes, 'like')}` : 'Like'}"${liked ? html` style="color:var(--danger);background:var(--danger-soft)"` : ''}>${icon('heart', { size: 14, fill: liked })}<span class="btn__label">${likes > 0 ? likes : ''}</span></button>` : ''}
+        ${social ? html`<span aria-hidden="true">·</span><button type="button" class="${liked ? 'feed-row__like is-liked' : 'feed-row__like'}" data-feed-like="${sid}" data-count="${likes}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${likes > 0 ? `Like, ${plural(likes, 'like')}` : 'Like'}">${icon('heart', { size: 14, fill: liked })}<span class="btn__label">${likes > 0 ? likes : ''}</span></button>` : ''}
         ${comments ? html`<span aria-hidden="true">·</span><span class="feed-row__stat">${icon('message-circle', { size: 14 })}${comments}<span class="sr-only"> comments</span></span>` : ''}
       </span>
     </div>

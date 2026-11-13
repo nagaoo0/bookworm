@@ -78,14 +78,14 @@ export function progressRing({ value, max = 100, size = 96, stroke = 10, label, 
 
 /**
  * Range input for reading progress with a live "%" readout (hit area 44px). The track fills with the accent up to the
- * thumb (a 22 px white thumb); `variant: 'hero'` draws the 8 px bar of the Continue reading card.
+ * thumb (a 22 px white thumb).
  * Wire it with mountProgressSlider().
- * @param {{ id?: string, value?: number, step?: number, label?: string, variant?: 'default'|'hero', attrs?: string }} o
+ * @param {{ id?: string, value?: number, step?: number, label?: string, attrs?: string }} o
  */
-export function progressSlider({ id, value = 0, step = 5, label = 'Reading progress', variant = 'default', attrs = '' } = {}) {
+export function progressSlider({ id, value = 0, step = 5, label = 'Reading progress', attrs = '' } = {}) {
   const sid = id ?? uid('slider');
   const v = Math.min(100, Math.max(0, Math.round(Number(value) || 0)));
-  return html`<div class="${cx('slider', variant === 'hero' && 'slider--hero')}"><input type="range" class="slider__input" id="${sid}" min="0" max="100" step="${step}" value="${v}" aria-label="${label}" aria-valuetext="${v}%" style="--fill:${fillStop(v)}"${attrsRaw(attrs)}><output class="slider__value" for="${sid}" aria-hidden="true">${v}%</output></div>`;
+  return html`<div class="slider"><input type="range" class="slider__input" id="${sid}" min="0" max="100" step="${step}" value="${v}" aria-label="${label}" aria-valuetext="${v}%" style="--fill:${fillStop(v)}"${attrsRaw(attrs)}><output class="slider__value" for="${sid}" aria-hidden="true">${v}%</output></div>`;
 }
 
 /**

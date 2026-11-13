@@ -237,7 +237,7 @@ function paintAccentSwatches() {
     const c = ACCENT_COLORS[btn.querySelector('.menu__label')?.textContent.trim().toLowerCase()];
     const slot = btn.querySelector('.menu__icon');
     if (!c || !slot) return;
-    slot.innerHTML = `<span style="display:inline-block;width:14px;height:14px;margin:1px;border-radius:50%;background:linear-gradient(180deg,${c.hover},${c.main});box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 0 1px rgba(0,0,0,.25)"></span>`;
+    slot.innerHTML = `<span style="display:inline-block;width:14px;height:14px;margin:1px;border-radius:50%;background:${c.main}"></span>`;
   });
 }
 
@@ -435,7 +435,7 @@ function openNotifications(trigger) {
   const onClose = () => { clearTimeout(autoTimer); notifOpen = null; };
   notifOpen = mobile
     ? openSheet({ title: 'Notifications', content: panel, onClose })
-    : openPopover({ trigger, content: panel, width: 380, label: 'Notifications', onClose, glass: true });
+    : openPopover({ trigger, content: panel, width: 380, label: 'Notifications', onClose });
   load();
 }
 
