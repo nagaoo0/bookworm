@@ -44,7 +44,7 @@ function dayOfYear(d = new Date()) {
 
 const today = () => new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
-// Up next: newest first in each status
+// Up next: newest first in each status (Finished by added date: library rows carry no finish date)
 const UP_NEXT_ORDER = {
   reading: (b) => ts(b.started_reading_at ?? b.added_at),
   to_read: (b) => ts(b.added_at),
@@ -257,7 +257,9 @@ export function renderHome(el) {
     const sig = `${status}|${picks.map((b) => [b.id, b.title, b.cover_url].join(':')).join('~')}|${all.length}`;
     if (sig === H.upNextSig) return;
     H.upNextSig = sig;
-    q('upnext').querySelector('.section-header__link')?.setAttribute('href', `#library/status/${status}`);
+    const seeAll = q('upnext').querySelector('.section-header__link');
+    seeAll?.setAttribute('href', `#library/status/${status}`);
+    seeAll?.setAttribute('aria-label', `${ACTION.seeAll}: ${STATUS[status].label}`);
     const empty = status === 'to_read'
       ? emptyState({ art: 'stack', title: EMPTY.toReadEmpty.title, size: 'sm', action: { label: ACTION.discoverBooks, href: '#discover', variant: 'secondary' } })
       : emptyState({ art: status === 'done' ? 'stack' : 'open-book', title: EMPTY.statusEmpty[status].title, body: EMPTY.statusEmpty[status].body, size: 'sm' });
@@ -271,11 +273,12 @@ export function renderHome(el) {
     H.last = { library: st.library, shelves: st.shelves, libraryLoaded: st.libraryLoaded, error: st.error };
     const dash = paintGate();
     if (dash) { paintReading(); paintUpNext(); } else paintTint(null);
-    // the page's one primary: Update progress in the hero, else Add a book (desktop; the tab bar + on phone)
-    const reading = (!st.libraryLoaded && !st.error) || (dash && entriesWith('reading').length > 0);   // secondary while loading
+    // the page's one primary: Update progress in the hero, else Add a book (desktop; the tab bar + on phone). It stays
+    // secondary while loading and on a load error, where the gate's Try again is the primary
+    const primary = st.libraryLoaded && !st.error && !entriesWith('reading').length;
     const add = el.querySelector('.title-bar [data-shell="add-book"]');
-    add?.classList.toggle('btn--primary', !reading);
-    add?.classList.toggle('btn--secondary', reading);
+    add?.classList.toggle('btn--primary', primary);
+    add?.classList.toggle('btn--secondary', !primary);
     paintSummary();
   }
 
