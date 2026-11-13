@@ -7,7 +7,7 @@
     android:viewportHeight="512">
     <!-- Book cover -->
     <path
-        android:fillColor="#f59e0b"
+        android:fillColor="#ff9f0a"
         android:pathData="M80,80 L432,80 L432,432 L80,432 Z" />
     <!-- Book pages / inner -->
     <path
@@ -15,7 +15,7 @@
         android:pathData="M112,80 L432,80 L432,432 L112,432 Z" />
     <!-- Spine highlight -->
     <path
-        android:fillColor="#f59e0b"
+        android:fillColor="#ff9f0a"
         android:pathData="M80,80 L112,80 L112,432 L80,432 Z" />
     <!-- Text lines -->
     <path
@@ -29,6 +29,6 @@
         android:pathData="M148,256 L340,256 L340,272 L148,272 Z" />
     <!-- Accent dot -->
     <path
-        android:fillColor="#f59e0b"
+        android:fillColor="#ff9f0a"
         android:pathData="M148,300 L200,300 L200,316 L148,316 Z" />
 </vector>

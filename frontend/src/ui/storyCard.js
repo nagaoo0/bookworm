@@ -7,21 +7,21 @@ import { cover } from './cover.js';
 import { LABEL } from './copy.js';
 import { mountAmbient } from './ambient.js';
 
-const ACCENTS = ['amber', 'blue', 'teal', 'rose'];
+const ACCENTS = ['orange', 'blue', 'teal', 'rose'];
 const num = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US') : '—');
 
 /**
  * @param {{ year: number|string, username: string, avatarUrl?: string|null,
  *   stats?: { finished?: number, pages?: number, avgRating?: number|null, favouriteAuthor?: string, topGenre?: string },
  *   topBooks?: Array<{ book_id?: number|string, id?: number|string, title: string, cover_url?: string|null, authors?: string[] }>,
- *   favouriteAuthor?: string, topGenre?: string, accent?: 'amber'|'blue'|'teal'|'rose', ambient?: boolean }} o
+ *   favouriteAuthor?: string, topGenre?: string, accent?: 'orange'|'blue'|'teal'|'rose', ambient?: boolean }} o
  *   topBooks is ranked: the first book is the centre cover and the source of the ambient colour; up to three are shown.
  *   accent defaults to the page's accent. Wire with mountStoryCard(root) (applies the ambient tint). Dark tokens are inlined
  *   on the card (`.story-card`), so it needs no theme handling. 400 × 710 at ≥ 768, full-bleed below.
  */
 export function storyCard({ year, username, avatarUrl, stats = {}, topBooks = [], favouriteAuthor, topGenre, accent, ambient = true } = {}) {
   const acc = ACCENTS.includes(accent) ? accent
-    : ((typeof document !== 'undefined' && ACCENTS.includes(document.documentElement.getAttribute('data-accent'))) ? document.documentElement.getAttribute('data-accent') : 'amber');
+    : ((typeof document !== 'undefined' && ACCENTS.includes(document.documentElement.getAttribute('data-accent'))) ? document.documentElement.getAttribute('data-accent') : 'orange');
   const author = favouriteAuthor ?? stats.favouriteAuthor;
   const genre = topGenre ?? stats.topGenre;
   const top = topBooks.slice(0, 3);

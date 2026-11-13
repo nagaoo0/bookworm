@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" data-accent="amber">
+<html lang="en" data-theme="dark" data-accent="orange">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" href="/logo.png" />
   <link rel="apple-touch-icon" href="/logo.png" />
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#0d0b0a" />
+  <meta name="theme-color" content="#000000" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -20,16 +20,17 @@
       try {
         var p = JSON.parse(localStorage.getItem('bw_prefs') || '{}') || {};
         var t = ['dark', 'light', 'sepia', 'system'].indexOf(p.theme) > -1 ? p.theme : 'dark';
-        var a = ['amber', 'blue', 'teal', 'rose'].indexOf(p.accent) > -1 ? p.accent : 'amber';
+        var a = p.accent === 'amber' ? 'orange' : p.accent;
+        if (['orange', 'blue', 'teal', 'rose'].indexOf(a) < 0) a = 'orange';
         var h = document.documentElement;
         h.setAttribute('data-theme', t);
         h.setAttribute('data-accent', a);
         var r = t === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : t;
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', { dark: '#0d0b0a', light: '#f6f1ea', sepia: '#f0e6cf' }[r]);
+        if (m) m.setAttribute('content', { dark: '#000000', light: '#f2f2f7', sepia: '#f3ecdf' }[r]);
         var s = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
         if (s && r !== 'dark') s.setAttribute('content', 'default');
-      } catch (e) { /* keep the dark/amber defaults from the <html> tag */ }
+      } catch (e) { /* keep the dark/orange defaults from the <html> tag */ }
     })();
   </script>
 

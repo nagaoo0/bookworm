@@ -8,7 +8,7 @@ import { cover, icon, mountChipGroup, segmented } from '../../ui/index.js';
 import { createScope, group, groupCard, patchUser } from './common.js';
 
 const SIZE_LABELS = { miniature: 'Miniature', small: 'Small', medium: 'Medium', large: 'Large' };
-const ACCENT_LABELS = { amber: 'Amber', blue: 'Blue', teal: 'Teal', rose: 'Rose' };
+const ACCENT_LABELS = { orange: 'Orange', blue: 'Blue', teal: 'Teal', rose: 'Rose' };
 const PREVIEW_COUNT = 4;
 
 // Page / header / card / text tones of each theme (styles.css §1), so a preview shows its theme whatever the current one is.

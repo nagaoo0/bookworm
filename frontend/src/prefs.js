@@ -12,24 +12,24 @@ export const THEMES = [
 ];
 const THEME_VALUES = THEMES.map(t => t.value);
 
-export const ACCENT_KEYS = ['amber', 'blue', 'teal', 'rose'];
+export const ACCENT_KEYS = ['orange', 'blue', 'teal', 'rose'];
 
-// Accent fill (`main`) and its hover colour, identical in every theme (design-system §2.3).
+// Accent fill (`main`); hover is the same value, identical in every theme.
 export const ACCENT_COLORS = {
-  amber: { main: '#f59e0b', hover: '#fbbf24' },
-  blue:  { main: '#2563eb', hover: '#3b82f6' },
-  teal:  { main: '#14b8a6', hover: '#2dd4bf' },
-  rose:  { main: '#e11d48', hover: '#f43f5e' },
+  orange: { main: '#ff9f0a', hover: '#ff9f0a' },
+  blue:   { main: '#0066d6', hover: '#0066d6' },
+  teal:   { main: '#30b0c7', hover: '#30b0c7' },
+  rose:   { main: '#d81b48', hover: '#d81b48' },
 };
 
 // Minimum cover-card width per size (visual-v2 §6.3); medium is the default.
 export const CARD_SIZES = { miniature: '84px', small: '108px', medium: '128px', large: '168px' };
 
 // Page background (--surface-0) per resolved theme; used for <meta name="theme-color">.
-const SURFACE_0 = { dark: '#0d0b0a', light: '#f6f1ea', sepia: '#f0e6cf' };
+export const SURFACE_0 = { dark: '#000000', light: '#f2f2f7', sepia: '#f3ecdf' };
 
 // Spec §2.1: dark unless the user picked something else.
-const DEFAULTS = { theme: 'dark', cardSize: 'medium', accent: 'amber', searchLanguage: '' };
+const DEFAULTS = { theme: 'dark', cardSize: 'medium', accent: 'orange', searchLanguage: '' };
 
 function readStored() {
   try {
@@ -38,8 +38,9 @@ function readStored() {
   } catch { return {}; }
 }
 
-function normalise(p) {
+export function normalisePrefs(p) {
   const prefs = { ...DEFAULTS, ...p };
+  if (prefs.accent === 'amber') prefs.accent = 'orange';   // legacy accent
   if (!THEME_VALUES.includes(prefs.theme)) prefs.theme = DEFAULTS.theme;   // migrates unknown/legacy values
   if (!ACCENT_COLORS[prefs.accent]) prefs.accent = DEFAULTS.accent;
   if (!CARD_SIZES[prefs.cardSize]) prefs.cardSize = DEFAULTS.cardSize;
@@ -47,14 +48,14 @@ function normalise(p) {
 }
 
 export function loadPrefs() {
-  return normalise(readStored());
+  return normalisePrefs(readStored());
 }
 
 export function savePrefs(patch) {
   // Persist only what was ever set, so untouched prefs keep following the defaults.
   const stored = { ...readStored(), ...patch };
   try { localStorage.setItem(KEY, JSON.stringify(stored)); } catch { /* private mode / quota */ }
-  const prefs = normalise(stored);
+  const prefs = normalisePrefs(stored);
   applyPrefs(prefs);
   return prefs;
 }
