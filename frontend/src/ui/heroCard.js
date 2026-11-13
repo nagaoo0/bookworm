@@ -1,108 +1,117 @@
-// Hero card (visual-v3 §5, §6.2): Home "Continue reading" as a grouped card: the most recently progressed book's cover at
-// 120 px (desktop) / 96 px (phone), the title in Inter Tight 28, the progress slider with its value, and the two CTAs;
-// further reading books appear as list rows below a separator ("Also reading"), each with its percentage.
-// mountHeroCard() still samples the cover hue (ui/ambient.js) for views that tint their header with it.
-import { html, escHtml } from '../utils.js';
+// Hero card (visual-v3 §5, §6.2): Home "Continue reading" as a grouped card. The current book: cover (120 px desktop,
+// 96 px phone), a "Reading now" eyebrow, the title in Inter Tight 28, author and "Page x of y", the percentage as a stat
+// with the time left, the progress bar, and Update progress (primary) + Finish. Other reading books follow as list rows
+// below a separator (cover, title, author, bar, percentage, chevron).
+import { html } from '../utils.js';
 import { getState } from '../store.js';
 import { cover } from './cover.js';
-import { button, iconButton } from './button.js';
-import { progressBar, progressSlider, mountProgressSlider } from './progress.js';
+import { button } from './button.js';
+import { icon } from './icons.js';
+import { progressBar } from './progress.js';
 import { formatAuthors } from './bookCard.js';
-import { timeAgo, ACTION } from './copy.js';
+import { ACTION } from './copy.js';
 import { etaLabel } from './meta.js';
-import { mountAmbient } from './ambient.js';
-import { cx, delegate } from './dom.js';
+import { delegate } from './dom.js';
+
+const pctOf = (entry) => Math.min(100, Math.max(0, Math.round(Number(entry?.progress_pct) || 0)));
+const firstAuthor = (authors) => (Array.isArray(authors) ? authors[0] : authors);
+
+/** "Page 171 of 612" from the percentage, when the page count is known; else ''. */
+export function pageLabel(entry) {
+  const total = Number(entry?.page_count) || 0;
+  return total > 0 ? `Page ${Math.round(total * pctOf(entry) / 100)} of ${total}` : '';
+}
+
+/** etaLabel() spelled out for the hero ("about 6 h left"), or ''. */
+export function heroEta(entry) {
+  const eta = etaLabel(entry);
+  return eta ? eta.replace(/^≈\s*/, 'about ') : '';
+}
+
+const byline = (entry) => [formatAuthors(entry.authors), pageLabel(entry)].filter(Boolean).join(' · ');
 
 /**
- * @param {{ entry: object, others?: object[], ambient?: boolean, eyebrow?: string, meta?: string }} o
- *   entry: the library entry being read ({ id, book_id, title, authors, cover_url, progress_pct, started_reading_at, page_count,
- *   availability }). others: more reading entries for the "Also reading" rows (cover 44 · title · bar · Update).
- *   ambient (default true): adds `.ambient` + `data-ambient` so mountHeroCard()/mountAmbient() can tint it.
- *   meta overrides the caption ("Started 3 min ago · ≈ 6 h left").
- *   The single primary button of the page is "Update progress" (`data-hero-action="update"`); also
- *   `finish`, `menu`, and `also-update` (the rows). Wire them with mountHeroCard().
+ * @param {{ entry: object, others?: object[], eta?: string, more?: number }} o
+ *   entry: the library entry being read ({ id, book_id, title, authors, cover_url, progress_pct, page_count, availability }).
+ *   others: more reading entries, shown as list rows (the caller caps them, normally at 3).
+ *   eta: the "about N h left" text (default heroEta(entry)). more: how many reading books are left out; adds a last
+ *   row linking to the Reading shelf.
+ *   Buttons carry `data-hero-action="update"` (the page's one primary button) and `"finish"`: wire them with mountHeroCard().
  */
-export function heroCard({ entry, others = [], ambient = true, eyebrow = 'Continue reading', meta } = {}) {
+export function heroCard({ entry, others = [], eta, more = 0 } = {}) {
   if (!entry) return '';
   const title = entry.title ?? '';
-  const authors = formatAuthors(entry.authors);
   const bookId = entry.book_id ?? entry.id;
-  const pct = Math.round(Number(entry.progress_pct) || 0);
-  const started = entry.started_reading_at ? `Started ${timeAgo(entry.started_reading_at)}` : '';
-  const caption = meta ?? [started, etaLabel(entry)].filter(Boolean).join(' · ');
-  const href = bookId ? `#book/${bookId}` : null;
-  const firstAuthor = Array.isArray(entry.authors) ? entry.authors[0] : entry.authors;
+  const href = `#book/${bookId}`;
+  const pct = pctOf(entry);
+  const left = eta === undefined ? heroEta(entry) : eta;
 
   const alsoRow = (b) => {
-    const p = Math.round(Number(b.progress_pct) || 0);
+    const p = pctOf(b);
     const id = b.book_id ?? b.id;
-    return html`<div class="hero-card__also-row" data-lib-id="${b.id ?? ''}" data-book-id="${b.book_id ?? ''}">
-      <a href="#book/${id}" tabindex="-1" aria-hidden="true" class="shrink-0">${cover({ url: b.cover_url, bookId: id, title: b.title, author: Array.isArray(b.authors) ? b.authors[0] : b.authors, size: 'xs' })}</a>
-      <div class="hero-card__also-main"><a class="hero-card__also-title" href="#book/${id}">${b.title}</a></div>
-      <div class="hero-card__also-bar">${progressBar({ value: p, size: 'sm', label: `Progress for ${b.title}` })}<span class="hero-card__also-pct">${p}%</span></div>
-      ${button({ label: 'Update', variant: 'ghost', size: 'sm', attrs: `data-hero-action="also-update" aria-label="Update progress for ${escHtml(b.title ?? '')}"` })}
-    </div>`;
+    return html`<a class="row row--thumb hero-card__row" href="#book/${id}" data-lib-id="${b.id ?? ''}" aria-label="${b.title ?? ''}, ${p}% read">
+      ${cover({ url: b.cover_url, bookId: id, title: b.title, author: firstAuthor(b.authors), size: 'xs' })}
+      <span class="row__main">
+        <span class="row__title">${b.title}</span>
+        ${formatAuthors(b.authors) ? html`<span class="row__sub">${formatAuthors(b.authors)}</span>` : ''}
+        ${progressBar({ value: p, label: `Progress for ${b.title}`, cls: 'hero-card__row-bar' })}
+      </span>
+      <span class="hero-card__row-pct">${p}%</span>
+      <span class="row__chev">${icon('chevron-right', { size: 16 })}</span>
+    </a>`;
   };
 
-  return html`<article class="${cx('card hero-card', ambient && 'ambient')}" data-hero-card${ambient ? html` data-ambient="${bookId ?? ''}" data-ambient-seed="${title}"` : ''} data-lib-id="${entry.id ?? ''}" data-book-id="${entry.book_id ?? ''}" aria-label="${eyebrow}: ${title}">
+  return html`<article class="grouped hero-card" data-hero-card data-lib-id="${entry.id ?? ''}" data-book-id="${entry.book_id ?? ''}" aria-label="Reading now: ${title}">
     <div class="hero-card__main">
-      <a class="hero-card__cover" href="${href ?? '#home'}" data-ambient-source tabindex="-1" aria-hidden="true">${cover({ url: entry.cover_url, bookId, title, author: firstAuthor, size: 'lg' })}</a>
-      <div class="hero-card__body">
-        <div class="hero-card__top">
-          <span class="eyebrow">${eyebrow}</span>
-          ${iconButton({ icon: 'more-horizontal', label: `More options for ${title}`, size: 'sm', attrs: 'data-hero-action="menu" aria-haspopup="menu"' })}
-        </div>
-        <h2 class="hero-card__title">${href ? html`<a href="${href}">${title}</a>` : title}</h2>
-        ${authors ? html`<p class="hero-card__author">${authors}</p>` : ''}
-        ${caption ? html`<p class="hero-card__meta" data-hero-meta${meta === undefined ? html` data-started="${started}"` : ''}>${caption}</p>` : ''}
-        <div class="hero-card__progress">${progressSlider({ value: pct, variant: 'hero', label: `Progress for ${title}` })}<span class="block mt-1 min-h-4 text-caption text-success opacity-0 transition-opacity duration-[var(--dur-base)]" data-saved role="status"></span></div>
-        <div class="hero-card__actions">
-          ${button({ label: ACTION.updateProgress, variant: 'primary', attrs: 'data-hero-action="update"' })}
-          ${button({ label: ACTION.finish, variant: 'secondary', attrs: 'data-hero-action="finish"' })}
-        </div>
+      <a class="hero-card__cover" href="${href}" tabindex="-1" aria-hidden="true">${cover({ url: entry.cover_url, bookId, title, author: firstAuthor(entry.authors), size: 'lg' })}</a>
+      <div class="hero-card__head">
+        <p class="hero-card__eyebrow">Reading now</p>
+        <h3 class="hero-card__title"><a href="${href}">${title}</a></h3>
+        <p class="hero-card__byline" data-hero-byline>${byline(entry)}</p>
+      </div>
+      <div class="hero-card__progress">
+        <div class="hero-card__stat"><span class="hero-card__pct" data-hero-pct>${pct}%</span><span class="hero-card__eta" data-hero-eta>${left}</span></div>
+        ${progressBar({ value: pct, size: 'lg', label: `Progress for ${title}` })}
+      </div>
+      <div class="hero-card__actions">
+        ${button({ label: ACTION.updateProgress, variant: 'primary', attrs: 'data-hero-action="update" aria-haspopup="dialog"' })}
+        ${button({ label: ACTION.finish, variant: 'secondary', attrs: 'data-hero-action="finish"' })}
       </div>
     </div>
-    ${others.length ? html`<div class="hero-card__also" role="group" aria-label="Also reading"><span class="label">Also reading</span>${others.map(alsoRow)}</div>` : ''}
+    ${others.length || more > 0 ? html`<div class="hero-card__rows" role="group" aria-label="Also reading">
+      ${others.map(alsoRow)}
+      ${more > 0 ? html`<a class="row hero-card__more" href="#library/status/reading"><span class="row__main"><span class="row__title">${more} more in Reading</span></span><span class="row__chev">${icon('chevron-right', { size: 16 })}</span></a>` : ''}
+    </div>` : ''}
   </article>`;
 }
 
+/** Repaint the current book's progress in place (percentage, page, time left, bar), keeping the card and its buttons. */
+export function updateHeroProgress(card, entry) {
+  if (!card || !entry) return;
+  const pct = pctOf(entry);
+  const set = (sel, text) => { const el = card.querySelector(sel); if (el && el.textContent !== text) el.textContent = text; };
+  set('[data-hero-pct]', `${pct}%`);
+  set('[data-hero-byline]', byline(entry));
+  set('[data-hero-eta]', heroEta(entry));
+  const bar = card.querySelector('.hero-card__progress .progress');
+  bar?.style.setProperty('--progress', `${pct}%`);
+  bar?.setAttribute('aria-valuenow', String(pct));
+}
+
 /**
- * Behaviour for every heroCard() inside `root`: tints it from its cover (cached colours apply instantly), commits the
- * slider (debounced, `onProgress` may return a promise: a rejection lets the same value be committed again) and
- * routes the buttons. Handlers receive the library entry (looked up in `entries`, default the store's library).
+ * Behaviour for every heroCard() inside `root`: routes the two buttons. Handlers receive the library entry (looked up
+ * in `entries`, default the store's library) and the button.
  * @param {Element} root
- * @param {{ entries?: object[]|(() => object[]), onProgress?: (entry, pct: number) => any, onFinish?: (entry) => void,
- *   onUpdate?: (entry) => void, onMenu?: (entry, trigger: Element) => void, onAlsoUpdate?: (entry) => void }} [opts]
- *   onUpdate is the primary "Update progress" button (typically focus the slider or open the progress sheet).
+ * @param {{ entries?: object[]|(() => object[]), onUpdate?: (entry, btn: Element) => void, onFinish?: (entry, btn: Element) => void }} [opts]
  * @returns {() => void} cleanup
  */
-export function mountHeroCard(root, { entries, onProgress, onFinish, onUpdate, onMenu, onAlsoUpdate } = {}) {
+export function mountHeroCard(root, { entries, onUpdate, onFinish } = {}) {
   const list = () => (typeof entries === 'function' ? entries() : (entries ?? getState().library ?? []));
-  const entryOf = (el) => {
-    const holder = el.closest('[data-lib-id]');
+  return delegate(root, 'click', '[data-hero-action]', (e, btn) => {
+    const holder = btn.closest('[data-lib-id]');
     const id = holder?.dataset.libId;
-    return list().find((b) => String(b.id) === id) ?? { id, book_id: holder?.dataset.bookId };
-  };
-  const offAmbient = mountAmbient(root);
-  const offSlider = mountProgressSlider(root, (value, input) => {
-    const card = input.closest('[data-hero-card]');
-    return card ? onProgress?.(entryOf(card), value) : undefined;
+    const entry = list().find((b) => String(b.id) === id) ?? { id, book_id: holder?.dataset.bookId };
+    if (btn.dataset.heroAction === 'update') onUpdate?.(entry, btn);
+    else if (btn.dataset.heroAction === 'finish') onFinish?.(entry, btn);
   });
-  // the "≈ X left" label follows the slider while it moves
-  const offInput = delegate(root, 'input', '.slider__input', (e, input) => {
-    const card = input.closest('[data-hero-card]');
-    const meta = card?.querySelector('[data-hero-meta][data-started]');
-    if (!meta) return;
-    const eta = etaLabel({ ...entryOf(card), progress_pct: Number(input.value), status: 'reading' });
-    meta.textContent = [meta.dataset.started, eta].filter(Boolean).join(' · ');
-  });
-  const offClick = delegate(root, 'click', '[data-hero-action]', (e, btn) => {
-    const entry = entryOf(btn);
-    const action = btn.dataset.heroAction;
-    if (action === 'update') onUpdate?.(entry);
-    else if (action === 'finish') onFinish?.(entry);
-    else if (action === 'menu') onMenu?.(entry, btn);
-    else if (action === 'also-update') onAlsoUpdate?.(entry);
-  });
-  return () => { offAmbient(); offSlider(); offInput(); offClick(); };
 }

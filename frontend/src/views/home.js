@@ -1,23 +1,23 @@
-// Home dashboard: #home (design-system §8.1).
-// Currently reading (inline progress + Finish) · yearly goal · now listening (Audiobookshelf, live over SSE) ·
-// up next · activity from people you follow · recently added from integrations.
+// Home dashboard: #home (visual-v3 §6.2).
+// Title bar · Continue reading and the yearly goal (two columns from 1024 px, under the dark tinted header) · Up next
+// (Reading / To read / Finished) · from people you follow · recently finished · now listening and recently added
+// (integrations, only when connected).
 // Library-driven sections repaint from the store; the other sections load on their own and fail on their own,
 // so one broken request never blanks the page.
 import { api } from '../api.js';
 import { getState, setState, subscribe } from '../store.js';
-import { loadLibrary, upsertLibraryEntry } from '../libraryStore.js';
+import { loadLibrary } from '../libraryStore.js';
 import { openSse } from '../sse.js';
 import { html } from '../utils.js';
+import { titleBar, mountTitleBar } from '../shell/titleBar.js';
 import {
-  ACTION, EMPTY, LABEL,
-  bookCard, bookMenuItems, button, card, cover, cssEscape, delegate, emptyState, heroCard, icon, mountBookGrid,
-  mountAmbient, mountHeroCard, mountShelfRows, openCommandPalette, openMenu, plural, progressBar, progressRing, sectionHeader,
-  shelfRow, skeletonCard, skeletonFeed, skeletonHero, skeletonShelf, sparkline, uid,
+  ACTION, EMPTY, LABEL, STATUS,
+  ambientFor, applyAmbient, avatar, bookCard, button, card, cover, delegate, emptyState, formatAuthors, heroCard, icon,
+  mountBookGrid, mountChipGroup, mountHeroCard, mountShelfRows, peekAmbient, plural, progressBar, progressRing, sectionHeader,
+  segmented, shelfRow, skeletonCard, skeletonHero, skeletonList, skeletonShelf, stars, timeAgo, uid, updateHeroProgress,
 } from '../ui/index.js';
-import { feedCardHTML, mountFeedCards } from './feedCard.js';
-import {
-  bookActionHandlers, commitProgress, dispatchBookMenu, findLibraryEntry, finishBook, flashSaved, onboardingHTML, setSliderValue,
-} from './library.js';
+import { mountFeedCards } from './feedCard.js';
+import { bookActionHandlers, finishBook, onboardingHTML, openProgressPicker } from './library.js';
 
 // The shared loader lives in libraryStore.js; other modules may still import it from here during the transition.
 export { loadLibrary };
@@ -26,14 +26,16 @@ const RECENTLY_ADDED_KEY = 'recentlyAddedDismissedAt';
 const MAX_ALSO = 3;
 const UP_NEXT = 8;
 const FEED_MAX = 3;
+const FINISHED_MAX = 3;
+const MONTHS = 'JFMAMJJASOND';
 
 const ts = (v) => { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; };
 const authorsOf = (b) => (Array.isArray(b.authors) ? b.authors : (b.authors ? [b.authors] : []));
+const chevron = () => html`<span class="row__chev">${icon('chevron-right', { size: 16 })}</span>`;
 
-function greeting(user) {
+function greeting() {
   const h = new Date().getHours();
-  const part = h < 12 ? 'Good morning' : (h < 18 ? 'Good afternoon' : 'Good evening');
-  return user?.username ? `${part}, ${user.username}` : part;
+  return h < 12 ? 'Good morning' : (h < 18 ? 'Good afternoon' : 'Good evening');
 }
 
 function dayOfYear(d = new Date()) {
@@ -42,93 +44,162 @@ function dayOfYear(d = new Date()) {
 
 const today = () => new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
-// Everything about the hero except the hero's own progress: a progress-only change must not rebuild the card (the slider may be mid-drag)
+// Up next: newest first in each status
+const UP_NEXT_ORDER = {
+  reading: (b) => ts(b.started_reading_at ?? b.added_at),
+  to_read: (b) => ts(b.added_at),
+  done: (b) => ts(b.added_at),
+};
+
+// Everything about the hero except the hero's own progress: a progress-only change is painted in place, so the card
+// (and a progress popover hanging from its button) stays
 const heroSignature = (hero, others, total) => [
-  hero && [hero.id, hero.title, hero.cover_url, hero.started_reading_at, authorsOf(hero).join(',')].join(':'),
+  hero && [hero.id, hero.title, hero.cover_url, hero.page_count, authorsOf(hero).join(',')].join(':'),
   ...others.map((b) => [b.id, b.title, b.cover_url, Math.round(Number(b.progress_pct) || 0)].join(':')),
   total,
 ].join('~');
+
+// "Finished per month": 12 small bars with their values; months after the current one are future (grey values)
+function monthChart(series, year) {
+  const now = new Date();
+  const current = year === now.getFullYear() ? now.getMonth() : (year < now.getFullYear() ? 11 : -1);
+  const max = Math.max(1, ...series);
+  const names = Array.from({ length: 12 }, (_, i) => new Date(year, i, 1).toLocaleDateString(undefined, { month: 'long' }));
+  const summary = series.map((v, i) => `${names[i]} ${v}`).join(', ');
+  return html`
+    <div class="goal-chart__head"><span>Finished per month</span><span>${year}</span></div>
+    <ol class="goal-chart" role="img" aria-label="Finished per month: ${summary}">${series.map((v, i) => html`
+      <li class="goal-chart__m${i > current ? ' goal-chart__m--future' : ''}${i === current ? ' goal-chart__m--now' : ''}" aria-hidden="true">
+        <span class="goal-chart__v">${v}</span>
+        <i class="goal-chart__bar${v ? '' : ' goal-chart__bar--zero'}" style="height:${v ? Math.max(8, Math.round(v / max * 52)) : 4}px"></i>
+        <span class="goal-chart__l">${MONTHS[i]}</span>
+      </li>`)}</ol>`;
+}
+
+// one "From people you follow" row; the like button is wired by mountFeedCards (data-feed-like)
+function feedRowHTML(item) {
+  const sid = Number(item.session_id ?? item.id);
+  const name = item.username ?? '';
+  const when = item.finished_at ?? item.started_at;
+  const verb = item.finished_at ? 'finished' : 'started';
+  const review = typeof item.review === 'string' ? item.review.trim() : '';
+  const second = review ? `“${review}”` : formatAuthors(item.authors);
+  const likes = Number(item.like_count) || 0;
+  const liked = !!item.liked;
+  const comments = Number(item.comment_count) || 0;
+  const social = item.like_count !== undefined && item.like_count !== null;
+  return html`<div class="row feed-row" data-feed-sid="${sid}">
+    <a class="feed-row__avatar" href="#u/${encodeURIComponent(name)}" tabindex="-1" aria-hidden="true">${avatar({ username: name, avatarUrl: item.avatar_url, size: 40 })}</a>
+    <div class="feed-row__main">
+      <p class="feed-row__line"><a class="feed-row__name" href="#u/${encodeURIComponent(name)}">${name}</a> ${verb} <a class="feed-row__book" href="#book/${item.book_id}">${item.title}</a></p>
+      ${second ? html`<p class="row__sub">${second}</p>` : ''}
+    </div>
+    <div class="feed-row__trail">
+      ${item.rating ? stars({ value: item.rating, size: 12 }) : ''}
+      <span class="feed-row__meta">
+        ${when ? html`<time datetime="${when}">${timeAgo(when)}</time>` : ''}
+        ${social ? html`<span aria-hidden="true">·</span><button type="button" class="feed-row__like" data-feed-like="${sid}" data-count="${likes}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${likes > 0 ? `Like, ${plural(likes, 'like')}` : 'Like'}"${liked ? html` style="color:var(--danger);background:var(--danger-soft)"` : ''}>${icon('heart', { size: 14, fill: liked })}<span class="btn__label">${likes > 0 ? likes : ''}</span></button>` : ''}
+        ${comments ? html`<span aria-hidden="true">·</span><span class="feed-row__stat">${icon('message-circle', { size: 14 })}${comments}<span class="sr-only"> comments</span></span>` : ''}
+      </span>
+    </div>
+    ${chevron()}
+  </div>`;
+}
 
 export function renderHome(el) {
   const year = new Date().getFullYear();
   const user = getState().user;
   const ids = {
-    goal: uid('home-goal'), listening: uid('home-listening'),
-    upnext: uid('home-upnext'), following: uid('home-following'), recent: uid('home-recent'),
+    reading: uid('home-reading'), goal: uid('home-goal'), listening: uid('home-listening'), upnext: uid('home-upnext'),
+    following: uid('home-following'), finished: uid('home-finished'), recent: uid('home-recent'),
   };
   const H = {
     disposed: false,
     goal: { state: 'loading', data: null },
-    spark: [],
+    months: [],
     feed: { state: 'loading', items: [] },
+    finished: { state: 'loading', items: [] },
     np: null,
     recent: [],
     readingSig: null,
+    upNext: 'to_read',
     upNextSig: null,
+    tintKey: null,
     last: {},
+    monthly: getState().monthlyByYear,
     wide: false,
   };
   const offs = [];
   let closeSse = null;
-  let heroCleanup = null;
 
   const q = (name) => el.querySelector(`[data-region="${name}"]`);
 
   el.innerHTML = String(html`
-    <div class="mx-auto w-full max-w-[var(--page-max)] space-y-8 md:space-y-10">
-      <header class="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
-        <div class="min-w-0">
-          <p class="eyebrow">${today()}</p>
-          <h1 class="h1 mt-1" data-focus-target>${greeting(user)}</h1>
-          <p class="text-small text-text-2" data-region="summary"></p>
+    <div class="home mx-auto w-full max-w-[var(--page-max)]">
+      <div data-region="top">
+        ${titleBar({ caption: today(), title: 'Home', summary: '' })}
+        <div data-region="gate"></div>
+        <div class="home__grid" data-region="dash-top" hidden>
+          <section aria-labelledby="${ids.reading}" data-region="reading-section">
+            ${sectionHeader({ title: 'Continue reading', href: '#library/status/reading', id: ids.reading })}
+            <div class="flex flex-1 flex-col [&>*]:flex-1" data-region="reading"></div>
+          </section>
+          <section aria-labelledby="${ids.goal}" data-region="goal"></section>
         </div>
-        ${button({ label: 'Add a book', icon: 'plus', variant: 'secondary', cls: 'hidden md:inline-flex', attrs: 'data-action="add-book" data-region="add-btn"' })}
-      </header>
-      <div data-region="gate"></div>
-      <div class="space-y-8 md:space-y-10" data-region="dash" hidden>
-        <div class="grid gap-6 lg:grid-cols-12 lg:items-stretch lg:gap-8">
-          <section class="min-w-0 lg:col-span-8" aria-label="Continue reading" data-region="reading"></section>
-          <div class="flex min-w-0 flex-col gap-6 lg:col-span-4">
-            <section class="lg:flex-1 [&>.card]:h-full" aria-labelledby="${ids.goal}" data-region="goal"></section>
-            <section aria-labelledby="${ids.listening}" data-region="listening" hidden></section>
-          </div>
+      </div>
+      <div class="home__rest" data-region="dash" hidden>
+        <section aria-labelledby="${ids.upnext}" data-region="upnext">
+          ${sectionHeader({ title: LABEL.upNext, href: '#library/status/to_read', id: ids.upnext })}
+          ${segmented({ name: 'upnext', label: 'Up next', block: true, cls: 'home__seg', value: H.upNext, items: ['reading', 'to_read', 'done'].map((k) => ({ value: k, label: STATUS[k].label })) })}
+          <div data-region="upnext-row"></div>
+        </section>
+        <div class="home__pair" data-region="social">
+          <section class="min-w-0" aria-labelledby="${ids.following}" data-region="following"></section>
+          <section class="min-w-0" aria-labelledby="${ids.finished}" data-region="finished" hidden></section>
         </div>
-        <section aria-labelledby="${ids.upnext}" data-region="upnext"></section>
-        <div class="grid gap-8 lg:grid-cols-12 lg:items-start">
-          <section class="min-w-0 lg:col-span-8" aria-labelledby="${ids.following}" data-region="following"></section>
-          <section class="min-w-0 lg:col-span-4" aria-labelledby="${ids.recent}" data-region="recent" hidden></section>
+        <div class="home__pair" data-region="apps" hidden>
+          <section class="min-w-0" aria-labelledby="${ids.listening}" data-region="listening" hidden></section>
+          <section class="min-w-0" aria-labelledby="${ids.recent}" data-region="recent" hidden></section>
         </div>
       </div>
     </div>`);
 
+  // a pair of sections: one column when only one is shown, hidden when neither is
+  function syncPair(name) {
+    const pair = q(name);
+    const shown = [...pair.children].filter((c) => !c.hidden).length;
+    pair.hidden = name === 'apps' && !shown;
+    pair.style.gridTemplateColumns = shown < 2 ? 'minmax(0, 1fr)' : '';
+  }
+
   // ── library-driven sections ────────────────────────────────────────────────
-  function readingEntries() {
-    return (getState().library ?? [])
-      .filter((b) => b.status === 'reading')
-      .sort((a, b) => ts(b.started_reading_at ?? b.added_at) - ts(a.started_reading_at ?? a.added_at));
+  function entriesWith(status) {
+    const key = UP_NEXT_ORDER[status];
+    return (getState().library ?? []).filter((b) => b.status === status).sort((a, b) => key(b) - key(a));
   }
 
   function paintSummary() {
-    const reading = readingEntries().length;
-    const parts = [];
-    if (reading) parts.push(`${plural(reading, 'book')} in progress`);
+    const parts = [greeting()];
+    const reading = entriesWith('reading').length;
+    if (reading) parts.push(`${reading} in progress`);
     const g = H.goal.data;
     if (H.goal.state === 'ok' && g?.target) parts.push(`${g.booksRead} of ${g.target} this year`);
-    q('summary').textContent = parts.join(' · ');
+    const line = el.querySelector('[data-title-summary]');
+    if (line) line.textContent = parts.join(' · ');
   }
 
   function paintGate() {
     const st = getState();
     const gate = q('gate');
-    const dash = q('dash');
     let mode;
     if (!st.libraryLoaded) mode = st.error ? 'error' : 'loading';
     else mode = (st.library?.length ?? 0) ? 'dash' : 'empty';
-    dash.hidden = mode !== 'dash';
+    q('dash-top').hidden = mode !== 'dash';
+    q('dash').hidden = mode !== 'dash';
     if (gate._mode === mode) return mode === 'dash';
     gate._mode = mode;
     if (mode === 'loading') {
-      gate.innerHTML = String(html`<div class="space-y-8 md:space-y-10"><div class="grid gap-6 lg:grid-cols-12 lg:gap-8"><div class="lg:col-span-8">${skeletonHero()}</div><div class="lg:col-span-4">${skeletonCard()}</div></div>${skeletonShelf(7)}</div>`);
+      gate.innerHTML = String(html`<div class="home__grid"><div>${skeletonHero()}</div><div>${skeletonCard()}</div></div><div class="mt-8">${skeletonShelf(7)}</div>`);
     } else if (mode === 'error') {
       gate.innerHTML = String(emptyState({ art: 'open-book', title: EMPTY.loadError.title, body: EMPTY.loadError.body, action: { label: ACTION.tryAgain, variant: 'primary', attrs: 'data-action="retry-library"' } }));
     } else if (mode === 'empty') {
@@ -139,23 +210,36 @@ export function renderHome(el) {
     return mode === 'dash';
   }
 
+  // dark tinted header from the current book's cover (spec 4.6); no current book, no tint
+  function paintTint(hero) {
+    const top = q('top');
+    const key = hero ? String(hero.book_id ?? hero.id) : null;
+    if (key === H.tintKey) return;
+    H.tintKey = key;
+    top.classList.toggle('tint-top', !!hero);
+    top.classList.toggle('ambient', !!hero);
+    if (!hero) {
+      top.classList.remove('is-ambient');
+      top.style.removeProperty('--ambient-h');
+      top.style.removeProperty('--ambient-s');
+      return;
+    }
+    const cached = peekAmbient(key);
+    if (cached) applyAmbient(top, cached);
+    ambientFor({ bookId: hero.book_id, url: hero.cover_url, seed: hero.title }).then((v) => {
+      if (!H.disposed && H.tintKey === key) applyAmbient(top, v);
+    });
+  }
+
   function paintReading() {
     const region = q('reading');
-    const items = readingEntries();
+    const items = entriesWith('reading');
     const hero = items[0] ?? null;
     const others = items.slice(1, 1 + MAX_ALSO);
     const sig = heroSignature(hero, others, items.length);
-    // The single primary button of the page: "Update progress" in the hero, else "Add a book"
-    const addBtn = q('add-btn');
-    addBtn.classList.toggle('btn--primary', !hero);
-    addBtn.classList.toggle('btn--secondary', !!hero);
+    paintTint(hero);
     if (sig === H.readingSig) {
-      // Same cards: only mirror progress that changed elsewhere, and never touch a slider being dragged
-      if (hero) {
-        const input = region.querySelector('[data-hero-card] .slider__input');
-        const pct = Math.round(Number(hero.progress_pct) || 0);
-        if (input && input !== document.activeElement && Number(input.value) !== pct) setSliderValue(input, pct);
-      }
+      updateHeroProgress(region.querySelector('[data-hero-card]'), hero);
       return;
     }
     H.readingSig = sig;
@@ -163,31 +247,29 @@ export function renderHome(el) {
       region.innerHTML = String(card({ content: emptyState({ art: 'open-book', title: EMPTY.nothingInProgress.title, body: EMPTY.nothingInProgress.body, size: 'sm', action: { label: ACTION.browseLibrary, href: '#library/status/to_read', variant: 'secondary' } }) }));
       return;
     }
-    const more = items.length - 1 - MAX_ALSO;
-    region.innerHTML = String(html`${heroCard({ entry: hero, others })}${more > 0 ? html`<a class="mt-3 inline-flex items-center gap-1 text-small font-medium text-accent-text hover:underline" href="#library/status/reading">and ${more} more${icon('arrow-right', { size: 16 })}</a>` : ''}`);
-    heroCleanup?.();
-    heroCleanup = mountAmbient(region);
+    region.innerHTML = String(heroCard({ entry: hero, others, more: items.length - 1 - others.length }));
   }
 
   function paintUpNext() {
-    const region = q('upnext');
-    const queue = (getState().library ?? []).filter((b) => b.status === 'to_read').sort((a, b) => ts(b.added_at) - ts(a.added_at));
-    const picks = queue.slice(0, UP_NEXT);
-    const sig = `${picks.map((b) => [b.id, b.title, b.cover_url].join(':')).join('~')}|${queue.length}`;
+    const status = H.upNext;
+    const all = entriesWith(status);
+    const picks = all.slice(0, UP_NEXT);
+    const sig = `${status}|${picks.map((b) => [b.id, b.title, b.cover_url].join(':')).join('~')}|${all.length}`;
     if (sig === H.upNextSig) return;
     H.upNextSig = sig;
-    region.innerHTML = String(html`
-      ${sectionHeader({ title: LABEL.upNext, href: queue.length ? '#library/status/to_read' : undefined, id: ids.upnext, scrollControls: picks.length ? true : undefined })}
-      ${picks.length
-        ? shelfRow({ bleed: true, label: LABEL.upNext, items: picks.map((b) => bookCard(b, { variant: 'compact' })) })
-        : emptyState({ art: 'stack', title: EMPTY.toReadEmpty.title, size: 'sm', action: { label: ACTION.discoverBooks, href: '#discover', variant: 'secondary' } })}`);
+    q('upnext').querySelector('.section-header__link')?.setAttribute('href', `#library/status/${status}`);
+    const empty = status === 'to_read'
+      ? emptyState({ art: 'stack', title: EMPTY.toReadEmpty.title, size: 'sm', action: { label: ACTION.discoverBooks, href: '#discover', variant: 'secondary' } })
+      : emptyState({ art: status === 'done' ? 'stack' : 'open-book', title: EMPTY.statusEmpty[status].title, body: EMPTY.statusEmpty[status].body, size: 'sm' });
+    q('upnext-row').innerHTML = String(picks.length
+      ? shelfRow({ bleed: true, label: `${LABEL.upNext}: ${STATUS[status].label}`, items: picks.map((b) => bookCard(b, { variant: 'compact' })) })
+      : empty);
   }
 
   function paintLibraryDriven() {
     const st = getState();
     H.last = { library: st.library, shelves: st.shelves, libraryLoaded: st.libraryLoaded, error: st.error };
-    const dashVisible = paintGate();
-    if (dashVisible) { paintReading(); paintUpNext(); }
+    if (paintGate()) { paintReading(); paintUpNext(); } else paintTint(null);
     paintSummary();
   }
 
@@ -195,61 +277,55 @@ export function renderHome(el) {
   function paintGoal() {
     const region = q('goal');
     const g = H.goal;
-    const label = html`<span class="sr-only" id="${ids.goal}">${LABEL.yourGoal(year)}</span>`;
-    if (g.state === 'loading') { region.innerHTML = String(html`${label}${skeletonCard()}`); return; }
+    const { target, booksRead = 0 } = g.data ?? {};
+    const edit = g.state === 'ok' && target ? html`<a class="section-header__link" href="#settings/reading">Edit goal</a>` : '';
+    const head = sectionHeader({ title: LABEL.goal(year), id: ids.goal, actions: edit || undefined });
+    if (g.state === 'loading') { region.innerHTML = String(html`${head}${skeletonCard()}`); return; }
     if (g.state === 'error') {
-      region.innerHTML = String(html`${label}${card({ content: html`<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-small text-text-2">Couldn't load your goal.</p>${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-goal"' })}</div>` })}`);
+      region.innerHTML = String(html`${head}${card({ content: html`<div class="flex flex-wrap items-center justify-between gap-2"><p class="text-small text-text-2">Couldn't load your goal.</p>${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-goal"' })}</div>` })}`);
       return;
     }
-    const { target, booksRead } = g.data ?? {};
     if (!target) {
-      region.innerHTML = String(html`${label}${card({ tone: 'quiet', content: html`
+      region.innerHTML = String(html`${head}${card({ cls: 'goal-card', content: html`
         <div class="flex items-center gap-3">
           <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-accent-text" aria-hidden="true">${icon('target', { size: 20 })}</span>
-          <p class="min-w-0 flex-1 text-small font-medium text-text-1">Set a reading goal for ${year}</p>
+          <p class="min-w-0 flex-1 text-body font-semibold text-text-1">Set a yearly goal</p>
           <a class="btn btn--secondary btn--sm" href="#settings/reading"><span class="btn__label">Set goal</span></a>
         </div>` })}`);
       return;
     }
-    const diff = booksRead - Math.round(target * dayOfYear() / 365);
     const reached = booksRead >= target;
-    const pace = reached ? 'Goal reached' : (diff > 0 ? `${diff} ahead of pace` : (diff < 0 ? `${-diff} behind pace` : 'Right on pace'));
-    const monthsLeft = Math.max(1, 12 - new Date().getMonth());
-    const perMonth = (Math.round(Math.max(0, target - booksRead) / monthsLeft * 10) / 10).toString();
-    const paceTone = reached || diff > 0 ? 'text-success-fg' : 'text-text-2';
-    region.innerHTML = String(html`${card({ cls: 'flex flex-col', content: html`
-      <p class="eyebrow" id="${ids.goal}">${LABEL.yourGoal(year)}</p>
-      <div class="mt-4 flex items-center gap-5">
-        ${progressRing({ value: booksRead, max: target, size: H.wide ? 128 : 96, stroke: H.wide ? 10 : 8, label: String(booksRead), sublabel: `of ${target}` })}
-        <div class="min-w-0 flex-1">
-          <p class="text-body font-medium text-text-1">${plural(booksRead, 'book')} finished</p>
-          <p class="text-small ${paceTone}">${pace}</p>
+    const diff = booksRead - Math.round(target * dayOfYear() / 365);
+    const pace = diff > 0 ? `${diff} ahead of pace` : (diff < 0 ? `${-diff} behind pace` : 'Right on pace');
+    const dec31 = new Date(year, 11, 31).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+    const sub = reached ? 'You reached your goal' : `${target - booksRead} to go by ${dec31}`;
+    region.innerHTML = String(html`${head}${card({ cls: 'goal-card', content: html`
+      <div class="goal-card__top">
+        ${progressRing({ value: booksRead, max: target, size: H.wide ? 116 : 96, stroke: 10, label: String(booksRead), sublabel: `of ${target}` })}
+        <div class="min-w-0">
+          <p class="goal-card__title">${booksRead} of ${plural(target, 'book')}</p>
+          <p class="goal-card__sub">${sub}</p>
+          ${reached ? '' : html`<span class="badge badge--md ${diff >= 0 ? 'badge--success' : 'badge--accent'}">${pace}</span>`}
         </div>
       </div>
-      ${H.spark.length ? html`<div class="mt-4"><div class="text-accent-text">${sparkline({ values: H.spark, width: 320, height: H.wide ? 72 : 48, cls: 'h-auto w-full' })}</div><p class="mt-1.5 text-caption text-text-3">Finished by month</p></div>` : ''}
-      <dl class="mb-3 mt-4 space-y-1.5 border-t border-border-1 pt-4 text-small">
-        ${H.spark.length ? html`<div class="flex items-baseline justify-between gap-3"><dt class="text-text-2">This month</dt><dd class="font-medium text-text-1">${plural(H.spark[H.spark.length - 1], 'book')}</dd></div>` : ''}
-        ${reached ? '' : html`<div class="flex items-baseline justify-between gap-3"><dt class="text-text-2">To reach your goal</dt><dd class="font-medium text-text-1">${perMonth} a month</dd></div>`}
-        <div class="flex items-baseline justify-between gap-3"><dt class="text-text-2">Books left</dt><dd class="font-medium text-text-1">${Math.max(0, target - booksRead)}</dd></div>
-      </dl>
-      <div class="mt-auto border-t border-border-1 pt-3 ${H.spark.length ? '' : 'mt-4'}"><a class="btn btn--ghost btn--sm -ml-3" href="#settings/reading"><span class="btn__label">Edit goal</span></a></div>` })}`);
+      ${H.months.length ? monthChart(H.months, year) : ''}` })}`);
   }
 
-  async function loadGoal() {
-    H.goal = { state: 'loading', data: null };
-    paintGoal();
+  // quiet: refresh in place (after a finish), keeping what is shown while it loads and when it fails
+  async function loadGoal({ quiet = false } = {}) {
+    if (!quiet) { H.goal = { state: 'loading', data: null }; paintGoal(); }
     try {
       const data = await api.getGoal(year);
       if (H.disposed) return;
       H.goal = { state: 'ok', data };
     } catch {
       if (H.disposed) return;
-      H.goal = { state: 'error', data: null };
+      if (!quiet) H.goal = { state: 'error', data: null };
     }
     paintGoal();
     paintSummary();
-    // Monthly finishes for the sparkline: decorative, so a failure just leaves it out. Only fetched when a goal exists,
-    // cached for the session (libraryStore clears it when the library changes), and the series stops at the current month.
+    // Finished per month: decorative, so a failure just leaves it out. Only fetched when a goal exists, cached for the
+    // session (libraryStore clears it when the library changes)
     if (!H.goal.data?.target) return;
     try {
       let series = getState().monthlyByYear?.[year];
@@ -257,13 +333,12 @@ export function renderHome(el) {
         const stats = await api.getStats();
         if (H.disposed) return;
         const byMonth = stats?.monthly?.[year] ?? {};
-        const last = year === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
-        series = Array.from({ length: last }, (_, i) => Number(byMonth[i + 1]) || 0);
+        series = Array.from({ length: 12 }, (_, i) => Number(byMonth[i + 1]) || 0);
         setState({ monthlyByYear: { ...getState().monthlyByYear, [year]: series } });
       }
-      H.spark = series;
+      H.months = series;
       if (H.goal.state === 'ok') paintGoal();
-    } catch { /* no sparkline */ }
+    } catch { /* no chart */ }
   }
 
   // ── now listening (Audiobookshelf) ─────────────────────────────────────────
@@ -271,15 +346,16 @@ export function renderHome(el) {
     const pct = np.progressPercent ?? 0;
     const imgUrl = np.coverPath && np.serverUrl ? `${np.serverUrl}/api/items/${np.absItemId}/cover` : null;
     return html`
-      <div class="card flex items-center gap-4" data-np-item="${np.absItemId}">
-        ${cover({ url: imgUrl, title: np.title ?? '', size: 'sm' })}
-        <div class="min-w-0 flex-1 space-y-1.5">
-          <p class="eyebrow" id="${ids.listening}">Now listening</p>
-          <p class="truncate text-body font-medium text-text-1" data-np-title>${np.title ?? 'Unknown'}</p>
-          ${progressBar({ value: pct, size: 'sm', tone: 'info', label: 'Listening progress' })}
-          <p class="text-caption text-text-3" data-np-pct>${pct}% complete</p>
+      ${sectionHeader({ title: 'Now listening', id: ids.listening })}
+      <div class="grouped" data-np-item="${np.absItemId}">
+        <div class="row row--thumb">
+          ${cover({ url: imgUrl, title: np.title ?? '', size: 'xs' })}
+          <div class="row__main">
+            <span class="row__title" data-np-title>${np.title ?? 'Unknown'}</span>
+            <div class="mt-1.5 flex items-center gap-2">${progressBar({ value: pct, label: 'Listening progress' })}<span class="shrink-0 text-small font-semibold tabular-nums text-text-1" data-np-pct>${pct}%</span></div>
+          </div>
+          ${np.bookId ? html`<a class="btn btn--ghost btn--sm shrink-0" href="#book/${np.bookId}"><span class="btn__label">Open</span></a>` : ''}
         </div>
-        ${np.bookId ? html`<a class="btn btn--ghost btn--sm shrink-0" href="#book/${np.bookId}"><span class="btn__label">Open</span><span class="btn__icon">${icon('arrow-right', { size: 16 })}</span></a>` : ''}
       </div>`;
   }
 
@@ -288,12 +364,13 @@ export function renderHome(el) {
     const prev = H.np;
     H.np = next;
     region.hidden = !next;
+    syncPair('apps');
     if (!next) { region.innerHTML = ''; return; }
     const box = region.querySelector('[data-np-item]');
     if (prev && box && String(prev.absItemId) === String(next.absItemId)) {
       const pct = next.progressPercent ?? 0;
       box.querySelector('[data-np-title]').textContent = next.title ?? 'Unknown';
-      box.querySelector('[data-np-pct]').textContent = `${pct}% complete`;
+      box.querySelector('[data-np-pct]').textContent = `${pct}%`;
       const bar = box.querySelector('.progress');
       bar?.style.setProperty('--progress', `${pct}%`);
       bar?.setAttribute('aria-valuenow', String(pct));
@@ -333,12 +410,12 @@ export function renderHome(el) {
   function paintFollowing() {
     const region = q('following');
     const f = H.feed;
-    const head = sectionHeader({ title: 'From people you follow', href: '#community/feed', id: ids.following });
+    const head = sectionHeader({ title: 'From people you follow', id: ids.following, actions: html`<a class="section-header__link" href="#community/people">${ACTION.findPeople}</a>` });
     let body;
-    if (f.state === 'loading') body = skeletonFeed(3);
-    else if (f.state === 'error') body = html`<div class="flex flex-wrap items-center gap-2 text-small text-text-2">Couldn't load activity.${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-feed"' })}</div>`;
-    else if (!f.items.length) body = emptyState({ art: 'readers', title: EMPTY.noFollowing.title, size: 'sm', action: { label: ACTION.findPeople, href: '#community/people', variant: 'secondary' } });
-    else body = html`<div class="${q('recent').hidden ? 'grid gap-3 lg:grid-cols-2' : 'space-y-3'}">${f.items.map((item) => feedCardHTML(item, { viewer: getState().user }))}</div>`;
+    if (f.state === 'loading') body = html`<div class="card">${skeletonList(3)}</div>`;
+    else if (f.state === 'error') body = card({ content: html`<div class="flex flex-wrap items-center gap-2 text-small text-text-2">Couldn't load activity.${button({ label: ACTION.tryAgain, variant: 'ghost', size: 'sm', attrs: 'data-action="retry-feed"' })}</div>` });
+    else if (!f.items.length) body = card({ content: emptyState({ art: 'readers', title: EMPTY.noFollowing.title, size: 'sm', action: { label: ACTION.findPeople, href: '#community/people', variant: 'secondary' } }) });
+    else body = html`<div class="grouped">${f.items.map(feedRowHTML)}</div>`;
     region.innerHTML = String(html`${head}${body}`);
   }
 
@@ -357,25 +434,57 @@ export function renderHome(el) {
     paintFollowing();
   }
 
+  // ── recently finished (your own reads, newest first, one row per book) ─────
+  function paintFinished() {
+    const region = q('finished');
+    const f = H.finished;
+    region.hidden = f.state === 'error' || (f.state === 'ok' && !f.items.length);
+    syncPair('social');
+    if (region.hidden) { region.innerHTML = ''; return; }
+    const head = sectionHeader({ title: 'Recently finished', href: '#library/status/done', id: ids.finished });
+    const body = f.state === 'loading'
+      ? html`<div class="card">${skeletonList(3)}</div>`
+      : html`<div class="grouped">${f.items.map((s) => html`
+        <a class="row row--thumb home__finished" href="#book/${s.book_id}">
+          ${cover({ url: s.cover_url, bookId: s.book_id, title: s.title, author: authorsOf(s)[0], size: 'xs' })}
+          <span class="row__main"><span class="row__title">${s.title}</span>${authorsOf(s).length ? html`<span class="row__sub">${formatAuthors(s.authors)}</span>` : ''}</span>
+          ${s.rating ? html`<span class="row__trail">${stars({ value: s.rating, size: 12 })}</span>` : ''}
+          ${chevron()}
+        </a>`)}</div>`;
+    region.innerHTML = String(html`${head}${body}`);
+  }
+
+  async function loadFinished({ quiet = false } = {}) {
+    if (!user) return;
+    if (!quiet) { H.finished = { state: 'loading', items: [] }; paintFinished(); }
+    try {
+      const profile = await api.getProfile(user.username);
+      if (H.disposed) return;
+      const seen = new Set();
+      const items = (profile?.feed ?? []).filter((s) => s.finished_at && !seen.has(s.book_id) && seen.add(s.book_id));
+      H.finished = { state: 'ok', items: items.slice(0, FINISHED_MAX) };
+    } catch {
+      if (H.disposed || quiet) return;
+      H.finished = { state: 'error', items: [] };
+    }
+    paintFinished();
+  }
+
   // ── recently added from integrations ───────────────────────────────────────
   function paintRecent() {
     const region = q('recent');
     let dismissedAt = null;
     try { dismissedAt = localStorage.getItem(RECENTLY_ADDED_KEY); } catch { /* storage unavailable */ }
     const unseen = (dismissedAt ? H.recent.filter((b) => new Date(b.added_at) > new Date(dismissedAt)) : H.recent).slice(0, 6);
-    const wasHidden = region.hidden;
     region.hidden = !unseen.length;
-    // Without the right column the feed spans the full width as two columns
-    q('following').classList.toggle('lg:col-span-8', !!unseen.length);
-    q('following').classList.toggle('lg:col-span-12', !unseen.length);
-    if (wasHidden !== region.hidden && H.feed.state === 'ok') paintFollowing();
+    syncPair('apps');
     if (!unseen.length) { region.innerHTML = ''; return; }
     const badgeFor = (service) => (service === 'audiobookshelf'
       ? html`<span class="badge badge--info badge--roundel absolute bottom-1 right-1" role="img" aria-label="In Audiobookshelf" title="In Audiobookshelf">${icon('headphones', { size: 12 })}</span>`
       : html`<span class="badge badge--success badge--roundel absolute bottom-1 right-1" role="img" aria-label="In Calibre" title="In Calibre">${icon('book-copy', { size: 12 })}</span>`);
     region.innerHTML = String(html`
       ${sectionHeader({ title: 'Recently added in your apps', id: ids.recent, actions: button({ label: 'Dismiss', icon: 'x', variant: 'ghost', size: 'sm', attrs: 'data-action="dismiss-recent"' }) })}
-      <div class="grid grid-cols-4 gap-x-3 gap-y-4 sm:grid-cols-6 lg:grid-cols-3">${unseen.map((b) => html`
+      <div class="card grid grid-cols-3 gap-x-3 gap-y-4 sm:grid-cols-6">${unseen.map((b) => html`
         <a href="#book/${b.book_id}" class="group flex min-w-0 flex-col gap-1.5">
           <div class="relative">${cover({ url: b.cover_url, bookId: b.book_id, title: b.title, author: authorsOf(b)[0] })}${badgeFor(b.service)}</div>
           <span class="line-clamp-2 text-caption text-text-2 group-hover:text-text-1">${b.title}</span>
@@ -393,51 +502,24 @@ export function renderHome(el) {
   }
 
   // ── behaviour (delegated once on `el`) ─────────────────────────────────────
-  const handlers = bookActionHandlers({
-    getAnchor: (entry) => {
-      const card = el.querySelector(`[data-lib-id="${cssEscape(entry.id)}"]`);
-      return card?.querySelector('[data-hero-action="update"], [data-hero-action="also-update"], [data-hero-action="menu"]') ?? null;
-    },
-  });
+  const handlers = bookActionHandlers();
 
+  offs.push(mountTitleBar(el));
   offs.push(mountBookGrid(el, handlers));
   offs.push(mountShelfRows(el));
-
   offs.push(mountHeroCard(q('reading'), {
     entries: () => getState().library ?? [],
-    onProgress: async (entry, value) => {
-      const before = Math.round(Number(findLibraryEntry(entry.id)?.progress_pct ?? entry.progress_pct) || 0);
-      const ok = await commitProgress(entry, value);
-      if (H.disposed) return ok;
-      if (!ok) {
-        const input = q('reading').querySelector('[data-hero-card] .slider__input');
-        if (input) setSliderValue(input, before);
-      } else {
-        const card = [...q('reading').querySelectorAll('[data-hero-card]')].find((c) => c.dataset.libId === String(entry.id));
-        if (card) flashSaved(card.querySelector('.hero-card__progress') ?? card);
-      }
-      return ok;
-    },
-    onUpdate: () => {
-      const input = q('reading').querySelector('[data-hero-card] .slider__input');
-      input?.scrollIntoView({ block: 'nearest' });
-      input?.focus();
-    },
+    onUpdate: (entry, btn) => openProgressPicker(entry, btn),
     onFinish: (entry) => finishBook(entry),
-    onMenu: (entry, trigger) => {
-      openMenu({
-        trigger,
-        items: bookMenuItems(entry, { shelves: getState().shelves ?? [] }),
-        label: `Options for ${entry.title ?? 'book'}`,
-        onSelect: (id, item) => dispatchBookMenu(handlers, entry, id, item),
-      });
-    },
-    onAlsoUpdate: (entry) => handlers.onProgress(entry),
+  }));
+  offs.push(mountChipGroup(q('upnext'), ({ name, value }) => {
+    if (name !== 'upnext' || value === H.upNext) return;
+    H.upNext = value;
+    paintUpNext();
   }));
 
   offs.push(delegate(el, 'click', '[data-action]', (e, t) => {
     switch (t.dataset.action) {
-      case 'add-book': openCommandPalette({ onAdded: (row) => upsertLibraryEntry(row) }); break;
       case 'retry-library': loadLibrary(); break;
       case 'retry-goal': loadGoal(); break;
       case 'retry-feed': loadFeed(); break;
@@ -462,6 +544,12 @@ export function renderHome(el) {
 
   const unsubscribe = subscribe((st) => {
     if (H.disposed) return;
+    // libraryStore clears the monthly cache when finished books may have changed (a status change, a logged read):
+    // refresh the goal and recently finished in place
+    if (st.monthlyByYear !== H.monthly) {
+      H.monthly = st.monthlyByYear;
+      if (!st.monthlyByYear?.[year] && H.goal.state !== 'loading') { loadGoal({ quiet: true }); loadFinished({ quiet: true }); }
+    }
     const l = H.last;
     if (st.library === l.library && st.shelves === l.shelves && st.libraryLoaded === l.libraryLoaded && st.error === l.error) return;
     paintLibraryDriven();
@@ -474,6 +562,7 @@ export function renderHome(el) {
   if (!getState().libraryLoaded && !getState().loading) loadLibrary();
   loadGoal();
   loadFeed();
+  loadFinished();
   loadRecent();
   startNowPlaying();
 
@@ -481,7 +570,6 @@ export function renderHome(el) {
     H.disposed = true;
     unsubscribe();
     closeSse?.();
-    heroCleanup?.();
     offs.forEach((off) => off());
   };
 }

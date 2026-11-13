@@ -26,7 +26,7 @@ export function titleBar({ title, caption, summary, actions } = {}) {
   </header>`;
 }
 
-/** Wire data-shell controls in the title bar (data-shell="search", "notifications", "add-book") to the shell. */
+/** Wire data-shell controls in the title bar (data-shell="search", "add-book") to the shell. */
 export function mountTitleBar(root) {
   return delegate(root, 'click', '.title-bar [data-shell]', (e, el) => shellHandler?.(e, el));
 }

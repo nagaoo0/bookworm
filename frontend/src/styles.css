@@ -456,13 +456,29 @@ kbd.kbd {
   color: var(--text-2);
 }
 
-/* Dark tinted header (spec 4.6): a flat wash from the current book's hue, dark theme only. Add `.tint-top` (and the
-   ambient hue via applyAmbient) only when there is a current book. --tint-top is re-declared so it reads this element's hue. */
+/* Dark tinted header (spec 4.6): a flat wash from the current book's hue to the page colour, dark theme only, painted
+   from the top of the window across the content area (the window minus the sidebar) behind the element's first rows.
+   Add `.tint-top` (and the hue via applyAmbient, which adds .is-ambient) only when there is a current book; put it at
+   the top of the view. --tint-top is re-declared so it reads this element's hue. */
 .tint-top, .ambient { --tint-top: hsl(var(--ambient-h, 30) min(var(--ambient-s, 40%), 45%) 18%); }
-.tint-top { background: linear-gradient(var(--tint-top), var(--surface-0) 420px) no-repeat, var(--surface-0); }
-@media (max-width: 767px) { .tint-top { background: linear-gradient(var(--tint-top), var(--surface-0) 360px) no-repeat, var(--surface-0); } }
-html[data-theme="light"] .tint-top, html[data-theme="sepia"] .tint-top { background: none; }
-@media (prefers-color-scheme: light) { html[data-theme="system"] .tint-top { background: none; } }
+.tint-top { position: relative; isolation: isolate; display: flow-root; }
+.tint-top::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: calc(-1 * var(--content-top));
+  left: calc(50% - 50vw + var(--sidebar-w) / 2);
+  right: calc(50% - 50vw + var(--sidebar-w) / 2);
+  height: 420px;
+  pointer-events: none;
+  background: linear-gradient(var(--tint-top), var(--surface-0));
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+.tint-top.is-ambient::before { opacity: 1; }
+@media (max-width: 767px) { .tint-top::before { height: 360px; } }
+html[data-theme="light"] .tint-top::before, html[data-theme="sepia"] .tint-top::before { display: none; }
+@media (prefers-color-scheme: light) { html[data-theme="system"] .tint-top::before { display: none; } }
 
 /* Book grid: card size comes from prefs (--grid-min-col) */
 :root { --grid-min-col: 128px; }
@@ -2062,47 +2078,121 @@ button.hero-pill, a.hero-pill { cursor: pointer; }
 }
 
 /* ── Hero card (ui/heroCard.js): the Continue reading grouped card ────────── */
-.hero-card { padding: 20px; }
-.hero-card__main { display: flex; gap: 20px; align-items: flex-start; }
-.hero-card__cover { display: block; flex-shrink: 0; text-decoration: none; }
+.hero-card__main {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-areas: "cover head" "cover prog" "cover act";
+  grid-template-rows: auto 1fr auto;
+  column-gap: 20px;
+  padding: 20px;
+}
+.hero-card__cover { grid-area: cover; display: block; align-self: start; text-decoration: none; }
 .hero-card__cover .cover { width: 120px; }
-.hero-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.hero-card__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
-.hero-card__title { margin: 0; font-family: var(--font-display); font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -.02em; }
-.hero-card__title a { color: inherit; text-decoration: none; }
+.hero-card__head { grid-area: head; min-width: 0; }
+.hero-card__eyebrow { margin: 0; font-size: 11px; line-height: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-text); }
+.hero-card__title { margin: 2px 0 0; font-family: var(--font-display); font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.hero-card__title a { color: var(--text-1); text-decoration: none; }
 .hero-card__title a:hover { color: var(--accent-text); }
-.hero-card__author { margin: 0; color: var(--text-2); }
-.hero-card__meta { margin: 0; font-size: var(--text-small); line-height: var(--text-small--line-height); color: var(--text-2); }
-.hero-card__progress { margin-top: 8px; }
-.hero-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.hero-card__also { margin: 20px -20px -20px; border-top: 1px solid var(--separator); display: flex; flex-direction: column; }
-.hero-card__also > .label { padding: 12px 20px 0; }
-.hero-card__also-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 20px; min-width: 0; }
-.hero-card__also-row + .hero-card__also-row::before { content: ''; position: absolute; top: 0; right: 0; left: 72px; height: 1px; background: var(--separator); }
-.hero-card__also-row .cover { width: 40px; border-radius: var(--radius-cover-sm); }
-.hero-card__also-main { flex: 1; min-width: 0; contain: inline-size; }   /* an ellipsised title must not widen the card */
-.hero-card__also-title { font-size: var(--text-body); line-height: var(--text-body--line-height); font-weight: 600; color: var(--text-1); text-decoration: none; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hero-card__also-title:hover { color: var(--accent-text); }
-.hero-card__also-bar { display: flex; align-items: center; gap: 8px; width: 160px; flex-shrink: 0; }
-.hero-card__also-bar .progress { flex: 1; }
-.hero-card__also-pct { min-width: 2.25rem; text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-1); }
+.hero-card__byline { margin: 0; color: var(--text-2); }
+.hero-card__byline:empty { display: none; }
+.hero-card__progress { grid-area: prog; align-self: center; padding: 8px 0; }
+.hero-card__stat { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.hero-card__pct { font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text-1); }
+.hero-card__eta { font-size: 13px; line-height: 18px; color: var(--text-2); }
+.hero-card__actions { grid-area: act; display: flex; flex-wrap: wrap; gap: 8px; }
+/* other reading books: list rows under a full-width separator */
+.hero-card__rows { border-top: 1px solid var(--separator); }
+.hero-card__rows .row { padding: 12px 20px; }
+.hero-card__rows .row:has(> .cover:first-child) { --row-inset: 72px; min-height: 76px; }
+.hero-card__row .row__title { font-size: 17px; line-height: 22px; }
+.hero-card__row-bar { margin-top: 6px; }
+.hero-card__row-pct { flex-shrink: 0; min-width: 3rem; text-align: right; font-size: 17px; line-height: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-1); }
 @media (max-width: 767px) {
-  .hero-card { padding: 16px; }
-  /* cover + title/meta side by side; slider, percentage and buttons run full width below the cover row */
-  .hero-card__main { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; row-gap: 2px; align-items: start; }
-  .hero-card__body { display: contents; }
-  .hero-card__cover { grid-column: 1; grid-row: 1 / span 5; }
-  .hero-card__top, .hero-card__title, .hero-card__author, .hero-card__meta { grid-column: 2; }
-  .hero-card__progress, .hero-card__actions { grid-column: 1 / -1; }
-  .hero-card__progress { margin-top: 12px; }
+  .hero-card__main { grid-template-columns: 96px minmax(0, 1fr); grid-template-areas: "cover head" "cover prog" "act act"; column-gap: 16px; padding: 16px; }
   .hero-card__cover .cover { width: 96px; }
   .hero-card__title { font-size: 22px; line-height: 26px; }
-  .hero-card__actions .btn { flex: 1 1 auto; padding-inline: 12px; }   /* side by side when they fit, stacked when not */
-  .hero-card__also { margin: 16px -16px -16px; }
-  .hero-card__also > .label { padding: 12px 16px 0; }
-  .hero-card__also-row { padding: 8px 16px; }
-  .hero-card__also-row + .hero-card__also-row::before { left: 68px; }
-  .hero-card__also-bar { width: 96px; }
+  .hero-card__byline { font-size: 13px; line-height: 18px; }
+  .hero-card__progress { padding: 4px 0 0; }
+  .hero-card__stat { margin-bottom: 6px; }
+  .hero-card__actions { margin-top: 16px; flex-wrap: nowrap; }
+  .hero-card__actions .btn { flex: 1 1 0; min-width: 0; padding-inline: 8px; }
+  .hero-card__rows .row { padding: 12px 16px; }
+  .hero-card__rows .row:has(> .cover:first-child) { --row-inset: 68px; }
+}
+
+/* ── Home (views/home.js) ─────────────────────────────────────────────────── */
+.home__grid { display: grid; gap: 28px 24px; margin-top: 28px; }
+.home__grid > section { display: flex; flex-direction: column; min-width: 0; }
+.home__grid > section > .card, .home__grid > section > .grouped { flex: 1; }
+.home__rest { display: flex; flex-direction: column; gap: 28px; margin-top: 28px; }
+.home__pair { display: grid; gap: 28px 24px; }
+@media (min-width: 1024px) {
+  .home__grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .home__pair { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); align-items: start; }
+}
+@media (max-width: 767px) {
+  .home__grid, .home__rest, .home__pair { gap: 24px; margin-top: 24px; }
+  .home__pair { margin-top: 0; }
+}
+.home__seg { width: 360px; max-width: 100%; margin-bottom: 20px; }
+@media (max-width: 767px) {
+  .home__seg { width: 100%; margin-bottom: 16px; }
+  .home__finished .row__title { white-space: normal; }   /* the stars take the room a one-line title would need */
+}
+
+/* goal card: ring + headline, then finished per month as 12 small bars with their values */
+.goal-card { padding: 20px; }
+.goal-card__top { display: flex; align-items: center; gap: 20px; }
+.goal-card__top .progress-ring { flex-shrink: 0; }
+.goal-card .progress-ring__value { font-size: 34px; line-height: 38px; }
+.goal-card__title { margin: 0; font-family: var(--font-display); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -.02em; }
+.goal-card__sub { margin: 2px 0 10px; font-size: 13px; line-height: 18px; color: var(--text-2); }
+.goal-card__sub:last-child { margin-bottom: 0; }
+.goal-chart__head { display: flex; justify-content: space-between; gap: 12px; margin: 20px 0 8px; padding-top: 16px; border-top: 1px solid var(--separator); font-size: 13px; line-height: 18px; font-weight: 600; color: var(--text-2); }
+.goal-chart { display: flex; align-items: flex-end; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.goal-chart__m { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.goal-chart__v { font-size: 11px; line-height: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-1); }
+.goal-chart__bar { display: block; width: 100%; max-width: 18px; border-radius: 4px; background: var(--accent); }
+.goal-chart__bar--zero { background: var(--surface-2); }
+.goal-chart__l { margin-top: 2px; font-size: 11px; line-height: 13px; font-weight: 600; color: var(--text-3); }
+.goal-chart__m--future .goal-chart__v { color: var(--text-3); }
+.goal-chart__m--now .goal-chart__l { color: var(--text-1); font-weight: 800; }
+@media (max-width: 767px) {
+  .goal-card { padding: 16px; }
+  .goal-card .progress-ring__value { font-size: 28px; line-height: 34px; }
+  .goal-card__title { font-size: 17px; line-height: 22px; }
+  .goal-chart__head { margin-top: 16px; }
+}
+
+/* a "From people you follow" row: avatar, "name finished Title", quote, stars and meta, chevron. The book link
+   stretches over the row; the name and the like button sit above it. */
+.feed-row { align-items: center; padding: 12px 16px; }
+.feed-row__avatar { flex-shrink: 0; display: inline-flex; position: relative; z-index: 1; border-radius: 50%; }
+.feed-row__main { flex: 1; min-width: 0; }
+.feed-row__line { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-1); }
+.feed-row__name { position: relative; z-index: 1; font-weight: 700; color: inherit; text-decoration: none; }
+.feed-row__name:hover { text-decoration: underline; }
+.feed-row__book { font-weight: 700; color: inherit; text-decoration: none; }
+.feed-row__book::after { content: ''; position: absolute; inset: 0; }
+.feed-row:has(.feed-row__book:hover) { background: color-mix(in srgb, var(--text-1) 4%, transparent); }
+.feed-row__trail { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.feed-row__meta { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 18px; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.feed-row__stat { display: inline-flex; align-items: center; gap: 3px; }
+.feed-row__like {
+  position: relative; z-index: 1;
+  display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 6px;
+  border: 0; border-radius: var(--radius-full); background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.feed-row__like::after { content: ''; position: absolute; inset: -10px -4px; }   /* 44 px hit area */
+.feed-row__like:hover { background: var(--surface-2); }
+.feed-row__like .btn__label:empty { display: none; }
+@media (max-width: 767px) {
+  .feed-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) 16px; grid-template-areas: "av main chev" "av trail chev"; align-items: start; row-gap: 4px; }
+  .feed-row__avatar { grid-area: av; }
+  .feed-row__main { grid-area: main; }
+  .feed-row__trail { grid-area: trail; flex-direction: row; align-items: center; gap: 8px; justify-self: start; }
+  .feed-row > .row__chev { grid-area: chev; align-self: center; }
+  .feed-row__line, .feed-row .row__sub { white-space: normal; }
 }
 
 /* ── Story card (ui/storyCard.js): Year in review, a flat accent block ────── */

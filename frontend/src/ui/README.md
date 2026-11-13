@@ -67,7 +67,7 @@ const off = mountBookGrid(container, { onStatus, onRemove });   // one delegated
 | `bookMeta.js` | `bookTags` `authorsHero` `mountBookMeta` |
 | `progress.js` `stars.js` | `progressBar` (`showValue`; `glow` ignored) `progressRing` (10 px arc, centre value) `progressSlider` (`variant: 'hero'`) `mountProgressSlider` · `stars` (half steps) `starInput` `mountStarInput` |
 | `bookCard.js` | `bookCard` (`variant` grid/list/compact/row, `size`, `owned`, `index`) `bookMenuItems` `bookAddMenuItems` `mountBookGrid` (`onAdd`) |
-| `shelfRow.js` `heroCard.js` `storyCard.js` | `shelfRow` (`ledge` ignored) `mountShelfRows` · `heroCard` `mountHeroCard` · `storyCard` `mountStoryCard` |
+| `shelfRow.js` `heroCard.js` `storyCard.js` | `shelfRow` (`ledge` ignored) `mountShelfRows` · `heroCard` `mountHeroCard` `updateHeroProgress` · `storyCard` `mountStoryCard` |
 | `modal.js` `menu.js` `tabs.js` | `openModal` (`size: 'palette'`; `header: 'ambient'` ignored) `openSheet` `openLightbox` · `openMenu` `openPopover` (`glass` ignored on both) `mountMenuTriggers` · `tabs` (`bleed`) `tabPanel` `mountTabs` |
 | `toast.js` `confirmInline.js` `commandPalette.js` `scrollState.js` | `toast` `undoToast` (Ctrl/Cmd+Z) · `mountConfirmInline` `confirmPopover` · `openCommandPalette` (announces result counts) `mountCommandPaletteShortcuts` `shortcutHint` · `mountScrollState` (auto-installed: `html.is-scrolled`) |
 
@@ -78,7 +78,7 @@ const off = mountBookGrid(container, { onStatus, onRemove });   // one delegated
 `.page` `.page--reading` `.page--narrow` (containers) · `.raised` `.inset` `.hairline-t` `.hairline-b` `kbd.kbd` ·
 type: `.h1` `.h2` `.h3` `.title` `.label` `.eyebrow` `.stat` `.stat-sm` `.tabular` (the Year in review display sizes live inside `.story-card` only) ·
 `.card` `.grouped` (grouped cards; not `.group`, Tailwind's group-hover marker) · `.row` `.row--thumb` `.row__lead` `.row__main` `.row__title` `.row__sub` `.row__trail` `.row__chev` (list rows) ·
-`.tint-top` (the dark tinted header: dark theme only, from the element's `--ambient-h/-s`; add it only when there is a current book) ·
+`.tint-top` (the dark tinted header: dark theme only, from the element's `--ambient-h/-s`, painted from the window top across the content area; put it first in the view and add it only when there is a current book) ·
 `.ambient` `.ambient--page` (cover hue via `applyAmbient`; `.ambient--page` paints the dark tinted header behind the Book page) ·
 `.avatar-stack` · `.rail` `.rail__item` (Library / Settings navigation rows) ·
 `.title-bar` (shell/titleBar.js, the large-title row) ·
