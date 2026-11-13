@@ -375,7 +375,7 @@ export function chipRowHTML(S, { library = [], shelves = [] } = getState()) {
   if (S.shelfId != null) value = `shelf:${S.shelfId}`;
   else if (S.status) value = `status:${S.status}`;
   return html`<div class="library-chips">
-    ${chipGroup({ name: 'library-view', label: 'Shelves', items, value, cls: 'library-chips__group' })}
+    ${chipGroup({ name: 'library-view', label: 'Library view', items, value, cls: 'library-chips__group' })}
     <button type="button" class="chip library-chips__manage" data-action="manage-shelves" aria-haspopup="dialog" aria-label="Manage shelves">${icon('settings', { size: 16 })}<span class="library-chips__manage-label">Manage shelves</span></button>
   </div>`;
 }
@@ -826,7 +826,7 @@ export function renderLibrary(el, params = {}) {
         </div>
         <div data-region="chips"></div>
         <div class="min-h-[40vh]" data-region="content"></div>
-        <div id="bulk-bar" role="toolbar" aria-label="Bulk actions" class="bg-surface-1 fixed bottom-6 left-1/2 z-[var(--z-sticky)] hidden w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-[20px] px-3 py-2 shadow-3 md:h-14 md:w-auto md:max-w-[calc(100vw-2rem)] md:flex-nowrap md:rounded-full md:px-5 md:py-0">
+        <div id="bulk-bar" role="toolbar" aria-label="Bulk actions" class="bg-surface-1 fixed bottom-6 left-1/2 z-[var(--z-sticky)] hidden w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-[var(--radius-lg)] px-3 py-2 shadow-3 md:h-14 md:w-auto md:max-w-[calc(100vw-2rem)] md:flex-nowrap md:rounded-full md:px-5 md:py-0">
           <span class="mr-1 whitespace-nowrap pl-1 text-small font-medium tabular-nums md:pl-0" data-bulk-count aria-live="polite"></span>
           ${button({ label: 'Select all', variant: 'ghost', size: 'sm', cls: 'shrink-0', attrs: 'data-action="select-all"' })}
           <span class="basis-full max-md:order-1 md:hidden" aria-hidden="true"></span>
@@ -1145,6 +1145,9 @@ export function renderLibrary(el, params = {}) {
         S.rail.creating = false;
         S.rail.editingId = null;
         S.rail.error = null;
+        // the chip row may have been repainted while the sheet was open, taking the opener with it
+        const active = document.activeElement;
+        if (!disposed && (!active || active === document.body || !active.isConnected)) q('[data-action="manage-shelves"]')?.focus();
       },
     });
     S.sheetRoot = body;

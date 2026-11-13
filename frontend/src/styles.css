@@ -256,7 +256,6 @@ html {
   --page-max: 1320px;      /* wide pages */
   --reading-max: 1120px;   /* book, community, stats, settings */
   --aside-w: 340px;        /* right rail on reading pages (>= lg) */
-  --rail-w: 240px;         /* library / settings left rail */
   --gutter: 16px;
   --grid-gap-x: 20px;
   --grid-gap-y: 28px;
