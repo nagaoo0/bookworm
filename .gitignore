@@ -40,3 +40,6 @@ coverage/
 # ── Cover image cache (backend, local dev) ─────────────────────────────────────
 backend/data/
 backend/.pglite-data/
+
+# ── Screenshot harness output ──────────────────────────────────────────────────
+shots/
