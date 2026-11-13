@@ -114,20 +114,19 @@ export function skeletonFeed(n = 3) {
   return status(html`<div class="skeleton-feed">${cards}</div>`);
 }
 
-/** Profile hero: a 300 px banner block with avatar, name and pill shapes. */
+/** Profile header card: avatar, name and bio lines, the Year in review row (views/profile.js). */
 export function skeletonProfileHero() {
   return status(html`
-    <div class="skeleton" style="height:300px;border-radius:var(--radius-xl);padding:32px;display:flex;flex-direction:column;justify-content:flex-end;gap:14px;background-color:var(--surface-2)">
-      <div class="flex items-center gap-4">
-        <span class="skeleton skeleton--circle" style="width:88px;height:88px;background-color:var(--surface-3)"></span>
-        <div class="flex-1" style="display:flex;flex-direction:column;gap:10px">
-          <span class="skeleton" style="width:34%;height:34px;background-color:var(--surface-3)"></span>
-          <span class="skeleton skeleton--text" style="width:52%;background-color:var(--surface-3)"></span>
+    <div class="grouped profile-card">
+      <div class="profile-card__head">
+        <span class="profile-card__avatar"><span class="skeleton skeleton--circle" style="width:72px;height:72px"></span></span>
+        <div class="profile-card__main flex flex-col gap-2.5">
+          <span class="skeleton" style="width:40%;height:28px"></span>
+          <span class="skeleton skeleton--text" style="width:60%"></span>
+          <span class="skeleton skeleton--text" style="width:45%"></span>
         </div>
       </div>
-      <div class="flex gap-2">
-        ${[72, 88, 88, 80].map((w) => html`<span class="skeleton" style="width:${w}px;height:28px;border-radius:9999px;background-color:var(--surface-3)"></span>`)}
-      </div>
+      <div class="profile-card__rows"><div class="row"><span class="skeleton skeleton--text" style="width:30%"></span></div></div>
     </div>`);
 }
 

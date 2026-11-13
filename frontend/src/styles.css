@@ -211,7 +211,6 @@ html {
   --overlay-fg: #ffffff;
   --knob: #ffffff;                          /* switch and slider thumbs */
   --lightbox-scrim: rgba(10, 8, 7, .88);
-  --hero-scrim: linear-gradient(to top, rgba(10, 8, 7, .78), rgba(10, 8, 7, .25) 55%, rgba(10, 8, 7, .05));
 
   --success-soft: color-mix(in srgb, var(--success-fg) 14%, transparent);
   --warning-soft: color-mix(in srgb, var(--warning-fg) 14%, transparent);
@@ -591,8 +590,6 @@ html[data-theme="light"] .tint-top::before, html[data-theme="sepia"] .tint-top::
 .btn--danger:hover:not(:disabled):not([aria-disabled="true"]) { background: color-mix(in srgb, var(--danger) 88%, var(--text-1)); }
 .btn--danger-ghost { background: transparent; color: var(--danger-fg); }
 .btn--danger-ghost:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--danger-soft); }
-/* over a dark image (profile hero): a solid dark fill */
-.hero .btn--secondary { background: var(--overlay-bg); color: var(--overlay-fg); }
 
 .btn__icon { display: inline-flex; flex-shrink: 0; }
 /* loading: the label keeps its width but is invisible, the spinner sits in the middle (F045) */
@@ -653,7 +650,6 @@ html[data-theme="light"] .tint-top::before, html[data-theme="sepia"] .tint-top::
 .icon-btn--primary:hover:not(:disabled) { background: var(--accent-hover); color: var(--accent-fg); }
 /* over covers: a solid dark circle, white icon */
 .icon-btn--overlay, .icon-btn--overlay:hover:not(:disabled) { background: var(--overlay-bg); color: var(--overlay-fg); }
-.hero .icon-btn--solid { background: var(--overlay-bg); color: var(--overlay-fg); }
 /* 44 x 44 hit area on touch without growing the visual button */
 @media (pointer: coarse) {
   .icon-btn::after { content: ''; position: absolute; inset: -6px; }
@@ -1070,6 +1066,16 @@ a.row:hover, button.row:hover { background: color-mix(in srgb, var(--text-1) 4%,
 .delta--down { background: var(--danger-soft);  color: var(--danger-fg); }
 .stat-card__spark { margin-left: auto; color: var(--accent-text); line-height: 0; flex-shrink: 0; }
 .stat-card--success .stat-card__spark { color: var(--success-fg); }
+/* stat tiles as cells of one grouped card (Stats): 2 across, 4 from 768 px with --4, hairlines between cells */
+.stat-cells { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.stat-cells > .stat-card { border: 0; border-radius: 0; box-shadow: none; }
+.stat-cells > .stat-card:nth-child(even) { border-left: 1px solid var(--separator); }
+.stat-cells > .stat-card:nth-child(n+3) { border-top: 1px solid var(--separator); }
+@media (min-width: 768px) {
+  .stat-cells--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .stat-cells--4 > .stat-card:nth-child(n+2) { border-left: 1px solid var(--separator); }
+  .stat-cells--4 > .stat-card:nth-child(n+3) { border-top: 0; }
+}
 .sparkline { display: block; overflow: visible; }
 .sparkline__line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .sparkline__dot { fill: currentColor; }
@@ -1992,18 +1998,47 @@ html.is-scrolled .topbar { background-color: var(--surface-0); border-bottom-col
 }
 @media (min-width: 768px) { .book-cta--sticky { display: none !important; } }
 
-/* Profile hero: always light-on-dark, whatever the theme (a dark base, the banner, a scrim) */
-.hero { position: relative; color: var(--overlay-fg); overflow: hidden; border-radius: var(--radius-card); background: var(--surface-ink); }
-.hero__scrim { position: absolute; inset: 0; background: var(--hero-scrim); pointer-events: none; }
-.hero-pill {
-  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: var(--radius-full);
-  background: var(--overlay-bg); color: var(--overlay-fg);
-  font-size: 12px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; border: 0; text-decoration: none;
+/* Profile (views/profile.js): the header card (an optional banner strip with the avatar over its bottom edge), the
+   section segmented control, the panels */
+.profile-card__banner { height: 120px; background: var(--surface-2); }
+.profile-card__banner img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.profile-card__head {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-areas: "avatar actions" "main main";
+  align-items: end;
+  gap: 12px 16px;
+  padding: 16px;
 }
-button.hero-pill, a.hero-pill { cursor: pointer; }
-/* pills outside the hero (mobile profile): grey pills */
-.hero-pills--flat .hero-pill { background: var(--surface-2); color: var(--text-1); }
-.hero-pills--flat button.hero-pill:hover, .hero-pills--flat a.hero-pill:hover { background: color-mix(in srgb, var(--surface-2), var(--text-1) 6%); }
+.profile-card__avatar { grid-area: avatar; display: inline-flex; border-radius: 50%; }
+.profile-card--banner .profile-card__avatar { margin-top: -52px; box-shadow: 0 0 0 4px var(--surface-1); }
+.profile-card__actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.profile-card__main { grid-area: main; min-width: 0; }
+.profile-card__name { margin: 0; font-family: var(--font-display); font-size: 28px; line-height: 34px; font-weight: 700; letter-spacing: -.02em; color: var(--text-1); overflow-wrap: anywhere; }
+.profile-card__bio { margin: 4px 0 0; max-width: 65ch; color: var(--text-2); white-space: pre-line; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.profile-card__counts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 8px; font-size: var(--text-small); line-height: var(--text-small--line-height); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.profile-card__counts b { font-weight: 600; color: var(--text-1); }
+.profile-card__count { padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
+.profile-card__count:hover { text-decoration: underline; text-underline-offset: 3px; }
+.profile-card__avg { display: inline-flex; align-items: center; gap: 4px; }
+.profile-card__avg svg { color: var(--gold); }
+.profile-card__rows { border-top: 1px solid var(--separator); }
+.profile-card__yir { color: var(--accent-text); }
+/* following: the header button turns accent-soft (in list rows it goes quiet instead, see .person-row) */
+.profile-card .btn.follow-btn--on { background: var(--accent-soft); color: var(--accent-text); }
+.profile-card .btn.follow-btn--on:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+@media (min-width: 768px) {
+  .profile-card__banner { height: 160px; }
+  .profile-card__head { grid-template-columns: 72px minmax(0, 1fr) auto; grid-template-areas: "avatar main actions"; align-items: start; padding: 20px; }
+  .profile-card--banner .profile-card__avatar { margin-top: -56px; }
+}
+.profile__nav { margin-top: 20px; }
+.profile__seg { max-width: 560px; }
+.profile__panel { margin-top: 24px; }
+@media (max-width: 767px) {
+  .profile__seg { max-width: none; }
+  .profile__seg .segmented__item { min-width: 0; padding: 0 6px; }
+}
 
 /* ── Rail rows (Library / Settings navigation) ────────────────────────────── */
 .rail { display: flex; flex-direction: column; gap: 2px; }

@@ -82,4 +82,4 @@ type: `.h1` `.h2` `.h3` `.title` `.label` `.eyebrow` `.stat` `.stat-sm` `.tabula
 `.ambient` (cover hue via `applyAmbient`) ·
 `.avatar-stack` · `.rail` `.rail__item` (Library / Settings navigation rows) ·
 `.title-bar` (shell/titleBar.js, the large-title row) ·
-`.hero-pill` (profile hero stat pills) · `.btn-split` `.btn-split__toggle` · `.card--quiet` `.card--ambient` · `.delta` `.delta--up` `.delta--down`.
+`.stat-cells` `.stat-cells--4` (stat cards as cells of one grouped card) · `.btn-split` `.btn-split__toggle` · `.card--quiet` `.card--ambient` · `.delta` `.delta--up` `.delta--down`.

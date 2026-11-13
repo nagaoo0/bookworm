@@ -1,4 +1,4 @@
-// StatCard (design-system §5.22; visual-v3 §5). Grid: `grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4`.
+// StatCard (design-system §5.22; visual-v3 §5). As cells of one grouped card: `<div class="grouped stat-cells stat-cells--4">`.
 import { html, raw, safeUrl, escHtml } from '../utils.js';
 import { icon } from './icons.js';
 import { sparkline } from './sparkline.js';

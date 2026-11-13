@@ -1,10 +1,11 @@
 // Stats (#stats/overview) and Year in review (#stats/year[/yyyy], #u/:name/year[/yyyy]).
-// Spec: docs/visual-v2.md §6.8 (+ §3.6, §3.15, §4.7, §7.1). Chart.js is imported lazily (separate chunk) and reads its
-// colours from the --chart-* tokens, so charts are redrawn on `bw:prefs` (theme / accent change).
+// Spec: docs/visual-v3.md §7 (Stats). Chart.js is imported lazily (separate chunk) and reads its colours (--accent,
+// --surface-2, the --chart-* series) from the computed style, so charts are redrawn on `bw:prefs` (theme / accent change).
 import { api } from '../api.js';
 import { getState } from '../store.js';
 import { html, raw, safeUrl, localDayKey } from '../utils.js';
 import { ACCENT_KEYS } from '../prefs.js';
+import { titleBar } from '../shell/titleBar.js';
 import {
   ACTION, EMPTY, LABEL, NAV, TOAST, plural, formatDate, formatAuthors, uid, delegate, prefersReducedMotion,
   badge, button, card, cover, emptyState, genreBreakdown, icon, mountChipGroup, mountStoryCard, mountTabs,
@@ -88,7 +89,10 @@ function loadErrorState() {
 
 function statsSkeleton() {
   return html`<div class="space-y-6" role="status" aria-label="Loading" aria-busy="true">
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${[1, 2, 3, 4].map(() => skeletonCard())}</div>
+    <div class="grouped stat-cells stat-cells--4">${[1, 2, 3, 4].map(() => html`<div class="stat-card">
+      <span class="skeleton skeleton--text" style="width:50%"></span>
+      <span class="skeleton skeleton--text mt-3 h-7" style="width:35%"></span>
+    </div>`)}</div>
     ${skeletonCard()}${skeletonCard()}
   </div>`;
 }
@@ -103,13 +107,14 @@ function loadChart() {
   return chartPromise;
 }
 
-/** Chart.js draws on a canvas and cannot resolve var(), so resolve the --chart-* tokens once per draw. */
+/** Chart.js draws on a canvas and cannot resolve var(), so read the tokens from the computed style on every draw. */
 function readTheme(root) {
   const cs = getComputedStyle(root);
   const g = (name) => cs.getPropertyValue(name).trim();
   return {
     font: cs.fontFamily,
-    accent: g('--chart-1') || g('--accent'),
+    accent: g('--accent'),
+    track: g('--surface-2'),
     series: [1, 2, 3, 4, 5, 6, 7].map(i => g(`--chart-${i}`)),
     grid: g('--chart-grid') || g('--border-1'),
     text: g('--chart-text') || g('--text-2'),
@@ -269,7 +274,7 @@ function listeningCardHTML(stats, year) {
   return html`
     <section aria-labelledby="${headingId}">
       ${sectionHeader({ title: LABEL.listening, id: headingId, actions: badge({ label: 'Audiobookshelf', variant: 'info', icon: 'headphones' }) })}
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grouped stat-cells">
         ${statCard({ label: LABEL.audiobooks, value: sessions, hint: `finished in ${year}` })}
         ${statCard({ label: LABEL.hoursListened, value: hours, hint: hours === null ? `No hours for ${year}` : `listened in ${year}` })}
       </div>
@@ -284,6 +289,8 @@ function genreLegendHTML(rows) {
     </li>`)}
   </ul>`;
 }
+
+const sparseNote = () => html`<p class="mt-3 text-small text-text-2">Not much here yet. Log a few reads to see trends.</p>`;
 
 function overviewBodyHTML({ stats, year, goal, absConnected, compact }) {
   const finished = stats.perYear?.[year] ?? 0;
@@ -311,10 +318,13 @@ function overviewBodyHTML({ stats, year, goal, absConnected, compact }) {
   const monthlySummary = `Books finished by month in ${year}: ${MONTHS.map((m, i) => `${m} ${monthly[i]}`).join(', ')}`;
   const genreSummary = `Genres in ${year}: ${genres.map(g => `${g.name} ${g.count}`).join(', ')}`;
   const genreTotal = genres.reduce((n, g) => n + g.count, 0);
+  // fewer than 3 non-zero points: a short chart and a note instead of tall empty axes
+  const sparseMonthly = monthly.filter(Boolean).length < 3;
+  const sparseGenres = genres.length < 3;
 
   return html`
     <div class="space-y-4 md:space-y-6">
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 max-xl:[&_svg.sparkline]:hidden">
+      <div class="grouped stat-cells stat-cells--4 max-xl:[&_svg.sparkline]:hidden">
         ${statCard({ label: LABEL.finished, value: finished, hint: `${stats.totalBooks ?? 0} all time`, icon: 'check-circle-2', delta: finishedDelta, spark: monthlySoFar.some(Boolean) ? monthlySoFar : undefined })}
         ${statCard({ label: LABEL.pagesRead, value: pages > 0 ? pages.toLocaleString() : null, hint: pages > 0 ? `in ${year}` : 'Page counts not tracked', icon: 'file-text', delta: pagesDelta, spark: pageSeries.length > 1 ? pageSeries : undefined })}
         ${statCard({ label: LABEL.averageRating, value: stats.avgRating ? stats.avgRating.toFixed(1) : null, hint: 'across all reads', icon: 'star' })}
@@ -331,13 +341,14 @@ function overviewBodyHTML({ stats, year, goal, absConnected, compact }) {
       <div class="grid gap-3 md:gap-4 lg:grid-cols-12">
         <section class="${genres.length ? 'lg:col-span-8' : 'lg:col-span-12'}" aria-labelledby="${monthlyId}">
           ${sectionHeader({ title: LABEL.finishedByMonth, id: monthlyId })}
-          ${card({ cls: 'h-[calc(100%-3rem)]', content: html`<div class="relative h-60"><canvas data-chart="monthly" role="img" aria-label="${monthlySummary}"></canvas></div>` })}
+          ${card({ cls: 'h-[calc(100%-3rem)]', content: html`<div class="relative ${sparseMonthly ? 'h-[120px]' : 'h-60'}"><canvas data-chart="monthly" role="img" aria-label="${monthlySummary}"></canvas></div>${sparseMonthly ? sparseNote() : ''}` })}
         </section>
         ${genres.length ? html`<section class="lg:col-span-4" aria-labelledby="${genresId}">
           ${sectionHeader({ title: LABEL.genres, id: genresId })}
           ${card({ cls: 'h-[calc(100%-3rem)]', content: html`
-            <div class="relative h-44"><canvas data-chart="genres" data-total="${genreTotal}" role="img" aria-label="${genreSummary}"></canvas></div>
-            ${genreLegendHTML(genres)}` })}
+            <div class="relative ${sparseGenres ? 'h-[120px]' : 'h-44'}"><canvas data-chart="genres" data-total="${genreTotal}" role="img" aria-label="${genreSummary}"></canvas></div>
+            ${genreLegendHTML(genres)}
+            ${sparseGenres ? sparseNote() : ''}` })}
         </section>` : ''}
       </div>
 
@@ -402,7 +413,7 @@ function mountOverview(container, { stats, goalFor, absConnected = false, compac
         afterDatasetsDraw(chart) {
           const { ctx, scales: { y } } = chart;
           ctx.save();
-          ctx.fillStyle = t.grid;
+          ctx.fillStyle = t.track;
           chart.getDatasetMeta(0).data.forEach((bar, i) => {
             if (counts[i] === 0) ctx.fillRect(bar.x - 6, y.getPixelForValue(0) - 2, 12, 2);
           });
@@ -703,7 +714,7 @@ export function renderStats(el, { tab = 'overview', year } = {}) {
   const user = getState().user;
 
   el.innerHTML = String(pageShell(html`
-    <h1 class="h1">Stats</h1>
+    ${titleBar({ title: NAV.stats })}
     ${tabs({ id: tabsId, label: 'Stats sections', value: activeTab, items: [
     { value: 'overview', label: NAV.overview, href: '#stats/overview' },
     { value: 'year', label: NAV.yearInReview, href: '#stats/year' },

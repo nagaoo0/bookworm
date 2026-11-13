@@ -93,6 +93,8 @@ export async function seed(baseUrl, profile = 'full') {
     title: 'Piranesi', authors: ['Susanna Clarke'], isbn: '9781635575637', pages: 272, status: 'done',
     rating: 5, review: 'Strange, tender and beautifully built. Read it in one sitting.',
   });
+  // another accent and a banner, for the scoped accent and the banner strip on #u/june
+  await call(baseUrl, 'PATCH', '/api/auth/me', { cookie: june, body: { accent: 'teal', bannerUrl: cover('9781635575637') } });
   await call(baseUrl, 'POST', '/api/follows/june', { cookie: mihajlo });
 
   return { cookie: mihajlo, users: ['mihajlo', 'june'] };

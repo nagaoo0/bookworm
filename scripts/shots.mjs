@@ -99,6 +99,7 @@ function buildCaptures(ctx) {
     { slug: 'discover', name: 'discover', hash: '#discover', auth: true },
     { slug: 'community', name: 'community-feed', hash: '#community/feed', auth: true },
     { slug: 'profile', name: 'profile', hash: '#u/mihajlo', auth: true },
+    { slug: 'profile', name: 'profile-other', hash: '#u/june', auth: true },
     { slug: 'stats', name: 'stats-overview', hash: '#stats/overview', auth: true },
     { slug: 'settings', name: 'settings-appearance', hash: '#settings/appearance', auth: true, accents: true },
     { slug: 'auth', name: 'signedout-auth', hash: '#auth', auth: false },
