@@ -52,9 +52,16 @@ const drift = Object.keys(THEMES.light).filter((k) => systemLight[k] !== THEMES.
 
 const KEYS = ['orange', 'blue', 'teal', 'rose'];
 const ACCENTS = {};
+const problems = [];
 for (const key of KEYS) {
-  const t = tokensOf(blockAfter(`html[data-accent="${key}"],\n.accent-scope[data-accent="${key}"] {`).replace(/var\(--at-\w+\)/g, '#000000'));
-  ACCENTS[key] = { fill: t.accent, fg: t['accent-fg'] };
+  const raw = tokensOf(blockAfter(`html[data-accent="${key}"],\n.accent-scope[data-accent="${key}"] {`));
+  const target = /^var\(--at-([\w-]+)\)$/.exec(raw['accent-text'] ?? '');
+  if (!target || target[1] !== key) problems.push(`accent block "${key}": --accent-text is "${raw['accent-text']}", expected var(--at-${key})`);
+  ACCENTS[key] = { fill: raw.accent, fg: raw['accent-fg'] };
+}
+// fill and fg are read once from the accent block, so no theme block may override them
+for (const [name, tokens] of [...Object.entries(THEMES), ['system', systemLight]]) {
+  for (const k of ['accent', 'accent-fg']) if (k in tokens) problems.push(`theme block "${name}" overrides --${k}; the script assumes it is theme-independent`);
 }
 
 // ── WCAG maths ───────────────────────────────────────────────────────────────
@@ -102,12 +109,13 @@ const advisory = KEYS.map((k) => [`accent ${k} on surface-1`, names.filter((n) =
 console.log(`| Pair | ${names.join(' | ')} | min |\n|---|${names.map(() => '---').join('|')}|---|`);
 let fail = 0;
 for (const [pair, vals, min] of rows) {
-  const bad = vals.some((v) => v !== null && v < min);
+  const bad = vals.some((v) => v !== null && !(v >= min));
   if (bad) fail++;
   console.log(`| ${pair} | ${vals.map((v) => (v === null ? '  n/a' : f(v))).join(' | ')} | ${min}${bad ? ' FAIL' : ''} |`);
 }
 console.log('\nadvisory (not enforced): fills are paired with a visible text value (WCAG 1.4.11)');
 for (const [pair, vals, min] of advisory) console.log(`  ${pair}: ${vals.join(' · ')} (target ${min})`);
+for (const p of problems) { console.log(`\n${p}`); fail++; }
 if (drift.length) { console.log(`\nsystem-light block differs from the light block in: ${drift.join(', ')}`); fail++; }
 console.log(fail ? `\n${fail} row(s) below target` : '\nall rows pass');
 process.exit(fail ? 1 : 0);
