@@ -1,0 +1,224 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bookworm Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700;800&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{/* settings: accent */--accent:#ff9f0a;--accent-text:#ff9f0a;--on-accent:#000;--accent-soft:rgba(255,159,10,.18);--g:#8e8e93;--card:#1c1c1e;--card2:#2c2c2e;--hair:#38383a}
+html{background:#000;-webkit-text-size-adjust:100%}
+body{background:#000;color:#fff;font:400 15px/1.33 Inter,-apple-system,"SF Pro Text",system-ui,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.01em;min-height:100vh;position:relative;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+h1,h2,.tt{font-family:"Inter Tight",Inter,system-ui,sans-serif}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.stars{display:inline-flex;gap:2px}.stars svg{width:13px;height:13px;fill:#3a3a3c}.stars svg.on{fill:#fff}
+.tint{position:absolute;inset:0 0 auto 0;height:440px;background:linear-gradient(#5a2e14 0,#3a1d0d 40%,#000 100%);z-index:0}
+.m-only{display:none}
+/* top bar */
+.top{position:sticky;top:0;z-index:30;height:64px;animation:tb linear both;animation-timeline:scroll(root);animation-range:0 200px}
+@keyframes tb{from{background:rgba(0,0,0,0)}to{background:#000}}
+.top .in{width:1120px;max-width:100%;margin:0 auto;padding:0 24px;height:100%;display:flex;align-items:center;gap:16px}
+.logo{display:flex;align-items:center;gap:8px;font:800 22px/1 "Inter Tight",Inter,sans-serif;letter-spacing:-.02em;width:152px}
+.logo i{width:28px;height:28px;border-radius:8px;background:var(--accent);display:grid;place-items:center;color:var(--on-accent)}
+.logo i .ic{width:18px;height:18px;stroke-width:1.5}
+.seg{display:flex;background:rgba(0,0,0,.45);border-radius:11px;padding:3px;gap:2px}
+.seg a{height:34px;padding:0 16px;border-radius:9px;display:flex;align-items:center;font-weight:600;font-size:15px;color:#fff}
+.seg a.on{background:var(--accent);color:var(--on-accent)}
+.sp{flex:1}
+.search{display:flex;align-items:center;gap:8px;height:40px;width:216px;border-radius:10px;background:rgba(0,0,0,.45);padding:0 12px;color:var(--g);font-size:15px}
+.ibtn{width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.45);display:grid;place-items:center;position:relative}
+.badge{position:absolute;top:-2px;right:-2px;min-width:20px;height:20px;border-radius:10px;background:var(--accent);color:var(--on-accent);font:700 11px/20px Inter;text-align:center;border:2px solid #1c0f07;padding:0 4px}
+.av{width:40px;height:40px;border-radius:50%;background:#fff;color:#000;display:grid;place-items:center;font:800 17px "Inter Tight";flex:none}
+/* main */
+.col{position:relative;z-index:1;width:1120px;max-width:100%;margin:0 auto;padding:0 24px 32px}
+.greet{display:flex;align-items:flex-end;justify-content:space-between;padding-top:8px}
+h1{font-size:34px;line-height:40px;font-weight:700;letter-spacing:-.02em}
+.sub{color:#c7b3a5;font-size:15px;margin-top:4px}
+.chips{display:flex;gap:8px}
+.chip{height:36px;padding:0 16px;border-radius:18px;background:rgba(255,255,255,.14);display:flex;align-items:center;font-weight:600;font-size:15px}
+.chip.on{background:#fff;color:#000}
+.hero{margin-top:24px;display:grid;grid-template-columns:140px 1fr 340px;grid-template-rows:auto 1fr auto;grid-template-areas:"c h a" "c p a" "c b a";column-gap:24px;height:210px}
+.hero>.cv{grid-area:c;width:140px}
+.hh{grid-area:h}.hp{grid-area:p;align-self:center}.hb{grid-area:b;display:flex;gap:12px}
+.eyebrow{font-size:13px;font-weight:600;color:#e8c9b2}
+.hh h2{font-size:28px;line-height:32px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
+.hh .au{font-size:17px;color:#e0cdbf;margin-top:2px}
+.scrub{position:relative;height:6px;border-radius:3px;background:rgba(255,255,255,.28)}
+.scrub i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--accent)}
+.scrub u{position:absolute;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:var(--accent);border:2px solid #fff}
+.times{display:flex;justify-content:space-between;font-size:13px;color:#e0cdbf;margin-top:10px;font-weight:600}
+.btn{height:44px;padding:0 24px;border-radius:22px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font:600 15px Inter;white-space:nowrap}
+.btn.p{background:var(--accent);color:var(--on-accent)}.btn.g{border:1.5px solid rgba(255,255,255,.5);color:#fff}
+.btn.s{background:var(--card2);color:#fff}
+.also{grid-area:a;align-self:end;background:var(--card);border-radius:14px;overflow:hidden}
+.arow{display:flex;align-items:center;gap:12px;padding:12px 16px;min-height:64px}
+.arow+.arow{border-top:1px solid var(--hair)}
+.also .cv{width:44px;border-radius:5px}
+.arow .tx{flex:1;min-width:0}
+.arow .t{font-size:17px;font-weight:600;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .s{font-size:13px;color:var(--g)}
+.mini{height:4px;border-radius:2px;background:#3a3a3c;margin-top:8px}.mini i{display:block;height:100%;width:62%;border-radius:2px;background:var(--accent)}
+.val{font-size:17px;font-weight:600}
+.flame{width:36px;height:36px;border-radius:10px;background:var(--accent);display:grid;place-items:center;color:var(--on-accent)}
+.chev{color:#636366;width:18px;height:18px}
+/* covers */
+.cv{position:relative;aspect-ratio:2/3;border-radius:7px;background:var(--c);overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.6),0 8px 24px rgba(0,0,0,.45);flex:none}
+.cv img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.fb{position:absolute;inset:0;padding:10%;display:flex;flex-direction:column;justify-content:space-between;color:#fff}
+.fb b{font:800 15px/1.15 "Inter Tight";letter-spacing:-.01em}.fb i{font:600 11px/1.2 Inter;font-style:normal;opacity:.85}
+.hero .cv .fb b{font-size:22px}.also .cv .fb{display:none}
+/* sections */
+.sec{margin-top:32px}
+.sh{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px}
+.sh h2{font-size:22px;line-height:28px;font-weight:700;letter-spacing:-.02em}
+.sh a{font-size:15px;font-weight:600;color:var(--accent-text);display:flex;align-items:center;gap:2px}
+.sh a .ic{width:16px;height:16px}
+.row{display:flex;gap:16px;overflow-x:auto;scrollbar-width:none;margin:0 -24px;padding:0 24px 4px}
+.row::-webkit-scrollbar{display:none}
+.card{width:188px;flex:none;display:block}
+.card .cv{width:188px}.card{width:184px}.card .cv{width:184px}.seeall{width:184px}
+.cvw{position:relative}
+.go{position:absolute;right:8px;bottom:8px;width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.go .ic{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:2.6;stroke-linecap:round}
+.ct{display:block;font-size:15px;font-weight:600;margin-top:12px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ca{display:block;font-size:13px;color:var(--g);line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .stars{margin-top:4px}
+.yr{flex:1 0 240px;align-self:flex-start;height:276px;border-radius:14px;background:var(--card);padding:20px;display:flex;flex-direction:column;justify-content:space-between}.ys{display:flex;align-items:baseline;gap:8px;border-top:1px solid var(--hair);padding-top:12px}.ys b{font:800 34px/36px 'Inter Tight';letter-spacing:-.02em}.ys span{font-size:17px;color:var(--g);font-weight:600}.seeall{align-self:flex-start;width:184px;aspect-ratio:2/3;border-radius:7px;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-weight:600;flex:none}
+.seeall .circ{width:44px;height:44px;border-radius:50%;background:var(--card2);display:grid;place-items:center}
+.seeall small{font-size:13px;color:var(--g);font-weight:400;margin-top:-8px}
+.two{display:grid;grid-template-columns:1fr 380px;gap:32px;align-items:start}
+.grp{background:var(--card);border-radius:14px;overflow:hidden}
+.fr{display:flex;gap:12px;padding:16px;position:relative;align-items:center}
+.fr+.fr{margin-left:0}
+.fr+.fr::before{content:"";position:absolute;top:0;left:72px;right:0;border-top:1px solid var(--hair)}
+.fav{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font:800 17px "Inter Tight";flex:none;align-self:flex-start}
+.fb2{flex:1;min-width:0}
+.fl1{font-size:15px;line-height:20px;color:#d1d1d6}.fl1 b{color:#fff;font-weight:600}
+.fb2 .stars{margin-top:4px}
+.q{font-size:15px;margin-top:4px;color:#fff}
+.meta{display:flex;gap:16px;font-size:13px;color:var(--g);margin-top:6px;align-items:center}
+.meta span{display:flex;gap:4px;align-items:center}.meta .ic{width:15px;height:15px}
+.thumb{width:40px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.6)}.thumb .fb{display:none}
+.goal{padding:20px}
+.gtop{display:flex;gap:20px;align-items:center}
+.ring{position:relative;width:120px;height:120px;flex:none}
+.ring svg{width:120px;height:120px;transform:rotate(-90deg)}
+.ring .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring b{font:800 34px/36px "Inter Tight";letter-spacing:-.02em}.ring span{font-size:13px;color:var(--g)}
+.pill{display:inline-block;background:var(--accent-soft);color:var(--accent-text);font-weight:700;font-size:13px;padding:4px 10px;border-radius:12px}
+.gtxt .t{font-size:17px;font-weight:600;margin-top:8px;line-height:22px}.gtxt .s{font-size:13px;color:var(--g);margin-top:2px}
+.lbl{font-size:13px;color:var(--g);font-weight:600;margin:20px 0 8px}
+.months{display:grid;grid-template-columns:repeat(12,1fr);gap:4px;align-items:end;height:68px}
+.mo{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px}
+.mo i{display:block;width:100%;max-width:18px;border-radius:3px;background:#3a3a3c}.mo i.f{background:var(--accent)}
+.mv{font-size:11px;color:var(--g);font-weight:600;height:0;visibility:hidden}
+.mn{font-size:11px;color:var(--g);font-weight:600;margin-top:4px;position:relative;top:0}
+.mo.now .mn{color:#fff}
+.goal .btn{width:100%;margin-top:20px}
+.shelves{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.shelf{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:14px;height:64px;padding:0 16px;font-size:17px;font-weight:600}
+.shelf>.ic:first-child{color:var(--accent)}.shelf span{flex:1}.shelf em{font-style:normal;color:var(--g);font-weight:400}
+/* tab bar */
+.tabbar{display:none}
+@media (max-width:760px){
+ .d-only{display:none!important}.m-only{display:block}
+ body{padding-bottom:83px}
+ .tint{height:520px}
+ .status{height:47px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 28px 6px 34px;font:600 15px Inter;position:relative;z-index:2}
+ .status .r{display:flex;gap:6px;align-items:center}.status svg{height:12px;fill:#fff}
+ .nbar{position:relative;z-index:2;height:44px;padding:0 16px;display:flex!important;align-items:center;justify-content:space-between}
+ .nbar .logo{width:auto;font-size:17px}.nbar .logo i{width:24px;height:24px;border-radius:7px}.nbar .logo i .ic{width:15px;height:15px}
+ .nbar .rt{display:flex;gap:12px;align-items:center}
+ .nbar .ibtn,.nbar .av{width:36px;height:36px}.nbar .av{font-size:15px}
+ .col{padding:0 16px 32px}
+ .greet{display:block;padding-top:4px}
+ h1{font-size:34px}
+ .sub{font-size:13px;margin-top:4px;color:#d3bfb0}
+ .msearch{display:flex!important;align-items:center;gap:8px;height:40px;border-radius:10px;background:rgba(118,118,128,.3);padding:0 12px;color:var(--g);margin-top:16px;font-size:17px}
+ .chips{margin:12px -16px 0;padding:0 16px;overflow-x:auto;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
+ .chip{flex:none;height:34px;padding:0 14px;font-size:15px}
+ .hero{margin-top:20px;height:auto;grid-template-columns:104px 1fr;grid-template-rows:auto;grid-template-areas:"c h" "p p" "b b" "a a";row-gap:16px;column-gap:16px}
+ .hero>.cv{width:104px}.hero>.cv .fb b{font-size:15px}
+ .hh{align-self:center}.hh h2{font-size:22px;line-height:26px}.hh .au{font-size:15px}
+ .hp{align-self:auto}
+ .btn{padding:0 20px}.hb .p{flex:1}.hb .g{width:96px;padding:0}
+ .also{align-self:auto}
+ .sec{margin-top:32px}
+ .sh h2{font-size:22px}
+ .row{margin:0 -16px;padding:0 16px 4px;gap:12px}
+ .card,.card .cv,.seeall{width:132px}.seeall{height:198px}.yr{flex:0 0 200px;height:198px;padding:16px}.ys b{font-size:28px;line-height:30px}.ys span{font-size:15px}.card .cv .fb b{font-size:13px}
+ .ct{font-size:15px;margin-top:8px}
+ .go{width:28px;height:28px;right:6px;bottom:6px}
+ .two{display:block}.two>section+section{margin-top:32px}
+ .fr{padding:12px 16px;gap:12px}.fr+.fr::before{left:64px}
+ .fav{width:36px;height:36px;font-size:15px}
+ .thumb{display:none}
+ .goal{padding:16px}.ring,.ring svg{width:96px;height:96px}.ring b{font-size:28px;line-height:30px}
+ .gtop{gap:16px}
+ .shelves{grid-template-columns:1fr;gap:0;background:var(--card);border-radius:14px;overflow:hidden}
+ .shelf{border-radius:0;height:56px;position:relative}.shelf+.shelf::before{content:"";position:absolute;top:0;left:52px;right:0;border-top:1px solid var(--hair)}
+ .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;height:83px;background:#0a0a0a;border-top:1px solid #2a2a2c;z-index:50;padding:6px 8px 0;justify-content:space-around;align-items:flex-start}
+ .tabbar a{width:64px;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:600;color:#8e8e93;padding-top:3px}
+ .tabbar a .ic{width:26px;height:26px}
+ .tabbar a.on{color:var(--accent)}
+ .tabbar a.plus{padding-top:0}.tabbar .pl{width:48px;height:36px;border-radius:12px;background:var(--accent);display:grid;place-items:center;color:var(--on-accent);margin-top:2px}
+ .tabbar .pl .ic{width:24px;height:24px;stroke-width:2}
+ .hind{position:absolute;bottom:8px;left:50%;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:#fff}
+}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
+<symbol id="i-lib" viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+<symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></symbol>
+<symbol id="i-msg" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+<symbol id="i-flame" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+<symbol id="i-bookmark" viewBox="0 0 24 24"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+</defs></svg>
+<div class="tint"></div>
+<div class="status m-only"><span>9:41</span><span class="r"><svg viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx=".8"/><rect x="5" y="5" width="3" height="7" rx=".8"/><rect x="10" y="2.5" width="3" height="9.5" rx=".8"/><rect x="15" y="0" width="3" height="12" rx=".8"/></svg><svg viewBox="0 0 27 12"><rect x=".5" y=".5" width="23" height="11" rx="3.5" fill="none" stroke="#fff" opacity=".5"/><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="25" y="4" width="2" height="4" rx="1" opacity=".5"/></svg></span></div>
+<div class="nbar m-only"><div class="logo"><i><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-book"/></svg></i>Bookworm</div><div class="rt"><a class="ibtn" href="#" aria-label="Notifications"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bell"/></svg><span class="badge">2</span></a><span class="av">M</span></div></div>
+<header class="top d-only"><div class="in">
+<div class="logo"><i><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-book"/></svg></i>Bookworm</div>
+<nav class="seg"><a href="#" class="on">Home</a><a href="#" class="">Library</a><a href="#" class="">Discover</a><a href="#" class="">Community</a><a href="#" class="">Stats</a></nav><div class="sp"></div>
+<div class="search"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>Search books, people</div>
+<a class="ibtn" href="#" aria-label="Notifications"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bell"/></svg><span class="badge">2</span></a>
+<span class="av">M</span></div></header>
+<main class="col">
+<div class="greet"><div><h1>Good evening</h1><div class="sub">Thursday 13 November &middot; 2 in progress &middot; 10 of 24 this year</div></div>
+<div class="m-only msearch" style="display:none"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"/></svg>Search books, people</div><div class="chips d-chips"><a href="#" class="chip on">All</a><a href="#" class="chip ">Reading</a><a href="#" class="chip ">To read</a><a href="#" class="chip ">Finished</a></div></div>
+<section class="hero" aria-label="Continue reading">
+<div class="cv " style="--c:#b4541e"><span class="fb"><b>Dune</b><i>Frank Herbert</i></span><img src="https://covers.openlibrary.org/b/isbn/9780441013593-L.jpg" alt="Dune cover" onerror="this.remove()"></div>
+<div class="hh"><div class="eyebrow">Continue reading</div><h2>Dune</h2><div class="au">Frank Herbert</div></div>
+<div class="hp"><div class="scrub"><i style="width:28%"></i><u style="left:28%"></u></div><div class="times"><span>28%</span><span>about 6 h left</span></div></div>
+<div class="hb"><a class="btn p" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-edit"/></svg>Update progress</a><a class="btn g" href="#">Finish</a></div>
+<div class="also">
+<a class="arow" href="#"><div class="cv " style="--c:#0b3d91"><span class="fb"><b>Project Hail Mary</b><i>Andy Weir</i></span><img src="https://covers.openlibrary.org/b/isbn/9780593135204-L.jpg" alt="Project Hail Mary cover" onerror="this.remove()"></div><div class="tx"><div class="s">Also reading</div><div class="t">Project Hail Mary</div><div class="mini"><i></i></div></div><span class="val">62%</span><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a>
+<a class="arow" href="#"><span class="flame"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-flame"/></svg></span><div class="tx"><div class="t">6 day streak</div><div class="s">Read tonight to keep it going</div></div><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a>
+</div></section>
+<div class="chips m-chips m-only" style="margin-top:20px;display:none"></div>
+<section class="sec"><div class="sh"><h2>Up next</h2><a href="#">See all<svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a></div><div class="row"><a class="card" href="#"><div class="cvw"><div class="cv " style="--c:#3b6b3a"><span class="fb"><b>The Hobbit</b><i>J.R.R. Tolkien</i></span><img src="https://covers.openlibrary.org/b/isbn/9780547928227-L.jpg" alt="The Hobbit cover" onerror="this.remove()"></div><span class="go" aria-label="Add to reading"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span></div><span class="ct">The Hobbit</span><span class="ca">J.R.R. Tolkien</span></a><a class="card" href="#"><div class="cvw"><div class="cv " style="--c:#c99416"><span class="fb"><b>Sapiens</b><i>Yuval Noah Harari</i></span><img src="https://covers.openlibrary.org/b/isbn/9780062316097-L.jpg" alt="Sapiens cover" onerror="this.remove()"></div></div><span class="ct">Sapiens</span><span class="ca">Yuval Noah Harari</span></a><a class="card" href="#"><div class="cvw"><div class="cv " style="--c:#6a2c3e"><span class="fb"><b>Beloved</b><i>Toni Morrison</i></span><img src="https://covers.openlibrary.org/b/isbn/9781400033416-L.jpg" alt="Beloved cover" onerror="this.remove()"></div></div><span class="ct">Beloved</span><span class="ca">Toni Morrison</span></a><a class="card" href="#"><div class="cvw"><div class="cv " style="--c:#1e5a73"><span class="fb"><b>The Odyssey</b><i>Homer</i></span><img src="https://covers.openlibrary.org/b/isbn/9780140268867-L.jpg" alt="The Odyssey cover" onerror="this.remove()"></div></div><span class="ct">The Odyssey</span><span class="ca">Homer</span></a><a class="card" href="#"><div class="cvw"><div class="cv " style="--c:#2a2a2e"><span class="fb"><b>The Girl with the Dragon Tattoo</b><i>Stieg Larsson</i></span><img src="https://covers.openlibrary.org/b/isbn/9780307454546-L.jpg" alt="The Girl with the Dragon Tattoo cover" onerror="this.remove()"></div></div><span class="ct">The Girl with the Dragon Tattoo</span><span class="ca">Stieg Larsson</span></a><a class="card" href="#"><div class="cvw"><div class="cv " style="--c:#5b7fa6"><span class="fb"><b>Piranesi</b><i>Susanna Clarke</i></span><img src="https://covers.openlibrary.org/b/isbn/9781635575637-L.jpg" alt="Piranesi cover" onerror="this.remove()"></div></div><span class="ct">Piranesi</span><span class="ca">Susanna Clarke</span></a></div></section>
+<section class="sec"><div class="sh"><h2>Recently finished</h2><a href="#">See all<svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a></div><div class="row"><a class="card" href="#"><div class="cv " style="--c:#2f6f5e"><span class="fb"><b>To Kill a Mockingbird</b><i>Harper Lee</i></span><img src="https://covers.openlibrary.org/b/isbn/9780061120084-L.jpg" alt="To Kill a Mockingbird cover" onerror="this.remove()"></div><span class="ct">To Kill a Mockingbird</span><span class="ca">Harper Lee</span><span class="stars" role="img" aria-label="5 stars"><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg></span></a><a class="card" href="#"><div class="cv " style="--c:#c23b22"><span class="fb"><b>The Catcher in the Rye</b><i>J.D. Salinger</i></span><img src="https://covers.openlibrary.org/b/isbn/9780316769488-L.jpg" alt="The Catcher in the Rye cover" onerror="this.remove()"></div><span class="ct">The Catcher in the Rye</span><span class="ca">J.D. Salinger</span><span class="stars" role="img" aria-label="3 stars"><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class=""><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class=""><use href="#i-star"/></svg></span></a><a class="card" href="#"><div class="cv " style="--c:#6e6e73"><span class="fb"><b>Educated</b><i>Tara Westover</i></span><img src="https://covers.openlibrary.org/b/isbn/9780399590504-L.jpg" alt="Educated cover" onerror="this.remove()"></div><span class="ct">Educated</span><span class="ca">Tara Westover</span><span class="stars" role="img" aria-label="4 stars"><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class=""><use href="#i-star"/></svg></span></a><a class="seeall" href="#"><span class="circ"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></span>See all<small>10 this year</small></a><div class="yr"><div class="lbl" style="margin:0">This year</div><div class="ys"><b>10</b><span>finished</span></div><div class="ys"><b>2</b><span>in progress</span></div><div class="ys"><b>6</b><span>to read</span></div></div></div></section>
+<div class="sec two">
+<section><div class="sh"><h2>From people you follow</h2></div><div class="grp">
+<a class="fr" href="#"><span class="fav" style="background:#30b0c7">j</span><div class="fb2"><div class="fl1"><b>june</b> finished <b>Demon Copperhead</b></div><span class="stars" role="img" aria-label="5 stars"><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg></span><div class="q">Dickens, but Appalachia. Could not put it down.</div><div class="meta"><span>2 h ago</span><span><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-heart"/></svg>12</span><span><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-msg"/></svg>3</span></div></div><div class="cv thumb" style="--c:#7a3b1e"><span class="fb"><b>Demon Copperhead</b><i>Barbara Kingsolver</i></span><img src="https://covers.openlibrary.org/b/isbn/9780063251922-L.jpg" alt="Demon Copperhead cover" onerror="this.remove()"></div><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a>
+<a class="fr" href="#"><span class="fav" style="background:#ff9f0a">t</span><div class="fb2"><div class="fl1"><b>tomas</b> started <b>Tomorrow, and Tomorrow, and Tomorrow</b></div><div class="meta" style="margin-top:4px"><span>5 h ago</span></div></div><div class="cv thumb" style="--c:#d1456f"><span class="fb"><b>Tomorrow, and Tomorrow, and Tomorrow</b><i>Gabrielle Zevin</i></span><img src="https://covers.openlibrary.org/b/isbn/9780593321201-L.jpg" alt="Tomorrow, and Tomorrow, and Tomorrow cover" onerror="this.remove()"></div><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a>
+<a class="fr" href="#"><span class="fav" style="background:#bf5af2">a</span><div class="fb2"><div class="fl1"><b>ana</b> rated <b>The Secret History</b></div><span class="stars" role="img" aria-label="4 stars"><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class="on"><use href="#i-star"/></svg><svg viewBox="0 0 24 24" class=""><use href="#i-star"/></svg></span><div class="q">Finally understand the hype.</div><div class="meta"><span>yesterday</span><span><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-heart"/></svg>8</span></div></div><div class="cv thumb" style="--c:#3a2a52"><span class="fb"><b>The Secret History</b><i>Donna Tartt</i></span><img src="https://covers.openlibrary.org/b/isbn/9781400031702-L.jpg" alt="The Secret History cover" onerror="this.remove()"></div><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a>
+</div></section>
+<section><div class="sh"><h2>2026 goal</h2></div><div class="grp goal">
+<div class="gtop"><div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="#3a3a3c" stroke-width="12"/><circle cx="60" cy="60" r="52" fill="none" stroke="#ff9f0a" stroke-width="12" stroke-linecap="round" stroke-dasharray="136.1 999"/></svg><div class="c"><b>10</b><span>of 24</span></div></div>
+<div class="gtxt"><span class="pill">2 behind pace</span><div class="t">Read 2 more to catch up</div><div class="s">14 books to go</div></div></div>
+<div class="lbl">Finished per month</div><div class="months"><div class="mo "><span class="mv">1</span><i style="height:14px" class="f"></i><span class="mn">J</span></div><div class="mo "><span class="mv">2</span><i style="height:28px" class="f"></i><span class="mn">F</span></div><div class="mo "><span class="mv">0</span><i style="height:3px" class=""></i><span class="mn">M</span></div><div class="mo "><span class="mv">1</span><i style="height:14px" class="f"></i><span class="mn">A</span></div><div class="mo "><span class="mv">2</span><i style="height:28px" class="f"></i><span class="mn">M</span></div><div class="mo "><span class="mv">1</span><i style="height:14px" class="f"></i><span class="mn">J</span></div><div class="mo "><span class="mv">0</span><i style="height:3px" class=""></i><span class="mn">J</span></div><div class="mo "><span class="mv">1</span><i style="height:14px" class="f"></i><span class="mn">A</span></div><div class="mo "><span class="mv">1</span><i style="height:14px" class="f"></i><span class="mn">S</span></div><div class="mo "><span class="mv">1</span><i style="height:14px" class="f"></i><span class="mn">O</span></div><div class="mo now"><span class="mv">0</span><i style="height:3px" class=""></i><span class="mn">N</span></div><div class="mo "><span class="mv">0</span><i style="height:3px" class=""></i><span class="mn">D</span></div></div>
+<a class="btn s" href="#">Edit goal</a></div></section></div>
+<section class="sec"><div class="sh"><h2>Your shelves</h2></div><div class="shelves"><a class="shelf" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-book"/></svg><span>Reading</span><em>2</em><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="shelf" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bookmark"/></svg><span>To read</span><em>6</em><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="shelf" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg><span>Finished</span><em>10</em><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="shelf" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-heart"/></svg><span>Favorites</span><em>5</em><svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chev"/></svg></a></div></section>
+</main>
+<nav class="tabbar" aria-label="Tabs">
+<a class="on" href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-home"/></svg>Home</a><a href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-lib"/></svg>Library</a><a class="plus" href="#" aria-label="Add"><span class="pl"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg></span></a><a href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-users"/></svg>Community</a><a href="#"><svg class="ic " viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chart"/></svg>Stats</a><span class="hind"></span></nav>
+</body></html>
