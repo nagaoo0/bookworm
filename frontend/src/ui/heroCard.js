@@ -1,7 +1,7 @@
-// Hero card (visual-v2 §3.4, §6.2): Home "Continue reading". An ambient card that puts the most recently progressed book at
-// 160 × 240 (desktop) / 96 × 144 (mobile) with a real shadow, the title in Inter Tight 28, a glowing progress bar, and the two
-// CTAs; further reading books appear as compact rows underneath ("Also reading").
-// Its colour comes from the cover (ui/ambient.js), applied by mountHeroCard() / mountAmbient().
+// Hero card (visual-v3 §5, §6.2): Home "Continue reading" as a grouped card: the most recently progressed book's cover at
+// 120 px (desktop) / 96 px (phone), the title in Inter Tight 28, the progress slider with its value, and the two CTAs;
+// further reading books appear as list rows below a separator ("Also reading"), each with its percentage.
+// mountHeroCard() still samples the cover hue (ui/ambient.js) for views that tint their header with it.
 import { html, escHtml } from '../utils.js';
 import { getState } from '../store.js';
 import { cover } from './cover.js';
@@ -50,7 +50,7 @@ export function heroCard({ entry, others = [], ambient = true, eyebrow = 'Contin
       <div class="hero-card__body">
         <div class="hero-card__top">
           <span class="eyebrow">${eyebrow}</span>
-          ${iconButton({ icon: 'more-horizontal', label: `More options for ${title}`, variant: 'glass', size: 'sm', attrs: 'data-hero-action="menu" aria-haspopup="menu"' })}
+          ${iconButton({ icon: 'more-horizontal', label: `More options for ${title}`, size: 'sm', attrs: 'data-hero-action="menu" aria-haspopup="menu"' })}
         </div>
         <h2 class="hero-card__title">${href ? html`<a href="${href}">${title}</a>` : title}</h2>
         ${authors ? html`<p class="hero-card__author">${authors}</p>` : ''}

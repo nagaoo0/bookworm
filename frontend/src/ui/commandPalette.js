@@ -1,6 +1,7 @@
-// CommandPalette (design-system §5.23; visual-v2 §3.11): search your library, find books online, jump to a page.
+// CommandPalette (design-system §5.23; visual-v3 §5): search your library, find books online, jump to a page.
 // 640 px modal (top-aligned) on desktop, bottom sheet on mobile: a 56 px borderless input row with a shortcut hint,
-// 52 px rows (cover thumbs / section roundels), a legend footer. combobox + listbox with aria-activedescendant.
+// 56 px list rows (cover thumbs / section roundels), a legend footer. combobox + listbox with aria-activedescendant,
+// and a polite status line that announces "Searching…", "N results" or "No results" (F100).
 import { html } from '../utils.js';
 import { api } from '../api.js';
 import { getState } from '../store.js';
@@ -66,12 +67,25 @@ export function openCommandPalette({ initialQuery = '', onAdded, onAdd } = {}) {
         <kbd class="kbd" aria-hidden="true">${shortcutHint()}</kbd>
       </div>
       <div class="cmdk__results" id="${listId}" role="listbox" aria-label="Results" data-cmdk-results></div>
+      <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-cmdk-status></div>
       <div class="cmdk__footer" aria-hidden="true"><span><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> Navigate</span><span><kbd class="kbd">↵</kbd> Open</span><span><kbd class="kbd">Esc</kbd> Close</span></div>
     </div>`,
   });
 
   const input = modal.el.querySelector('[data-cmdk-input]');
   const results = modal.el.querySelector('[data-cmdk-results]');
+  const status = modal.el.querySelector('[data-cmdk-status]');
+
+  // what the status line says for the current query (nothing until something is typed)
+  function announce(q) {
+    let text = '';
+    if (q) {
+      const n = rows.length;
+      if (n) text = `${n} ${n === 1 ? 'result' : 'results'}${onlineState === 'loading' ? ', searching online…' : ''}`;
+      else text = onlineState === 'loading' ? 'Searching…' : 'No results';
+    }
+    if (status.textContent !== text) status.textContent = text;
+  }
 
   function libraryMatches(q) {
     if (!q) return [];
@@ -131,6 +145,7 @@ export function openCommandPalette({ initialQuery = '', onAdded, onAdd } = {}) {
     if (!rows.length && !onlineHtml) results.innerHTML = String(html`<div class="cmdk__empty cmdk__empty--art"><div class="empty-state__art">${illustration('search', { width: 80 })}</div><div>${q ? html`No results for “${input.value.trim()}”` : 'No matches'}</div></div>`);
     active = Math.min(active, Math.max(0, rows.length - 1));
     paintActive();
+    announce(q);
   }
 
   function paintActive() {

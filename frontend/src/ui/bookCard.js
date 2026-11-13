@@ -1,4 +1,4 @@
-// BookCard (design-system §5.14; visual-v2 §5.13): grid / list / compact / row variants, the Discover search card with its
+// BookCard (design-system §5.14; visual-v3 §5 BookCard): grid / list / compact / row variants, the Discover search card with its
 // split "Add" button, and mountBookGrid() behaviour.
 import { html, safeUrl, escHtml } from '../utils.js';
 import { getState } from '../store.js';
@@ -87,9 +87,10 @@ export function bookAddMenuItems({ shelves = [] } = {}) {
  *     googleId, openLibraryId, appleId, notes, source, shelf_ids }
  * @param {{ variant?: 'grid'|'list'|'compact'|'row', size?: 'md'|'sm', showStatus?: boolean, selectable?: boolean, selected?: boolean,
  *   readOnly?: boolean, alsoRead?: boolean, href?: string, searchMode?: boolean, footer?: any, owned?: boolean, index?: number }} [o]
- *   grid: cover (3D tilt on hover), title, author, then status dot · availability · stars. list: 64 px row with the status and
- *   stars on the right. compact: cover + title + author only (144 / 168 px wide; `size: 'sm'` 112 / 128) for shelf rows.
- *   row: the currently-reading card (88 px cover, progress bar, "Update" + "Finish" buttons: wire `onProgress` / `onFinish`).
+ *   grid: flat cover, 15 px title (2 lines), 13 px author, then availability · stars (no status: `showStatus` applies to
+ *   list and row only), and for a book being read a slim bar with its percentage. list: the 64 px list row with the status
+ *   and stars on the right. compact: cover + title + author only, at the shelf row's card width, for shelf rows.
+ *   row: the Continue reading card (88 px cover, progress bar with its value, "Update" + "Finish": wire `onProgress` / `onFinish`).
  *   readOnly: no more-options menu / progress (other people's shelves). selectable: checkbox top-left, card click toggles selection.
  *   searchMode: online result (Discover) — an outline source badge, no more-options menu, and a built-in split "Add" button
  *   (or, with `owned: true`, an "In library" badge + "Open"). `index` is the position in the results list, so `onAdd` /
@@ -125,6 +126,7 @@ export function bookCard(entry, { variant = 'grid', size = 'md', showStatus = fa
   const statusEl = showStatus && status ? statusBadge(status) : '';
   const starsEl = entry.rating ? stars({ value: entry.rating, size: 12 }) : '';
   const metaRow = html`${statusEl}${availabilityBadges(entry)}${starsEl}`;
+  const gridMeta = html`${availabilityBadges(entry)}${starsEl}`;   // grid covers carry no status (spec §5 BookCard)
   const sourceBadge = searchMode && entry.source
     ? html`<div class="book-card__source">${badge({ label: SOURCE_LABEL[entry.source] ?? entry.source, variant: 'outline' })}</div>`
     : '';
@@ -146,7 +148,7 @@ export function bookCard(entry, { variant = 'grid', size = 'md', showStatus = fa
       <div class="book-card__body">
         ${titleEl}
         ${authors ? html`<p class="book-card__authors"${authorsFull ? html` title="${authorsFull}"` : ''}>${authors}</p>` : ''}
-        ${readingProgress ? progressBar({ value: pct, size: 'sm', label: `Progress for ${title}`, cls: 'mt-1' }) : ''}
+        ${readingProgress ? progressBar({ value: pct, size: 'sm', showValue: true, label: `Progress for ${title}`, cls: 'book-card__progress' }) : ''}
       </div>
       <div class="book-card__aside">${metaRow}</div>
       ${selectable ? checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select tabindex="-1"' }) : ''}
@@ -174,7 +176,6 @@ export function bookCard(entry, { variant = 'grid', size = 'md', showStatus = fa
   return html`<article class="${klass}" tabindex="0" aria-label="${label}" ${dataAttrs}>
     <div class="book-card__cover">
       ${cover({ url: coverUrl, bookId, title, author: firstAuthor, size: 'md' })}
-      ${readingProgress && variant === 'grid' ? html`<div class="book-card__progress">${progressBar({ value: pct, size: 'sm', onCover: true, label: `Progress for ${title}` })}</div>` : ''}
       ${alsoRead && !selectable ? html`<span class="book-card__flag">${badge({ label: LABEL.youReadThis, variant: 'accent', icon: 'check' })}</span>` : ''}
       ${selectable ? html`<span class="book-card__select">${checkbox({ ariaLabel: `Select ${title}`, checked: selected, attrs: 'data-book-select tabindex="-1"' })}</span>` : ''}
       ${menuBtn}
@@ -183,7 +184,8 @@ export function bookCard(entry, { variant = 'grid', size = 'md', showStatus = fa
       ${titleEl}
       ${authors ? html`<p class="book-card__authors"${authorsFull ? html` title="${authorsFull}"` : ''}>${authors}</p>` : ''}
       ${sourceBadge}
-      ${variant === 'compact' ? '' : html`<div class="book-card__meta">${metaRow}</div>`}
+      ${readingProgress && variant === 'grid' ? progressBar({ value: pct, size: 'sm', showValue: true, label: `Progress for ${title}`, cls: 'book-card__progress' }) : ''}
+      ${variant === 'compact' ? '' : html`<div class="book-card__meta">${gridMeta}</div>`}
       ${eta && variant !== 'compact' ? html`<p class="book-card__eta">${eta}</p>` : ''}
       ${footer ?? addControls}
     </div>

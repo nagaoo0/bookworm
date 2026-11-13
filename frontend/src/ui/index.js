@@ -1,4 +1,4 @@
-// Bookworm UI kit — one import for every component. Spec: docs/design-system.md §4–§5, docs/visual-v2.md §5.
+// Bookworm UI kit — one import for every component. Spec: docs/design-system.md §4–§5, docs/visual-v3.md §4–§5.
 export * from './icons.js';
 export * from './status.js';
 export * from './copy.js';

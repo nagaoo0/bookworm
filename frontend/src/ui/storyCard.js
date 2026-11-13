@@ -1,6 +1,6 @@
-// Story card (visual-v2 §3.15, §6.8): the Year-in-review "story" — 9:16, always dark whatever the theme, tinted by the user's
-// accent and by the ambient colour of their top book, with grain. Content: eyebrow, the year in Inter Tight 96, @user, three stat
-// rows, the top three covers fanned, favourite author + top genre pills, and the wordmark.
+// Story card (visual-v3 §5): the Year-in-review "story" — 9:16, a flat block in the user's accent with --accent-fg text
+// (white or black by accent), the same in every theme. Content: eyebrow, the year in Inter Tight 96 (the one display size
+// above 34 px), @user, three stat rows, the top three covers in a flat row, favourite author + top genre pills, the wordmark.
 import { html, raw } from '../utils.js';
 import { avatar } from './avatar.js';
 import { cover } from './cover.js';
@@ -15,9 +15,9 @@ const num = (n) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US
  *   stats?: { finished?: number, pages?: number, avgRating?: number|null, favouriteAuthor?: string, topGenre?: string },
  *   topBooks?: Array<{ book_id?: number|string, id?: number|string, title: string, cover_url?: string|null, authors?: string[] }>,
  *   favouriteAuthor?: string, topGenre?: string, accent?: 'orange'|'blue'|'teal'|'rose', ambient?: boolean }} o
- *   topBooks is ranked: the first book is the centre cover and the source of the ambient colour; up to three are shown.
- *   accent defaults to the page's accent. Wire with mountStoryCard(root) (applies the ambient tint). Dark tokens are inlined
- *   on the card (`.story-card`), so it needs no theme handling. 400 × 710 at ≥ 768, full-bleed below.
+ *   topBooks is ranked, shown left to right; up to three. accent defaults to the page's accent; the card is an
+ *   `.accent-scope`, so it needs no theme handling. mountStoryCard(root) samples the first cover's hue (`ambient`), which
+ *   the flat card no longer paints. 400 × 710 at ≥ 768, full-bleed below.
  */
 export function storyCard({ year, username, avatarUrl, stats = {}, topBooks = [], favouriteAuthor, topGenre, accent, ambient = true } = {}) {
   const acc = ACCENTS.includes(accent) ? accent

@@ -22,14 +22,16 @@ export function cover({ url, bookId, title = '', author, authors, size = 'md', z
   }</div>`;
 }
 
-// `error` / `load` don't bubble, so listen in the capture phase. A broken image falls back to the generated cover;
-// a loaded one fades in over it (and the cloth underneath is hidden so it costs nothing to paint).
+// The <img> is stacked above the generated cover and always opaque (styles.css), so a loaded image hides the generated
+// title whether or not these listeners ever see it load. They only tidy up: `.is-loaded` stops the generated layer
+// from painting, `.is-broken` removes a failed image so the generated cover shows again.
+// `error` / `load` don't bubble, so listen in the capture phase.
 if (typeof document !== 'undefined') {
   const coverOf = (e) => {
     const img = e.target;
     return img instanceof HTMLImageElement && img.classList.contains('cover__img') ? img.closest('.cover') : null;
   };
-  document.addEventListener('error', (e) => { coverOf(e)?.classList.add('is-broken'); }, true);
+  document.addEventListener('error', (e) => { const c = coverOf(e); c?.classList.remove('is-loaded'); c?.classList.add('is-broken'); }, true);
   document.addEventListener('load', (e) => { coverOf(e)?.classList.add('is-loaded'); }, true);
 }
 

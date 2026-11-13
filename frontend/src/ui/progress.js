@@ -1,4 +1,6 @@
-// ProgressBar, ProgressRing, ProgressSlider (design-system §5.15; visual-v2 §3.3).
+// ProgressBar, ProgressRing, ProgressSlider (design-system §5.15; visual-v3 §5 Progress).
+// Fills are --accent in every theme; in light themes that fill is under 3:1, so every bar and ring must carry its value as
+// text (showValue, the ring's centre label, the slider's readout, or a value the caller renders next to it).
 import { html, raw } from '../utils.js';
 import { cx, uid, attr, attrsRaw } from './dom.js';
 
@@ -26,18 +28,19 @@ const clampPct = (value, max) => {
 };
 
 /**
- * Horizontal bar (role="progressbar"). The fill is a soft accent gradient and grows from 0 on first paint (560 ms);
- * later width changes transition.
+ * Horizontal bar (role="progressbar"): a flat accent fill on a grey track with round caps. It grows from 0 on first
+ * paint; later width changes transition.
  * @param {{ value: number, max?: number, size?: 'sm'|'md'|'lg', label?: string, showValue?: boolean,
- *   tone?: 'accent'|'success'|'info', ticks?: number[], onCover?: boolean, glow?: boolean, cls?: string }} o
- *   size: sm 4px · md 8px (default) · lg 12px. `onCover` → 3 px bar on a dark track with square ends and a glow, for use
- *   on top of covers. `glow` (default true when onCover) adds the accent halo that makes the bar read as "alive".
- *   `label` is the accessible name (default "Progress"); showValue adds a "65%" readout.
+ *   tone?: 'accent'|'success'|'info', ticks?: number[], onCover?: boolean, cls?: string }} o
+ *   size: sm 4px · md 6px (default) · lg 8px (hero card). `onCover` → 4 px bar on a dark track with square ends, for use
+ *   on top of covers. `glow` (v2) is accepted and ignored.
+ *   `label` is the accessible name (default "Progress"); showValue adds the "65%" readout next to the bar. Without it
+ *   the caller must show the value as text beside the bar.
  */
-export function progressBar({ value, max = 100, size = 'md', label = 'Progress', showValue = false, tone = 'accent', ticks = [], onCover = false, glow = onCover, cls = '' } = {}) {
+export function progressBar({ value, max = 100, size = 'md', label = 'Progress', showValue = false, tone = 'accent', ticks = [], onCover = false, cls = '' } = {}) {
   const pct = clampPct(value, max);
   const animated = alreadyAnimated(label);
-  const bar = html`<div class="${cx('progress', size !== 'md' && `progress--${size}`, tone !== 'accent' && `progress--${tone}`, onCover && 'progress--on-cover', glow && 'progress--glow', !showValue && cls)}" role="progressbar" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${Math.round(Number(value) || 0)}" aria-label="${label}"${animated ? raw(' data-animated="true"') : ''} style="--progress:${pct.toFixed(1)}%"><div class="progress__fill"></div>${
+  const bar = html`<div class="${cx('progress', size !== 'md' && `progress--${size}`, tone !== 'accent' && `progress--${tone}`, onCover && 'progress--on-cover', !showValue && cls)}" role="progressbar" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${Math.round(Number(value) || 0)}" aria-label="${label}"${animated ? raw(' data-animated="true"') : ''} style="--progress:${pct.toFixed(1)}%"><div class="progress__fill"></div>${
     ticks.map(t => html`<span class="progress__tick" aria-hidden="true" style="left:${Math.min(100, Math.max(0, t))}%"></span>`)
   }</div>`;
   if (!showValue) return bar;
@@ -45,12 +48,12 @@ export function progressBar({ value, max = 100, size = 'md', label = 'Progress',
 }
 
 /**
- * Circular progress (SVG), e.g. the yearly goal. Round caps; the arc draws from empty to the value over 720 ms on first
- * paint and a 6 px dot rides its end. At 100 %+ the arc and dot turn success-green.
- * @param {{ value: number, max?: number, size?: 64|96|128|140, stroke?: number, label?: string, sublabel?: string, cls?: string }} o
- *   label = centre text (default "47%"), sublabel = caption below it (🎉 allowed when complete).
+ * Circular progress (SVG), e.g. the yearly goal: a 10 px accent arc with round caps on a track at 22 % of the accent;
+ * the arc draws from empty to the value over 720 ms on first paint. At 100 %+ it turns success-green.
+ * @param {{ value: number, max?: number, size?: 64|96|116|128|140, stroke?: number, label?: string, sublabel?: string, cls?: string }} o
+ *   label = centre text, the value (default "47%"); sublabel = caption below it (🎉 allowed when complete).
  */
-export function progressRing({ value, max = 100, size = 96, stroke = 8, label, sublabel, cls = '' } = {}) {
+export function progressRing({ value, max = 100, size = 96, stroke = 10, label, sublabel, cls = '' } = {}) {
   const pct = clampPct(value, max);
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
@@ -62,7 +65,6 @@ export function progressRing({ value, max = 100, size = 96, stroke = 8, label, s
     <svg class="progress-ring__svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" fill="none" aria-hidden="true">
       <circle class="progress-ring__track" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}"/>
       <circle class="progress-ring__arc" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"/>
-      ${pct > 0 ? html`<circle class="progress-ring__dot" cx="${size / 2 + r}" cy="${size / 2}" r="3" style="--deg:${(pct * 3.6).toFixed(1)}deg"/>` : ''}
     </svg>
     <div class="progress-ring__center" aria-hidden="true">
       <span class="progress-ring__value">${center}</span>
@@ -73,7 +75,7 @@ export function progressRing({ value, max = 100, size = 96, stroke = 8, label, s
 
 /**
  * Range input for reading progress with a live "%" readout (hit area 44px). The track fills with the accent up to the
- * thumb (a 22 px ring thumb); `variant: 'hero'` draws the thicker glowing bar used by the Home hero card.
+ * thumb (a 22 px white thumb); `variant: 'hero'` draws the 8 px bar of the Continue reading card.
  * Wire it with mountProgressSlider().
  * @param {{ id?: string, value?: number, step?: number, label?: string, variant?: 'default'|'hero', attrs?: string }} o
  */

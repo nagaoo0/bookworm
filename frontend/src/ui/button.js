@@ -1,4 +1,4 @@
-// Button + IconButton (design-system §5.1, §5.2; visual-v2 §5.1, §5.2).
+// Button + IconButton (design-system §5.1, §5.2; visual-v3 §5).
 import { html, raw } from '../utils.js';
 import { icon } from './icons.js';
 import { spinner } from './skeleton.js';
@@ -18,7 +18,10 @@ export function button({
   block = false, disabled = false, loading = false, id, attrs = '', cls = '',
 } = {}) {
   const klass = cx('btn', `btn--${variant === 'glass' ? 'secondary' : variant}`, size !== 'md' && `btn--${size}`, block && 'btn--block', cls);
-  return html`<button type="${type}" class="${klass}"${attr('id', id)}${bool(disabled, 'disabled')}${disabled ? raw(' aria-disabled="true"') : ''}${loading ? raw(' data-loading="true" aria-busy="true"') : ''}${attrsRaw(attrs)}>${
+  // loading: unusable but still named by its label (the spinner's "Loading" must not become part of the name)
+  // (data-loading-disabled / -label mark what setButtonLoading(btn, false) must take back off)
+  const busy = loading ? html` data-loading="true" aria-busy="true"${disabled ? '' : raw(' aria-disabled="true" data-loading-disabled')}${/\baria-label=/.test(attrs) ? '' : html`${attr('aria-label', label)} data-loading-label`}` : '';
+  return html`<button type="${type}" class="${klass}"${attr('id', id)}${bool(disabled, 'disabled')}${disabled ? raw(' aria-disabled="true"') : ''}${busy}${attrsRaw(attrs)}>${
     iconLeft ? html`<span class="btn__icon">${icon(iconLeft, { size: 16 })}</span>` : ''
   }<span class="btn__label">${label}</span>${
     iconRight ? html`<span class="btn__icon">${icon(iconRight, { size: 16 })}</span>` : ''
@@ -26,20 +29,27 @@ export function button({
 }
 
 /**
- * Swap a rendered button into / out of its loading state without re-rendering
- * (label hidden, centred spinner, width preserved, clicks ignored).
+ * Swap a rendered button into / out of its loading state without re-rendering: the label turns invisible but keeps
+ * the width, a spinner sits in the middle, clicks are ignored. While loading the button is aria-disabled and named
+ * by its label (as aria-label, unless it already has one); `false` restores both.
  */
 export function setButtonLoading(btn, loading) {
   if (!btn) return;
   if (loading) {
+    if (btn.dataset.loading === 'true') return;
+    const name = String(btn.textContent ?? '').trim();
     btn.dataset.loading = 'true';
     btn.setAttribute('aria-busy', 'true');
+    if (!btn.hasAttribute('aria-disabled')) { btn.setAttribute('aria-disabled', 'true'); btn.dataset.loadingDisabled = ''; }
+    if (!btn.hasAttribute('aria-label') && name) { btn.setAttribute('aria-label', name); btn.dataset.loadingLabel = ''; }
     if (!btn.querySelector(':scope > .btn__spinner')) {
       btn.insertAdjacentHTML('beforeend', `<span class="btn__spinner">${spinner({ size: 16 })}</span>`);
     }
   } else {
     delete btn.dataset.loading;
     btn.removeAttribute('aria-busy');
+    if ('loadingDisabled' in btn.dataset) { btn.removeAttribute('aria-disabled'); delete btn.dataset.loadingDisabled; }
+    if ('loadingLabel' in btn.dataset) { btn.removeAttribute('aria-label'); delete btn.dataset.loadingLabel; }
     btn.querySelector(':scope > .btn__spinner')?.remove();
   }
 }
